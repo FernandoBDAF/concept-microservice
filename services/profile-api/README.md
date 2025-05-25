@@ -57,7 +57,7 @@ The Profile API Service is a microservice responsible for managing user profiles
 
    The service uses Redis for session management with the following features:
 
-   - Persistent session storage in Redis
+   - Persistent session storage in Redis (in-cluster)
    - Automatic session expiration after 24 hours
    - Thread-safe operations with context timeouts
    - Integration with Auth Service for token validation
@@ -65,12 +65,15 @@ The Profile API Service is a microservice responsible for managing user profiles
    - Maintains session state with user ID and role
    - Handles session expiration
    - Configurable through environment variables
+   - In-cluster deployment with persistent storage
+   - Health monitoring and probes
+   - Automatic failover support
 
    Configuration:
 
    ```bash
    # Redis Configuration
-   REDIS_ADDR=redis:6379        # Redis server address
+   REDIS_ADDR=redis:6379        # In-cluster Redis service
    REDIS_PASSWORD=              # Redis password (if any)
    REDIS_DB=0                   # Redis database number
    ```
@@ -483,7 +486,7 @@ Note:
   - `jq -r '.'` for raw output (no quotes around strings)
   - `jq '.field_name'` to extract specific fields
 
-### Configuration
+## Configuration
 
 The service uses a centralized configuration system that is loaded at startup and passed to components that need it. The configuration is structured to support different environments and service integrations.
 
@@ -629,7 +632,7 @@ AUTH_SERVICE_HOST=localhost
 AUTH_SERVICE_PORT=8081
 
 # Redis Configuration
-REDIS_ADDR=redis:6379
+REDIS_ADDR=redis:6379          # In-cluster Redis service
 REDIS_PASSWORD=
 REDIS_DB=0
 
@@ -658,7 +661,7 @@ SECURITY_ENABLED=true
 ENV=development
 ```
 
-#### Configuration Best Practices
+### Configuration Best Practices
 
 1. **Dependency Injection**
 
@@ -671,7 +674,7 @@ ENV=development
    - Development mode with mock services
    - Production-ready configuration
    - Easy to switch between environments
-   - Kubernetes service discovery using service names without ports
+   - Kubernetes service discovery using service names
    - Local development using explicit host and port
 
 3. **Security**
@@ -684,7 +687,7 @@ ENV=development
    - Each service has its own configuration section
    - Retry mechanisms configurable per service
    - Timeouts and connection settings customizable
-   - In Kubernetes, use service names without ports (e.g., `http://auth-service`)
+   - In Kubernetes, use service names (e.g., `redis:6379`)
    - The Kubernetes service will handle port mapping automatically
 
 ## Development

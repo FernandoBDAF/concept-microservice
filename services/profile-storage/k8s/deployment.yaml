@@ -145,7 +145,7 @@ metadata:
 data:
   server_port: "8080"
   grpc_port: "50051"
-  db_host: "192.168.86.115"
+  db_host: "postgres"
   db_port: "5432"
   db_name: "profiles"
   db_max_open_conns: "25"
@@ -178,9 +178,9 @@ spec:
     - Egress
   ingress:
     - from:
-        - namespaceSelector:
+        - podSelector:
             matchLabels:
-              kubernetes.io/metadata.name: microservice
+              app: profile-api
       ports:
         - protocol: TCP
           port: 50051
@@ -188,8 +188,9 @@ spec:
           port: 8080
   egress:
     - to:
-        - ipBlock:
-            cidr: 192.168.86.115/32
+        - podSelector:
+            matchLabels:
+              app: postgres
       ports:
         - protocol: TCP
           port: 5432

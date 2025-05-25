@@ -861,3 +861,10 @@ Note: The site/ directory contains DOCUMENTATION_SITE_PLAN.md which is currently
    - Create prompts
    - Expand integration patterns
    - Update best practices
+
+
+## Extra topics
+   - Creating and working with local cluster using Kind, Minikube and VM with custom install
+   - Scaling a cluster in kind - using 1 vs 3 nodes
+   - Use Kind with configurations emulating those that the project will be expose in the clouds plattform as number of nodes, resources limits, etc - taking AWS as standart.
+   - 

@@ -171,11 +171,11 @@ All gRPC endpoints have been tested and verified in both local and cluster envir
 
 - `SERVER_PORT` - HTTP server port (default: 8080)
 - `GRPC_PORT` - gRPC server port (default: 50051)
-- `DB_HOST` - PostgreSQL server host
+- `DB_HOST` - PostgreSQL server host (default: postgres)
 - `DB_PORT` - PostgreSQL server port (default: 5432)
-- `DB_NAME` - PostgreSQL database name
-- `DB_USER` - PostgreSQL username
-- `DB_PASSWORD` - PostgreSQL password
+- `DB_NAME` - PostgreSQL database name (default: profiles)
+- `DB_USER` - PostgreSQL username (from secret)
+- `DB_PASSWORD` - PostgreSQL password (from secret)
 - `DB_MAX_OPEN_CONNS` - Maximum database connections (default: 25)
 - `DB_MAX_IDLE_CONNS` - Idle connections in pool (default: 5)
 - `DB_CONN_MAX_LIFETIME` - Connection max lifetime (default: 5m)
@@ -191,6 +191,14 @@ All gRPC endpoints have been tested and verified in both local and cluster envir
 - Transaction isolation levels
 - Backup schedule
 - Migration strategy
+- In-cluster PostgreSQL deployment with:
+  - Persistent volume storage
+  - Health monitoring and probes
+  - Automatic failover support
+  - Database initialization with ConfigMaps
+  - Connection pooling optimization
+  - Automatic retry mechanism
+  - Health check integration
 
 ## Deployment
 
@@ -215,6 +223,13 @@ The service is deployed to Kubernetes with the following resources:
 - ConfigMap for configuration
 - Secret for sensitive data
 - NetworkPolicy for security
+- In-cluster PostgreSQL deployment with:
+  - Persistent volume claims
+  - Health monitoring
+  - Database initialization
+  - Automatic failover
+  - Connection pooling
+  - Backup configuration
 
 #### Health Checks
 
@@ -434,17 +449,19 @@ kubectl get pods -l app=profile-storage
 
 The service uses Docker Compose for local development with the following services:
 
-- PostgreSQL
-- Redis
+- PostgreSQL (in-cluster)
+- Redis (in-cluster)
 - RabbitMQ
 
 ### Kubernetes
 
 The service is configured with a NetworkPolicy that:
 
-- Allows ingress from any pod within the microservice namespace
-- Allows egress to the external PostgreSQL database
+- Allows ingress from profile-api pods
+- Allows egress to the in-cluster PostgreSQL database
 - Restricts other network access
+- Uses pod selectors for service discovery
+- Implements principle of least privilege
 
 #### Network Policy Details
 
@@ -462,9 +479,9 @@ spec:
     - Egress
   ingress:
     - from:
-        - namespaceSelector:
+        - podSelector:
             matchLabels:
-              kubernetes.io/metadata.name: microservice
+              app: profile-api
       ports:
         - protocol: TCP
           port: 50051 # gRPC port
@@ -472,8 +489,9 @@ spec:
           port: 8080 # REST API port
   egress:
     - to:
-        - ipBlock:
-            cidr: 192.168.86.115/32 # External PostgreSQL database
+        - podSelector:
+            matchLabels:
+              app: postgres
       ports:
         - protocol: TCP
           port: 5432

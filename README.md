@@ -45,7 +45,7 @@ The Profile Service Microservices architecture is a distributed system designed 
    - Key Features:
      - REST API endpoints
      - Authentication middleware
-     - Session management
+     - Session management with Redis
      - Health monitoring
      - Error handling
      - Structured logging with Zap logger
@@ -148,7 +148,7 @@ The Profile Service Microservices architecture is a distributed system designed 
                     ↓
               Profile Storage
                     ↓
-              Profile Cache
+              PostgreSQL
    ```
 
 2. **Authentication Flow**
@@ -158,7 +158,7 @@ The Profile Service Microservices architecture is a distributed system designed 
                     ↓
               Profile API
                     ↓
-              Session Management (Redis)
+              Redis (Session Management)
                     ↓
               Token Validation (Auth Service)
    ```
@@ -231,7 +231,8 @@ The Profile Service Microservices architecture is a distributed system designed 
    - Health check endpoints
    - Authentication middleware
    - Session management
-   - PostgreSQL integration
+   - PostgreSQL integration (in-cluster)
+   - Redis integration (in-cluster)
    - Kubernetes deployment
    - Network policies
    - ConfigMaps and Secrets
@@ -244,6 +245,9 @@ The Profile Service Microservices architecture is a distributed system designed 
    - Both gRPC and REST APIs in Profile Storage Service
    - Graceful shutdown implementation
    - Proper error handling and logging across services
+   - In-cluster database deployments (PostgreSQL and Redis)
+   - Updated network policies for in-cluster communication
+   - Successful service-to-database communication
 
 2. **In Progress**
 
@@ -279,6 +283,7 @@ The Profile Service Microservices architecture is a distributed system designed 
    - Service mesh
    - Network policies
    - ConfigMaps and Secrets
+   - In-cluster PostgreSQL and Redis
 
 2. **Docker**
    - Container images
@@ -306,8 +311,8 @@ The Profile Service Microservices architecture is a distributed system designed 
 
 1. **Databases**
 
-   - PostgreSQL for data storage
-   - Redis for caching
+   - PostgreSQL for data storage (in-cluster)
+   - Redis for caching (in-cluster)
    - RabbitMQ for messaging
 
 2. **Monitoring**
@@ -381,19 +386,25 @@ The Profile Service Microservices architecture is a distributed system designed 
 
 ### Redis Integration
 
-- Token storage
+- Token storage (in-cluster)
 - Session management
 - Rate limiting
 - Cache policies
+- In-cluster deployment with persistent storage
+- Health monitoring and probes
+- Automatic failover support
 
 ### PostgreSQL Integration
 
-- User data storage
+- User data storage (in-cluster)
 - Role management
 - Permission storage
 - Audit logging
 - Connection pooling
 - Health monitoring
+- In-cluster deployment with persistent storage
+- Automatic failover support
+- Database initialization with ConfigMaps
 - [External Database Connectivity](docs/architecture/database/connectivity.md)
 
 ### Monitoring Integration
@@ -402,6 +413,8 @@ The Profile Service Microservices architecture is a distributed system designed 
 - Grafana dashboards
 - Health checks
 - Log aggregation
+- Database metrics collection
+- Cache performance monitoring
 
 ## Load Testing
 

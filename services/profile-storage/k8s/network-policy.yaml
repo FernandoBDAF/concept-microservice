@@ -1,11 +1,11 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: profile-api-network-policy
+  name: profile-storage-network-policy
 spec:
   podSelector:
     matchLabels:
-      app: profile-api
+      app: profile-storage
   policyTypes:
     - Ingress
     - Egress
@@ -13,22 +13,17 @@ spec:
     - from:
         - podSelector:
             matchLabels:
-              app: profile-storage
+              app: profile-api
       ports:
+        - protocol: TCP
+          port: 50051
         - protocol: TCP
           port: 8080
   egress:
     - to:
         - podSelector:
             matchLabels:
-              app: redis
+              app: postgres
       ports:
         - protocol: TCP
-          port: 6379
-    - to:
-        - podSelector:
-            matchLabels:
-              app: auth
-      ports:
-        - protocol: TCP
-          port: 8080
+          port: 5432
