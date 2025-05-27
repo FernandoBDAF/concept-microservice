@@ -42,6 +42,54 @@ The reference-materials folder currently contains various technical documentatio
 4. Incomplete coverage of key topics
 5. Lack of clear structure for LLM consumption
 
+## Documentation Structure
+
+### Cross-Reference Index
+
+The [Cross-Reference Index](CROSS_REFERENCE_INDEX.md) serves as a central navigation hub for all documentation, providing:
+
+1. **Core Documentation Areas**
+
+   - Architecture
+   - Development
+   - Performance
+   - Security
+   - Operations
+   - LLM
+   - Templates
+
+2. **Migration Status**
+
+   - Completed migrations
+   - In-progress work
+   - Pending tasks
+
+3. **Cross-Section References**
+
+   - Security
+   - Deployment
+   - Development
+   - Operations
+
+4. **Quick Links**
+
+   - Main documentation
+   - Architecture overview
+   - Development guide
+   - Operations guide
+   - Security guide
+   - Performance guide
+   - LLM guide
+   - Templates
+   - Kubernetes tools
+
+5. **Maintenance Guidelines**
+   - Reference updates
+   - Naming conventions
+   - Documentation relationships
+
+The index is regularly updated to reflect changes in the documentation structure and ensure accurate cross-referencing between documents.
+
 ## Proposed Restructuring Plan
 
 ### 2. Reorganization Plan
@@ -762,10 +810,17 @@ Note: The site/ directory contains DOCUMENTATION_SITE_PLAN.md which is currently
 - [x] Patterns documented
 - [x] Best practices created
 - [x] Tools documented
+  - [x] Kubernetes tools (Helm, Kustomize)
+  - [x] Development tools
+  - [x] Testing tools
 - [x] Testing strategies updated
 
 ### Operations
 
+- [x] Kubernetes deployment tools documented
+  - [x] Helm usage and best practices
+  - [x] Kustomize implementation
+  - [x] Tool comparison and selection
 - [ ] Monitoring needs expansion
 - [ ] Logging needs update
 - [ ] Deployment needs documentation
@@ -800,12 +855,17 @@ Note: The site/ directory contains DOCUMENTATION_SITE_PLAN.md which is currently
 - [x] Established documentation patterns
 - [x] Set up cross-references
 - [x] Created placeholder files
+- [x] Organized Kubernetes tools documentation
 
 ### Phase 2: Content Migration 🚧
 
 - [x] Updated architecture documentation
 - [x] Added cross-references
 - [x] Created new content
+  - [x] Kubernetes tools documentation
+  - [x] Helm usage guide
+  - [x] Kustomize implementation guide
+  - [x] Tool comparison guide
 - [x] Removed outdated content
 
 ### Phase 3: LLM Optimization 🚧
@@ -836,14 +896,18 @@ Note: The site/ directory contains DOCUMENTATION_SITE_PLAN.md which is currently
    - Document patterns
    - Create best practices
    - Document tools
+     - [x] Kubernetes deployment tools
+     - [ ] Development tools
+     - [ ] Testing tools
    - Update testing strategies
 
 3. Expand operations documentation:
 
-   - Expand monitoring
-   - Update logging
-   - Document deployment
-   - Create maintenance procedures
+   - [x] Document Kubernetes deployment tools
+   - [ ] Expand monitoring
+   - [ ] Update logging
+   - [ ] Document deployment
+   - [ ] Create maintenance procedures
 
 4. Complete security documentation:
 
@@ -862,9 +926,14 @@ Note: The site/ directory contains DOCUMENTATION_SITE_PLAN.md which is currently
    - Expand integration patterns
    - Update best practices
 
-
 ## Extra topics
-   - Creating and working with local cluster using Kind, Minikube and VM with custom install
-   - Scaling a cluster in kind - using 1 vs 3 nodes
-   - Use Kind with configurations emulating those that the project will be expose in the clouds plattform as number of nodes, resources limits, etc - taking AWS as standart.
-   - 
+
+- Creating and working with local cluster using Kind, Minikube and VM with custom install
+- Scaling a cluster in kind - using 1 vs 3 nodes
+- Use Kind with configurations emulating those that the project will be expose in the clouds plattform as number of nodes, resources limits, etc - taking AWS as standart.
+- Autoscaling resources (nodes, deployments, etc...)
+- Kubernetes deployment tools
+  - Helm chart development and management
+  - Kustomize base and overlay patterns
+  - Hybrid deployment strategies
+  - Environment-specific configurations

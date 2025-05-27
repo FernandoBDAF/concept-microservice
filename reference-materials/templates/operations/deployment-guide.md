@@ -24,13 +24,12 @@ This document serves as the central index for all deployment-related documentati
   - Resource management
   - Health checks
 
-### 2. Helm Charts
+### 2. Kubernetes Tools
 
-- [Helm Configuration](helm-configuration.md)
-  - Chart structure
-  - Value management
-  - Release process
-  - Version control
+- [Kubernetes Tools](../../development/tools/kubernetes/README.md)
+  - [Helm Guide](../../development/tools/kubernetes/helm.md)
+  - [Kustomize Guide](../../development/tools/kubernetes/kustomize.md)
+  - [Tool Comparison](../../development/tools/kubernetes/comparison.md)
 
 ### 3. Environment Configuration
 
@@ -65,7 +64,7 @@ This document serves as the central index for all deployment-related documentati
 - Initial guide structure
 - Deployment guide index
 - Kubernetes deployment guide
-- Helm charts documentation
+- Kubernetes tools documentation
 - Environment configuration
 - Production deployment
 - Scaling guide

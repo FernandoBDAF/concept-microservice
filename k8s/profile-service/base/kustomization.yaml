@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - profile-api
+  - profile-storage
+  - auth
+  - database
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: profile-service
+      app.kubernetes.io/managed-by: kustomize
+
+commonAnnotations:
+  description: "Profile Service Base Configuration"

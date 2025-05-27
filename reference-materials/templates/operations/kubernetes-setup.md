@@ -260,7 +260,10 @@ kubectl get all -n profile-system
 
 ## Cross-References
 
-- [Helm Configuration](helm-configuration.md)
+- [Kubernetes Tools](../../development/tools/kubernetes/README.md)
+- [Helm Guide](../../development/tools/kubernetes/helm.md)
+- [Kustomize Guide](../../development/tools/kubernetes/kustomize.md)
+- [Tool Comparison](../../development/tools/kubernetes/comparison.md)
 - [Production Deployment](production-deployment.md)
 - [Environment Setup](environment-setup.md)
 

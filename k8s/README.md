@@ -391,6 +391,124 @@ Auth Service:
 3. Set up disaster recovery procedures
 4. Implement advanced monitoring
 
+### Redis Configuration Enhancements
+
+The following Redis configuration improvements are suggested for future implementation:
+
+#### 1. Memory Management
+
+```yaml
+# Memory Management
+maxmemory 256mb
+maxmemory-policy allkeys-lru
+maxmemory-samples 5
+```
+
+#### 2. Persistence Configuration
+
+```yaml
+# Persistence
+save 900 1
+save 300 10
+save 60 10000
+stop-writes-on-bgsave-error yes
+rdbcompression yes
+rdbchecksum yes
+dbfilename dump.rdb
+dir /data
+```
+
+#### 3. Security Settings
+
+```yaml
+# Security
+protected-mode yes
+tcp-keepalive 300
+```
+
+#### 4. Performance Tuning
+
+```yaml
+# Performance
+tcp-backlog 511
+timeout 0
+tcp-keepalive 300
+daemonize no
+supervised no
+pidfile /var/run/redis_6379.pid
+loglevel notice
+logfile ""
+```
+
+#### 5. Snapshotting Configuration
+
+```yaml
+# Snapshotting
+stop-writes-on-bgsave-error yes
+rdbcompression yes
+rdbchecksum yes
+dbfilename dump.rdb
+dir /data
+```
+
+#### 6. Append Only Mode
+
+```yaml
+# Append Only Mode
+appendonly yes
+appendfilename "appendonly.aof"
+appendfsync everysec
+no-appendfsync-on-rewrite no
+auto-aof-rewrite-percentage 100
+auto-aof-rewrite-min-size 64mb
+aof-load-truncated yes
+aof-use-rdb-preamble yes
+```
+
+### Implementation Notes
+
+1. **When to Implement**:
+
+   - Consider implementing these changes when:
+     - Moving to production environment
+     - Scaling up the application
+     - Implementing data persistence requirements
+     - Adding security requirements
+
+2. **Benefits**:
+
+   - Better memory management
+   - Improved data persistence
+   - Enhanced security
+   - Better performance tuning
+   - More reliable snapshotting
+   - Improved data durability with AOF
+
+3. **Considerations**:
+
+   - These settings should be tuned based on:
+     - Available system resources
+     - Data persistence requirements
+     - Performance requirements
+     - Security requirements
+     - Monitoring capabilities
+
+4. **Implementation Steps**:
+
+   1. Test changes in development environment
+   2. Monitor Redis performance
+   3. Adjust settings based on metrics
+   4. Document final configuration
+   5. Implement in staging
+   6. Deploy to production
+
+5. **Monitoring Requirements**:
+   - Memory usage
+   - Persistence operations
+   - Performance metrics
+   - Error rates
+   - Connection statistics
+
 ## Tools and Integrations
 
 ### Current Tools
@@ -635,3 +753,591 @@ Note:
 - All services are running with 2 replicas for high availability
 - Health checks are responding with good latency (< 1ms in most cases)
 - Service communication is working properly between all components
+
+## Kustomize Implementation
+
+### Overview
+
+Kustomize is being implemented to manage environment-specific configurations and provide a more maintainable deployment structure. This implementation follows Kubernetes-native practices and enables GitOps workflows.
+
+### Directory Structure
+
+```
+k8s/
+├── base/
+│   ├── profile-api/
+│   │   ├── deployment.yaml
+│   │   ├── service.yaml
+│   │   ├── configmap.yaml
+│   │   └── kustomization.yaml
+│   ├── profile-storage/
+│   │   ├── deployment.yaml
+│   │   ├── service.yaml
+│   │   ├── configmap.yaml
+│   │   └── kustomization.yaml
+│   ├── auth/
+│   │   ├── deployment.yaml
+│   │   ├── service.yaml
+│   │   ├── configmap.yaml
+│   │   └── kustomization.yaml
+│   └── kustomization.yaml
+├── overlays/
+│   ├── development/
+│   │   ├── profile-api/
+│   │   │   ├── kustomization.yaml
+│   │   │   └── patch-deployment.yaml
+│   │   ├── profile-storage/
+│   │   │   ├── kustomization.yaml
+│   │   │   └── patch-deployment.yaml
+│   │   ├── auth/
+│   │   │   ├── kustomization.yaml
+│   │   │   └── patch-deployment.yaml
+│   │   └── kustomization.yaml
+│   └── production/
+│       ├── profile-api/
+│       │   ├── kustomization.yaml
+│       │   └── patch-deployment.yaml
+│       ├── profile-storage/
+│       │   ├── kustomization.yaml
+│       │   └── patch-deployment.yaml
+│       ├── auth/
+│       │   ├── kustomization.yaml
+│       │   └── patch-deployment.yaml
+│       └── kustomization.yaml
+```
+
+### Base Configuration
+
+The base configuration contains the common Kubernetes resources shared across all environments:
+
+```yaml
+# base/kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - profile-api
+  - profile-storage
+  - auth
+
+commonLabels:
+  app.kubernetes.io/part-of: profile-service
+  app.kubernetes.io/managed-by: kustomize
+
+commonAnnotations:
+  description: "Profile Service Base Configuration"
+```
+
+### Environment-Specific Configurations
+
+#### Development Environment
+
+```yaml
+# overlays/development/kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+namespace: profile-dev
+
+commonLabels:
+  environment: development
+
+patches:
+  - path: profile-api/patch-deployment.yaml
+  - path: profile-storage/patch-deployment.yaml
+  - path: auth/patch-deployment.yaml
+
+configMapGenerator:
+  - name: profile-service-config
+    literals:
+      - ENVIRONMENT=development
+      - LOG_LEVEL=debug
+```
+
+#### Production Environment
+
+```yaml
+# overlays/production/kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+namespace: profile-prod
+
+commonLabels:
+  environment: production
+
+patches:
+  - path: profile-api/patch-deployment.yaml
+  - path: profile-storage/patch-deployment.yaml
+  - path: auth/patch-deployment.yaml
+
+configMapGenerator:
+  - name: profile-service-config
+    literals:
+      - ENVIRONMENT=production
+      - LOG_LEVEL=info
+```
+
+### Resource Patching
+
+Example of a deployment patch for development environment:
+
+```yaml
+# overlays/development/profile-api/patch-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: profile-api
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: profile-api
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+```
+
+### Deployment Process
+
+1. **Build Configuration**
+
+   ```bash
+   # Development
+   kustomize build overlays/development
+
+   # Production
+   kustomize build overlays/production
+   ```
+
+2. **Apply Configuration**
+
+   ```bash
+   # Development
+   kustomize build overlays/development | kubectl apply -f -
+
+   # Production
+   kustomize build overlays/production | kubectl apply -f -
+   ```
+
+### Benefits
+
+1. **Environment Management**
+
+   - Clear separation of environments
+   - Consistent base configuration
+   - Environment-specific customizations
+   - Simplified deployment process
+
+2. **Configuration Management**
+
+   - Declarative configuration
+   - Version control friendly
+   - Easy to review changes
+   - Reduced configuration drift
+
+3. **Resource Organization**
+   - Logical grouping of resources
+   - Clear dependency structure
+   - Easy to maintain and update
+   - Better resource isolation
+
+### Integration with Existing Setup
+
+- Compatible with current service architecture
+- Maintains existing resource configurations
+- Preserves current networking setup
+- Supports existing monitoring configuration
+
+### Next Steps
+
+1. **Implementation**
+
+   - [ ] Create base configurations
+   - [ ] Set up development overlay
+   - [ ] Set up production overlay
+   - [ ] Test configurations
+
+2. **Documentation**
+
+   - [ ] Document deployment procedures
+   - [ ] Create troubleshooting guide
+   - [ ] Add configuration examples
+   - [ ] Update CI/CD pipelines
+
+3. **Validation**
+   - [ ] Test all environments
+   - [ ] Verify resource configurations
+   - [ ] Validate security settings
+   - [ ] Check monitoring integration
+
+### Service Evolution Guidelines
+
+#### Adding New Services
+
+1. **Base Configuration**
+
+   ```yaml
+   # base/<new-service>/kustomization.yaml
+   apiVersion: kustomize.config.k8s.io/v1beta1
+   kind: Kustomization
+
+   resources:
+     - deployment.yaml
+     - service.yaml
+     - configmap.yaml
+
+   commonLabels:
+     app.kubernetes.io/name: <new-service>
+     app.kubernetes.io/part-of: profile-service
+   ```
+
+2. **Environment Overlays**
+
+   ```yaml
+   # overlays/<environment>/<new-service>/kustomization.yaml
+   apiVersion: kustomize.config.k8s.io/v1beta1
+   kind: Kustomization
+
+   resources:
+     - ../../../base/<new-service>
+
+   patches:
+     - path: patch-deployment.yaml
+   ```
+
+3. **Integration Steps**
+   - Add service to base kustomization.yaml
+   - Create environment-specific overlays
+   - Configure service dependencies
+   - Update network policies
+   - Add monitoring configuration
+
+#### Evolving Existing Services
+
+1. **Configuration Updates**
+
+   - Update base configuration
+   - Modify environment-specific patches
+   - Update resource requirements
+   - Adjust health checks
+   - Update monitoring configuration
+
+2. **Dependency Management**
+
+   - Update service dependencies
+   - Modify network policies
+   - Adjust resource limits
+   - Update service mesh configuration
+
+3. **Version Control**
+   - Maintain configuration history
+   - Document changes
+   - Update documentation
+   - Track configuration versions
+
+### Service Integration Patterns
+
+#### 1. Core Services (Profile API, Storage, Auth)
+
+```yaml
+# base/kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - profile-api
+  - profile-storage
+  - auth
+
+commonLabels:
+  tier: core
+  app.kubernetes.io/part-of: profile-service
+```
+
+#### 2. Supporting Services (Cache, Queue, Worker)
+
+```yaml
+# base/kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - profile-cache
+  - profile-queue
+  - profile-worker
+
+commonLabels:
+  tier: supporting
+  app.kubernetes.io/part-of: profile-service
+```
+
+#### 3. Monitoring Services
+
+```yaml
+# base/kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - profile-monitoring
+
+commonLabels:
+  tier: monitoring
+  app.kubernetes.io/part-of: profile-service
+```
+
+### Service Evolution Process
+
+1. **Planning Phase**
+
+   - Define service requirements
+   - Identify dependencies
+   - Plan resource allocation
+   - Design monitoring strategy
+
+2. **Implementation Phase**
+
+   - Create base configuration
+   - Set up environment overlays
+   - Configure service integration
+   - Implement monitoring
+
+3. **Testing Phase**
+
+   - Test service deployment
+   - Verify integration
+   - Validate monitoring
+   - Check resource usage
+
+4. **Deployment Phase**
+   - Deploy to development
+   - Test in staging
+   - Deploy to production
+   - Monitor performance
+
+### Best Practices
+
+1. **Configuration Management**
+
+   - Use consistent naming
+   - Follow directory structure
+   - Maintain documentation
+   - Version control all changes
+
+2. **Resource Management**
+
+   - Set appropriate limits
+   - Configure health checks
+   - Implement monitoring
+   - Plan for scaling
+
+3. **Security**
+
+   - Implement network policies
+   - Configure RBAC
+   - Manage secrets
+   - Regular security audits
+
+4. **Monitoring**
+   - Set up metrics collection
+   - Configure alerts
+   - Monitor resource usage
+   - Track service health
+
+### Service Categories
+
+1. **Core Services**
+
+   - Profile API
+   - Profile Storage
+   - Auth Service
+   - High availability required
+   - Strict monitoring
+
+2. **Supporting Services**
+
+   - Profile Cache
+   - Profile Queue
+   - Profile Worker
+   - Flexible scaling
+   - Basic monitoring
+
+3. **Monitoring Services**
+   - Profile Monitoring
+   - Logging
+   - Metrics
+   - High reliability
+   - Comprehensive monitoring
+
+### Integration Guidelines
+
+1. **Service Communication**
+
+   - Define communication patterns
+   - Configure service mesh
+   - Set up load balancing
+   - Implement circuit breakers
+
+2. **Data Management**
+
+   - Configure data persistence
+   - Set up backups
+   - Implement caching
+   - Manage data lifecycle
+
+3. **Security Integration**
+
+   - Configure authentication
+   - Set up authorization
+   - Implement encryption
+   - Manage secrets
+
+4. **Monitoring Integration**
+   - Set up metrics
+   - Configure logging
+   - Implement tracing
+   - Set up alerts
+
+## Helm Integration Considerations
+
+While we are currently using Kustomize for our deployment management, we maintain a Helm implementation plan for potential future use. Here are the scenarios where transitioning to Helm might be beneficial:
+
+### When to Consider Using Helm
+
+1. **Complex Application Management**
+
+   - When managing multiple interdependent services
+   - When dealing with complex dependencies between components
+   - When versioning and release management become critical
+   - When sharing configurations across multiple projects
+
+2. **Package Management Needs**
+
+   - When distributing services as reusable packages
+   - When managing multiple versions of the same service
+   - When sharing configurations with other teams
+   - When using chart repositories for common components
+
+3. **Advanced Templating Requirements**
+   - When dynamic configuration generation is needed
+   - When complex conditional resource creation is required
+   - When variable substitution becomes complex
+   - When template reuse across services is needed
+
+### Integration with Kustomize
+
+We can use both tools together in a hybrid approach:
+
+1. **Helm for Base Deployment**
+
+   ```bash
+   # Deploy base application with Helm
+   helm upgrade --install profile-service ./helm \
+     -f helm/values-prod.yaml \
+     --namespace profile-prod
+   ```
+
+2. **Kustomize for Environment-Specific Changes**
+   ```bash
+   # Apply environment-specific changes with Kustomize
+   kustomize build overlays/production | kubectl apply -f -
+   ```
+
+### Migration Considerations
+
+When considering a migration to Helm:
+
+1. **Current Benefits of Kustomize**
+
+   - Native Kubernetes integration
+   - Simple learning curve
+   - GitOps-friendly
+   - No template language complexity
+   - Direct resource patching
+
+2. **Potential Benefits of Helm**
+
+   - Better package management
+   - Version control for deployments
+   - Template-based configuration
+   - Dependency management
+   - Release management
+
+3. **Migration Triggers**
+   - Growing service complexity
+   - Need for package distribution
+   - Complex dependency management
+   - Advanced templating requirements
+   - Release management needs
+
+### Implementation Plan
+
+Our Helm implementation plan is documented in `HELM-IMPLEMENTATION.md` and includes:
+
+1. **Base Chart Setup**
+
+   - Chart structure
+   - Value management
+   - Template development
+   - Environment configuration
+
+2. **Service Templates**
+
+   - Common templates
+   - Service-specific templates
+   - Resource definitions
+   - Configuration management
+
+3. **Environment Configuration**
+
+   - Development setup
+   - Staging setup
+   - Production setup
+   - Value overrides
+
+4. **Testing and Validation**
+   - Template validation
+   - Configuration testing
+   - Deployment testing
+   - Integration testing
+
+### Best Practices for Both Tools
+
+1. **Configuration Management**
+
+   - Keep base configurations minimal
+   - Use environment-specific overlays
+   - Document all customizations
+   - Follow naming conventions
+
+2. **Resource Organization**
+
+   - Group related resources
+   - Use consistent naming
+   - Document dependencies
+   - Maintain clear structure
+
+3. **Security**
+
+   - Never store secrets in version control
+   - Use external secret management
+   - Implement proper RBAC
+   - Follow security best practices
+
+4. **Monitoring**
+   - Set up proper health checks
+   - Configure resource monitoring
+   - Implement logging
+   - Set up alerts

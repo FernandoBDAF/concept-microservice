@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: profile-api-config
+data:
+  REDIS_ADDR: "redis:6379"
+  REDIS_PASSWORD: ""
+  REDIS_DB: "0"
+  AUTH_SERVICE_URL: "http://profile-auth"
+  AUTH_SERVICE_PORT: "80"
+  SERVER_PORT: "8080"
+  LOG_LEVEL: "info"

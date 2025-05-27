@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: profile-auth
+  labels:
+    app: profile-auth
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: profile-auth
+  template:
+    metadata:
+      labels:
+        app: profile-auth
+    spec:
+      containers:
+        - name: profile-auth
+          image: docker.io/library/profile-auth:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+            - containerPort: 9090
+              name: metrics
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          envFrom:
+            - configMapRef:
+                name: profile-storage-config
+            - secretRef:
+                name: profile-auth-secrets
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 5
+          volumeMounts:
+            - name: config-volume
+              mountPath: /app/config
+      volumes:
+        - name: config-volume
+          configMap:
+            name: profile-auth-config

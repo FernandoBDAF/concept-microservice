@@ -324,8 +324,10 @@ spec:
 
 ## Next Steps
 
-1. Create Helm charts for each service
-2. Implement CI/CD pipelines
-3. Set up monitoring dashboards
-4. Configure alerting rules
-5. Create backup strategies
+1. Review [Kubernetes Tools](../../development/tools/kubernetes/README.md) documentation
+2. Implement [Helm Guide](../../development/tools/kubernetes/helm.md) for service packaging
+3. Use [Kustomize Guide](../../development/tools/kubernetes/kustomize.md) for environment-specific changes
+4. Follow [Tool Comparison](../../development/tools/kubernetes/comparison.md) for best practices
+5. Set up monitoring dashboards
+6. Configure alerting rules
+7. Create backup strategies

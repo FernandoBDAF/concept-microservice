@@ -22,6 +22,11 @@
   - Patterns: `development/patterns/`
   - Testing: `development/testing/`
   - Tools: `development/tools/`
+    - Kubernetes: `development/tools/kubernetes/`
+      - Helm: `development/tools/kubernetes/helm.md`
+      - Kustomize: `development/tools/kubernetes/kustomize.md`
+      - Comparison: `development/tools/kubernetes/comparison.md`
+      - Service Evolution: `development/tools/kubernetes/service-evolution.md`
 
 ### Performance
 
@@ -41,11 +46,13 @@
 
 ### Operations
 
-- Primary Location: `operations/`
+- Primary Location: `templates/operations/`
 - Related Sections:
-  - Deployment: `operations/deployment/`
-  - Monitoring: `operations/monitoring/`
-  - Maintenance: `operations/maintenance/`
+  - Deployment: `templates/operations/deployment-guide.md`
+  - Kubernetes: `templates/operations/kubernetes-setup.md`
+  - Environment: `templates/operations/environment-setup.md`
+  - Production: `templates/operations/production-deployment.md`
+  - Scaling: `templates/operations/scaling-guide.md`
 
 ### LLM
 
@@ -62,7 +69,7 @@
   - API: `templates/api/`
   - Architecture: `templates/architecture/`
   - Testing: `templates/testing/`
-  - Deployment: `templates/deployment/`
+  - Operations: `templates/operations/`
 
 ## Migration Status
 
@@ -70,6 +77,8 @@
 
 - Architecture Documentation
 - Development Resources
+  - Kubernetes Tools Documentation
+  - Helm and Kustomize Guides
 - Performance Resources
 - Templates and API
 - Security Documentation
@@ -96,24 +105,30 @@
 
 ### Deployment
 
-- Kubernetes: `operations/deployment/kubernetes/`
-- Helm: `operations/deployment/helm/`
-- Environment: `operations/deployment/environment/`
-- Production: `operations/deployment/production/`
+- Kubernetes Tools: `development/tools/kubernetes/`
+  - Helm Guide: `development/tools/kubernetes/helm.md`
+  - Kustomize Guide: `development/tools/kubernetes/kustomize.md`
+  - Tool Comparison: `development/tools/kubernetes/comparison.md`
+  - Service Evolution: `development/tools/kubernetes/service-evolution.md`
+- Kubernetes Setup: `templates/operations/kubernetes-setup.md`
+- Environment Setup: `templates/operations/environment-setup.md`
+- Production Deployment: `templates/operations/production-deployment.md`
+- Scaling Guide: `templates/operations/scaling-guide.md`
 
 ### Development
 
 - Patterns: `development/patterns/`
 - Testing: `development/testing/`
 - Tools: `development/tools/`
+  - Kubernetes: `development/tools/kubernetes/`
 - Best Practices: `development/best-practices/`
 
 ### Operations
 
-- Monitoring: `operations/monitoring/`
-- Maintenance: `operations/maintenance/`
-- Health Checks: `operations/health/`
-- Incident Response: `operations/incidents/`
+- Monitoring: `templates/operations/monitoring/`
+- Maintenance: `templates/operations/maintenance/`
+- Health Checks: `templates/operations/health/`
+- Incident Response: `templates/operations/incidents/`
 
 ## Status Legend
 
@@ -131,14 +146,15 @@
 
 ## Quick Links
 
-- [Main Documentation](../README.md)
+- [Main Documentation](README.md)
 - [Architecture Overview](architecture/README.md)
 - [Development Guide](development/README.md)
-- [Operations Guide](operations/README.md)
+- [Operations Guide](templates/operations/deployment-guide.md)
 - [Security Guide](security/README.md)
 - [Performance Guide](performance/README.md)
 - [LLM Guide](llm/README.md)
 - [Templates](templates/README.md)
+- [Kubernetes Tools](development/tools/kubernetes/README.md)
 
 ## Architecture Diagrams
 

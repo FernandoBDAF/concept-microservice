@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+namespace: profile-dev
+
+labels:
+  - pairs:
+      environment: development
+
+patches:
+  - path: profile-api/patch-deployment.yaml
+  - path: profile-storage/patch-deployment.yaml
+  - path: auth/patch-deployment.yaml
+  - path: database/patch-deployment.yaml
+
+configMapGenerator:
+  - name: profile-service-config
+    literals:
+      - ENVIRONMENT=development
+      - LOG_LEVEL=debug
