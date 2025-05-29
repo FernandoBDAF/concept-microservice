@@ -10,10 +10,10 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"microservices/services/profile-storage/internal/logger"
-	"microservices/services/profile-storage/internal/models"
-	"microservices/services/profile-storage/internal/service"
-	pb "microservices/services/profile-storage/proto/profile"
+	pb "microservices/services/storage-service/api/proto/profile"
+	"microservices/services/storage-service/internal/domain/models"
+	"microservices/services/storage-service/internal/domain/service"
+	"microservices/services/storage-service/internal/pkg/logger"
 )
 
 // Server implements the gRPC profile service

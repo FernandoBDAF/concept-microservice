@@ -1,4 +1,4 @@
-module microservices/services/profile-storage
+module microservices/services/storage-service
 
 go 1.23.0
 

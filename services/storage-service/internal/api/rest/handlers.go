@@ -7,8 +7,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 
-	"microservices/services/profile-storage/internal/models"
-	"microservices/services/profile-storage/internal/service"
+	"microservices/services/storage-service/internal/domain/models"
+	"microservices/services/storage-service/internal/domain/service"
 )
 
 // Handler handles HTTP requests for the profile storage service

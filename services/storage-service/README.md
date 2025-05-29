@@ -30,60 +30,104 @@ INITIAL CONTEXT FOR LLM - never change the context-----------------------------
 
 ## Overview
 
-The Storage Service is a critical component of our microservices architecture, responsible for data persistence and database operations. It provides a robust and scalable solution for managing user profiles, addresses, and contact information while ensuring data integrity, consistency, and security.
+The Storage Service is a critical component of our microservices architecture, responsible for managing data persistence and retrieval operations. It provides a unified interface for storing and accessing data across different storage backends.
 
-## Role in the System
+### Role in the System
 
-The Storage Service interacts with several components in our microservices ecosystem:
+The Storage Service interacts with several other services in our microservices ecosystem:
 
-### Internal Services
+1. **Internal Services**
 
-- **Auth Service**: Validates authentication tokens and permissions
-- **Profile Service**: Manages user profile data and operations
-- **Cache Service**: Coordinates data caching strategies
-- **Queue Service**: Handles asynchronous data operations
-- **Worker Service**: Processes background data tasks
-- **Monitoring Service**: Tracks performance and health metrics
+   - Profile Service: Stores user profile data
+   - Auth Service: Manages authentication data
+   - Cache Service: Optimizes data access
+   - Queue Service: Handles async operations
+   - Monitoring Service: Tracks system health
 
-### External Services
+2. **External Services**
+   - PostgreSQL: Primary data storage
+   - Redis: Caching layer
+   - MinIO: Object storage
+   - Elasticsearch: Search indexing
 
-- **PostgreSQL**: Primary database for data persistence
-- **Redis**: Caching and rate limiting
+### Main Functionalities
 
-## Main Functionalities
+1. **Data Management**
 
-### 1. Data Management
+   - CRUD operations
+   - Data validation
+   - Transaction management
+   - Data integrity checks
 
-- Profile CRUD operations
-- Address management
-- Contact information handling
-- Data validation and integrity checks
-- Soft delete functionality
-- Data versioning
+2. **Storage Operations**
 
-### 2. Performance Optimization
+   - File upload/download
+   - Object storage
+   - Data backup/restore
+   - Data migration
 
-- Query optimization
-- Connection pooling
-- Caching strategies
-- Batch operations
-- Index management
+3. **Performance Optimization**
 
-### 3. Security Features
+   - Caching strategies
+   - Query optimization
+   - Connection pooling
+   - Load balancing
 
-- Data encryption
-- Access control
-- Audit logging
-- Rate limiting
-- Input validation
+4. **Monitoring and Health**
+   - Health check endpoints
+   - Performance metrics
+   - Error tracking
+   - Resource monitoring
 
-### 4. Monitoring and Health
+## Project Structure
 
-- Health checks
-- Performance metrics
-- Error tracking
-- Resource monitoring
-- Database metrics
+```
+storage-service/
+├── cmd/
+│   └── storage-service/
+│       └── main.go
+├── internal/
+│   ├── api/
+│   │   ├── handlers/
+│   │   ├── middleware/
+│   │   └── routes/
+│   ├── domain/
+│   │   ├── models/
+│   │   ├── services/
+│   │   └── interfaces/
+│   ├── infrastructure/
+│   │   ├── database/
+│   │   ├── repository/
+│   │   └── storage/
+│   ├── config/
+│   ├── pkg/
+│   │   ├── logger/
+│   │   ├── metrics/
+│   │   └── utils/
+│   └── server/
+│       ├── http/
+│       └── grpc/
+├── pkg/
+│   └── client/
+├── api/
+│   ├── proto/
+│   └── openapi/
+├── deployments/
+├── docs/
+│   ├── api/
+│   └── architecture/
+├── scripts/
+├── test/
+│   ├── integration/
+│   └── e2e/
+├── Dockerfile
+├── go.mod
+├── go.sum
+├── README.md
+├── CONTEXT.md
+├── INTERFACE.md
+└── TRACKER.md
+```
 
 ## Quick Start
 
@@ -91,9 +135,10 @@ The Storage Service interacts with several components in our microservices ecosy
 
 - Go 1.21 or later
 - Docker and Docker Compose
-- PostgreSQL 14.0
-- Redis 6.2
-- Make (optional, for using Makefile commands)
+- Kubernetes cluster (for production)
+- PostgreSQL 14 or later
+- Redis 6 or later
+- MinIO (for object storage)
 
 ### Setup
 
@@ -110,123 +155,79 @@ The Storage Service interacts with several components in our microservices ecosy
    go mod download
    ```
 
-3. **Configure Environment**
+3. **Configuration**
+   Create a `config.yaml` file:
 
-   ```bash
-   cp .env.example .env
-   # Edit .env with your configuration
+   ```yaml
+   service:
+     name: storage-service
+     version: 1.0.0
+     port: 8080
+
+   database:
+     host: localhost
+     port: 5432
+     name: storage
+     user: postgres
+     password: your-password
+
+   redis:
+     host: localhost
+     port: 6379
+     password: your-password
+
+   minio:
+     endpoint: localhost:9000
+     access_key: minioadmin
+     secret_key: minioadmin
+     use_ssl: false
    ```
 
-4. **Start the Service**
+4. **Run Locally**
 
    ```bash
-   # Using Go
    go run cmd/storage-service/main.go
+   ```
 
-   # Using Docker
+5. **Run with Docker**
+   ```bash
    docker-compose up -d
    ```
 
-### Configuration
+### Development
 
-Essential environment variables:
-
-```env
-# Service Configuration
-SERVICE_NAME=storage-service
-SERVICE_PORT=8080
-SERVICE_ENV=development
-
-# Database Configuration
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=profiles
-DB_USER=profile_storage
-DB_PASSWORD=your_password
-DB_MAX_CONNECTIONS=20
-DB_CONNECTION_TIMEOUT=5s
-
-# Redis Configuration
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=your_password
-REDIS_DB=0
-
-# Security Configuration
-JWT_SECRET=your_jwt_secret
-API_KEY=your_api_key
-```
-
-### Running with Docker
-
-1. **Build the Image**
+1. **Common Tasks**
 
    ```bash
-   docker build -t storage-service:latest .
-   ```
-
-2. **Run the Container**
-   ```bash
-   docker run -p 8080:8080 \
-     --env-file .env \
-     storage-service:latest
-   ```
-
-## Development
-
-### Common Tasks
-
-1. **Running Tests**
-
-   ```bash
-   # Unit tests
-   go test ./internal/...
-
-   # Integration tests
-   go test ./tests/integration/...
-
-   # All tests
+   # Run tests
    go test ./...
-   ```
 
-2. **Building the Service**
-
-   ```bash
+   # Build service
    go build -o storage-service ./cmd/storage-service
-   ```
 
-3. **Running Linter**
-   ```bash
+   # Run linter
    golangci-lint run
    ```
 
-### Project Structure
+2. **Testing**
 
-```
-storage-service/
-├── cmd/
-│   └── storage-service/    # Service entry point
-├── internal/
-│   ├── api/               # API handlers
-│   ├── service/           # Business logic
-│   ├── storage/           # Database operations
-│   └── integration/       # Service integration
-├── pkg/
-│   └── models/            # Data models
-├── tests/
-│   ├── integration/       # Integration tests
-│   └── unit/             # Unit tests
-├── configs/              # Configuration files
-├── scripts/              # Utility scripts
-└── docs/                 # Documentation
-```
+   ```bash
+   # Unit tests
+   go test -v ./internal/...
+
+   # Integration tests
+   go test -v ./test/integration/...
+
+   # Load tests
+   k6 run ./test/load/storage-service.js
+   ```
 
 ## Documentation
 
 For more detailed information, refer to:
 
 - [CONTEXT.md](./CONTEXT.md): Technical architecture and design decisions
-- [INTERFACE.md](./INTERFACE.md): API documentation and service interfaces
+- [INTERFACE.md](./INTERFACE.md): API endpoints and service interactions
 - [TRACKER.md](./TRACKER.md): Development progress and planned features
 
 ## Contributing

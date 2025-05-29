@@ -5,7 +5,7 @@ import (
 	"log"
 	"net/http"
 
-	"microservices/services/profile-storage/internal/config"
+	"microservices/services/storage-service/internal/config"
 
 	"github.com/gorilla/mux"
 )

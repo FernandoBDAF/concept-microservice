@@ -46,7 +46,7 @@ RUN sh scripts/generate_proto.sh
 # Build the application
 # CGO_ENABLED=0: Creates a statically linked binary
 # GOOS=linux: Ensures the binary runs in Linux containers
-RUN CGO_ENABLED=0 GOOS=linux go build -o profile-storage ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -o storage-service ./cmd/server
 
 # Final stage
 # Using a minimal Alpine image for the runtime
@@ -58,7 +58,7 @@ WORKDIR /app
 
 # Copy only the compiled binary from the builder stage
 # This follows the multi-stage build pattern to minimize the final image size
-COPY --from=builder /app/profile-storage .
+COPY --from=builder /app/storage-service .
 
 # Expose the ports the application will use
 # 8080: REST API port
@@ -66,4 +66,4 @@ COPY --from=builder /app/profile-storage .
 EXPOSE 8080 50051
 
 # Command to run the application
-CMD ["./profile-storage"] 
+CMD ["./storage-service"] 

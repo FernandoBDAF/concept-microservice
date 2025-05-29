@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"microservices/services/profile-storage/internal/config"
-	"microservices/services/profile-storage/internal/logger"
-	"microservices/services/profile-storage/internal/metrics"
+	"microservices/services/storage-service/internal/config"
+	"microservices/services/storage-service/internal/pkg/logger"
+	"microservices/services/storage-service/internal/pkg/metrics"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"

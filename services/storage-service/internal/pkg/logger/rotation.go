@@ -44,7 +44,7 @@ func setupLogRotation(config RotationConfig) (zapcore.Core, error) {
 
 	// Create a lumberjack logger for log rotation
 	rotator := &lumberjack.Logger{
-		Filename:   filepath.Join(config.LogDir, "profile-storage.log"),
+		Filename:   filepath.Join(config.LogDir, "storage-service.log"),
 		MaxSize:    config.MaxSize, // megabytes
 		MaxBackups: config.MaxBackups,
 		MaxAge:     config.MaxAge, // days

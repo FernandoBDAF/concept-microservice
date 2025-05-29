@@ -1,185 +1,385 @@
-# Storage Service Interface
+# Storage Service Interface Documentation
 
-## API Endpoints
+## API Overview
 
-### Profile Operations
+The Storage Service provides a RESTful API for managing data storage operations. All endpoints are prefixed with `/api/v1/storage`.
 
-1. **Create Profile**
+## Authentication
 
-   - `POST /api/v1/profiles`
-   - Creates a new profile
-   - Request body:
-     ```json
-     {
-       "email": "string",
-       "name": "string",
-       "metadata": {
-         "preferences": {}
-       }
-     }
-     ```
-   - Response: Profile object
+All endpoints require authentication using a Bearer token in the Authorization header:
 
-2. **Get Profile**
+```
+Authorization: Bearer <token>
+```
 
-   - `GET /api/v1/profiles/{id}`
-   - Retrieves profile details
-   - Response: Profile object
+## Endpoints
 
-3. **Update Profile**
+### File Operations
 
-   - `PUT /api/v1/profiles/{id}`
-   - Updates profile information
-   - Request body:
-     ```json
-     {
-       "name": "string",
-       "metadata": {
-         "preferences": {}
-       }
-     }
-     ```
-   - Response: Updated Profile object
+#### Upload File
 
-4. **Delete Profile**
-   - `DELETE /api/v1/profiles/{id}`
-   - Soft deletes a profile
-   - Response: Success message
+```http
+POST /api/v1/storage/files
+```
 
-### Address Operations
+Uploads a new file to storage.
 
-1. **Create Address**
+##### Request
 
-   - `POST /api/v1/profiles/{id}/addresses`
-   - Adds an address to a profile
-   - Request body:
-     ```json
-     {
-       "type": "string",
-       "street": "string",
-       "city": "string",
-       "state": "string",
-       "country": "string",
-       "postal_code": "string",
-       "is_default": "boolean"
-     }
-     ```
-   - Response: Address object
+```http
+Content-Type: multipart/form-data
 
-2. **List Addresses**
+file: <file>
+type: string
+path: string
+metadata: {
+    "content_type": "string",
+    "attributes": {}
+}
+```
 
-   - `GET /api/v1/profiles/{id}/addresses`
-   - Lists all addresses for a profile
-   - Response: Array of Address objects
+##### Response
 
-3. **Update Address**
+```json
+{
+  "status": "success",
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "type": "file",
+    "path": "/uploads/example.pdf",
+    "size": 1024,
+    "created_at": "2024-02-20T10:00:00Z",
+    "updated_at": "2024-02-20T10:00:00Z",
+    "metadata": {
+      "content_type": "application/pdf",
+      "version": 1,
+      "attributes": {
+        "owner": "user123",
+        "tags": ["document", "pdf"]
+      }
+    }
+  }
+}
+```
 
-   - `PUT /api/v1/profiles/{id}/addresses/{address_id}`
-   - Updates address information
-   - Request body:
-     ```json
-     {
-       "street": "string",
-       "city": "string",
-       "state": "string",
-       "country": "string",
-       "postal_code": "string",
-       "is_default": "boolean"
-     }
-     ```
-   - Response: Updated Address object
+#### Download File
 
-4. **Delete Address**
-   - `DELETE /api/v1/profiles/{id}/addresses/{address_id}`
-   - Removes an address
-   - Response: Success message
+```http
+GET /api/v1/storage/files/{id}
+```
 
-### Contact Operations
+Downloads a file from storage.
 
-1. **Create Contact**
+##### Response
 
-   - `POST /api/v1/profiles/{id}/contacts`
-   - Adds a contact to a profile
-   - Request body:
-     ```json
-     {
-       "type": "string",
-       "value": "string",
-       "is_verified": "boolean"
-     }
-     ```
-   - Response: Contact object
+```http
+Content-Type: <file_content_type>
+Content-Disposition: attachment; filename="<filename>"
 
-2. **List Contacts**
+<file_content>
+```
 
-   - `GET /api/v1/profiles/{id}/contacts`
-   - Lists all contacts for a profile
-   - Response: Array of Contact objects
+#### Delete File
 
-3. **Update Contact**
+```http
+DELETE /api/v1/storage/files/{id}
+```
 
-   - `PUT /api/v1/profiles/{id}/contacts/{contact_id}`
-   - Updates contact information
-   - Request body:
-     ```json
-     {
-       "value": "string",
-       "is_verified": "boolean"
-     }
-     ```
-   - Response: Updated Contact object
+Deletes a file from storage.
 
-4. **Delete Contact**
-   - `DELETE /api/v1/profiles/{id}/contacts/{contact_id}`
-   - Removes a contact
-   - Response: Success message
+##### Response
+
+```json
+{
+  "status": "success",
+  "message": "File deleted successfully"
+}
+```
+
+### Object Storage Operations
+
+#### Create Object
+
+```http
+POST /api/v1/storage/objects
+```
+
+Creates a new object in storage.
+
+##### Request Body
+
+```json
+{
+  "type": "object",
+  "path": "/objects/example",
+  "data": {
+    "key": "value"
+  },
+  "metadata": {
+    "content_type": "application/json",
+    "attributes": {}
+  }
+}
+```
+
+##### Response
+
+```json
+{
+  "status": "success",
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "type": "object",
+    "path": "/objects/example",
+    "size": 1024,
+    "created_at": "2024-02-20T10:00:00Z",
+    "updated_at": "2024-02-20T10:00:00Z",
+    "metadata": {
+      "content_type": "application/json",
+      "version": 1,
+      "attributes": {}
+    }
+  }
+}
+```
+
+#### Get Object
+
+```http
+GET /api/v1/storage/objects/{id}
+```
+
+Retrieves an object from storage.
+
+##### Response
+
+```json
+{
+  "status": "success",
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "type": "object",
+    "path": "/objects/example",
+    "data": {
+      "key": "value"
+    },
+    "created_at": "2024-02-20T10:00:00Z",
+    "updated_at": "2024-02-20T10:00:00Z",
+    "metadata": {
+      "content_type": "application/json",
+      "version": 1,
+      "attributes": {}
+    }
+  }
+}
+```
+
+#### Update Object
+
+```http
+PUT /api/v1/storage/objects/{id}
+```
+
+Updates an existing object in storage.
+
+##### Request Body
+
+```json
+{
+  "data": {
+    "key": "updated_value"
+  },
+  "metadata": {
+    "attributes": {
+      "updated": true
+    }
+  }
+}
+```
+
+##### Response
+
+```json
+{
+  "status": "success",
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "type": "object",
+    "path": "/objects/example",
+    "data": {
+      "key": "updated_value"
+    },
+    "created_at": "2024-02-20T10:00:00Z",
+    "updated_at": "2024-02-20T10:00:00Z",
+    "metadata": {
+      "content_type": "application/json",
+      "version": 2,
+      "attributes": {
+        "updated": true
+      }
+    }
+  }
+}
+```
+
+### Batch Operations
+
+#### Batch Upload
+
+```http
+POST /api/v1/storage/batch/upload
+```
+
+Uploads multiple files in a single request.
+
+##### Request
+
+```http
+Content-Type: multipart/form-data
+
+files[]: <file1>
+files[]: <file2>
+type: string
+path: string
+metadata: {
+    "content_type": "string",
+    "attributes": {}
+}
+```
+
+##### Response
+
+```json
+{
+  "status": "success",
+  "data": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "type": "file",
+      "path": "/uploads/file1.pdf",
+      "size": 1024,
+      "created_at": "2024-02-20T10:00:00Z",
+      "updated_at": "2024-02-20T10:00:00Z",
+      "metadata": {
+        "content_type": "application/pdf",
+        "version": 1,
+        "attributes": {}
+      }
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440001",
+      "type": "file",
+      "path": "/uploads/file2.pdf",
+      "size": 2048,
+      "created_at": "2024-02-20T10:00:00Z",
+      "updated_at": "2024-02-20T10:00:00Z",
+      "metadata": {
+        "content_type": "application/pdf",
+        "version": 1,
+        "attributes": {}
+      }
+    }
+  ]
+}
+```
 
 ### Health and Metrics
 
-1. **Health Check**
+#### Health Check
 
-   - `GET /health`
-   - Returns service health status
-   - Response:
-     ```json
-     {
-       "status": "string",
-       "version": "string",
-       "uptime": "string"
-     }
-     ```
+```http
+GET /health
+```
 
-2. **Database Metrics**
+Checks the health status of the service.
 
-   - `GET /metrics/database`
-   - Returns database performance metrics
-   - Response: Database metrics object
+##### Response
 
-3. **API Metrics**
-   - `GET /metrics/api`
-   - Returns API performance metrics
-   - Response: API metrics object
+```json
+{
+  "status": "healthy",
+  "version": "1.0.0",
+  "timestamp": "2024-02-20T10:00:00Z"
+}
+```
+
+#### Metrics
+
+```http
+GET /metrics
+```
+
+Returns Prometheus metrics.
+
+##### Response
+
+```
+# HELP storage_service_requests_total Total number of requests
+# TYPE storage_service_requests_total counter
+storage_service_requests_total{endpoint="/api/v1/storage/files",method="POST"} 100
+
+# HELP storage_service_request_duration_seconds Request duration in seconds
+# TYPE storage_service_request_duration_seconds histogram
+storage_service_request_duration_seconds_bucket{endpoint="/api/v1/storage/files",method="POST",le="0.1"} 90
+```
+
+## Error Responses
+
+All endpoints may return the following error responses:
+
+### Validation Error
+
+```json
+{
+  "type": "VALIDATION_ERROR",
+  "message": "Invalid request data",
+  "details": ["File size exceeds limit", "Invalid file type"]
+}
+```
+
+### Not Found Error
+
+```json
+{
+  "type": "NOT_FOUND_ERROR",
+  "message": "File not found"
+}
+```
+
+### Storage Full Error
+
+```json
+{
+  "type": "STORAGE_FULL_ERROR",
+  "message": "Storage quota exceeded"
+}
+```
+
+### Storage Unavailable Error
+
+```json
+{
+  "type": "STORAGE_UNAVAILABLE_ERROR",
+  "message": "Storage service temporarily unavailable"
+}
+```
+
+## Rate Limiting
+
+The API implements rate limiting:
+
+- 100 requests per minute per IP
+- 1000 requests per hour per IP
+
+Rate limit headers are included in all responses:
+
+```
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 99
+X-RateLimit-Reset: 1613822400
+```
 
 ## Service Dependencies
-
-### External Services
-
-1. **PostgreSQL**
-
-   - Purpose: Primary data storage
-   - Operations:
-     - Data persistence
-     - Transaction management
-     - Query execution
-     - Connection management
-
-2. **Redis**
-   - Purpose: Caching and rate limiting
-   - Operations:
-     - Query result caching
-     - Rate limiting
-     - Session storage
-     - Temporary data storage
 
 ### Internal Services
 
@@ -191,8 +391,15 @@
      - Permission checking
      - User context
 
-2. **Monitoring Service**
+2. **Cache Service**
 
+   - Purpose: Performance optimization
+   - Operations:
+     - Data caching
+     - Cache invalidation
+     - Cache warming
+
+3. **Monitoring Service**
    - Purpose: Metrics and monitoring
    - Operations:
      - Metrics collection
@@ -200,117 +407,27 @@
      - Health checks
      - Alerting
 
-3. **Logging Service**
-   - Purpose: Centralized logging
+### External Services
+
+1. **PostgreSQL**
+
+   - Purpose: Metadata storage
    - Operations:
-     - Log collection
-     - Log aggregation
-     - Log analysis
+     - File metadata
+     - Object metadata
+     - Access logs
 
-## Message Queue Topics
+2. **MinIO**
 
-### Profile Events
+   - Purpose: Object storage
+   - Operations:
+     - File storage
+     - Object storage
+     - Data backup
 
-1. **Profile Changes**
-
-   - Topic: `profiles.changes`
-   - Events:
-     - Profile created
-     - Profile updated
-     - Profile deleted
-     - Profile restored
-
-2. **Address Changes**
-
-   - Topic: `profiles.addresses`
-   - Events:
-     - Address added
-     - Address updated
-     - Address deleted
-     - Default address changed
-
-3. **Contact Changes**
-   - Topic: `profiles.contacts`
-   - Events:
-     - Contact added
-     - Contact updated
-     - Contact deleted
-     - Contact verified
-
-## Response Formats
-
-### Success Response
-
-```json
-{
-  "status": "success",
-  "data": {
-    // Response data
-  },
-  "message": "string"
-}
-```
-
-### Error Response
-
-```json
-{
-  "status": "error",
-  "error": {
-    "code": "string",
-    "message": "string",
-    "details": ["string"]
-  }
-}
-```
-
-## Rate Limiting
-
-1. **API Limits**
-
-   - Profile creation: 100 requests/minute
-   - Profile updates: 200 requests/minute
-   - Profile queries: 500 requests/minute
-   - Address operations: 200 requests/minute
-   - Contact operations: 200 requests/minute
-
-2. **Query Limits**
-   - Maximum batch size: 100 records
-   - Maximum query depth: 3 levels
-   - Maximum result size: 1000 records
-   - Maximum query timeout: 30 seconds
-
-## Security Headers
-
-### Required Headers
-
-1. **Authorization**
-
-   - `Authorization: Bearer <token>`
-   - JWT token for authentication
-
-2. **Request ID**
-   - `X-Request-ID: <uuid>`
-   - Unique request identifier
-
-### Optional Headers
-
-1. **Client Info**
-
-   - `X-Client-ID: <string>`
-   - Client identifier
-
-2. **Trace ID**
-   - `X-Trace-ID: <uuid>`
-   - Distributed tracing ID
-
-## CORS Configuration
-
-```json
-{
-  "allowed_origins": ["https://api.example.com", "https://admin.example.com"],
-  "allowed_methods": ["GET", "POST", "PUT", "DELETE"],
-  "allowed_headers": ["Authorization", "Content-Type", "X-Request-ID"],
-  "max_age": 3600
-}
-```
+3. **Redis**
+   - Purpose: Caching
+   - Operations:
+     - Cache storage
+     - Rate limiting
+     - Session management

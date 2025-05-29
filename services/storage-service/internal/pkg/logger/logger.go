@@ -35,7 +35,7 @@ func DefaultConfig() Config {
 	return Config{
 		Environment: "development",
 		Level:       "info",
-		ServiceName: "profile-storage",
+		ServiceName: "storage-service",
 		Rotation:    DefaultRotationConfig(),
 	}
 }

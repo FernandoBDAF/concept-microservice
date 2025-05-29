@@ -4,40 +4,48 @@
 
 ### Core Components
 
-1. **Storage Layer** (`internal/storage/`)
+1. **API Layer** (`internal/api/`)
 
-   - Database operations
-   - Data persistence
-   - Transaction management
-   - Connection pooling
-   - Query optimization
-   - Data validation
+   - REST API endpoints
+   - Request validation
+   - Response formatting
+   - Error handling
+   - Rate limiting
+   - Authentication middleware
 
-2. **Service Layer** (`internal/service/`)
+2. **Domain Layer** (`internal/domain/`)
 
    - Business logic
+   - Domain models
+   - Service interfaces
    - Data transformation
    - Integration with shared libraries
    - Error handling
    - Request validation
    - Response formatting
 
-3. **API Layer** (`internal/api/`)
+3. **Infrastructure Layer** (`internal/infrastructure/`)
 
-   - REST API endpoints
-   - gRPC service
-   - Health checks
-   - Metrics endpoints
-   - Request validation
-   - Response formatting
+   - Database implementations
+   - Repository implementations
+   - Storage implementations
+   - External service adapters
 
-4. **Integration Layer** (`internal/integration/`)
-   - Shared libraries integration
-   - API services communication
-   - Circuit breaking
-   - Retry mechanisms
-   - Service discovery
-   - Load balancing
+4. **Configuration** (`internal/config/`)
+
+   - Configuration management
+   - Environment variable handling
+   - Configuration validation
+
+5. **Internal Shared Packages** (`internal/pkg/`)
+
+   - Logging utilities
+   - Metrics collection
+   - Common utilities
+
+6. **Server Setup** (`internal/server/`)
+   - Server setup and configuration
+   - Protocol-specific server implementations
 
 ### Design Patterns
 
@@ -48,64 +56,34 @@
    - Query optimization
    - Transaction management
 
-2. **Factory Pattern**
+2. **Unit of Work Pattern**
 
-   - Connection factory
-   - Client factory
-   - Repository factory
-   - Service factory
+   - Transaction management
+   - Data consistency
+   - Atomic operations
+   - Rollback support
 
-3. **Strategy Pattern**
+3. **Factory Pattern**
 
-   - Query strategies
-   - Caching strategies
-   - Retry strategies
-   - Error handling strategies
+   - Storage provider creation
+   - Database connection management
+   - Repository instantiation
 
-4. **Observer Pattern**
-   - Database monitoring
-   - Performance tracking
-   - Health monitoring
-   - Error tracking
-
-### Frameworks and Libraries
-
-1. **Database Framework**
-
-   - PostgreSQL driver
-   - Connection pooling
-   - Query builder
-   - Migration tool
-
-2. **Web Framework**
-
-   - Gin for HTTP routing
-   - gRPC for RPC
-   - Validator for request validation
-   - JWT-Go for authentication
-
-3. **Testing**
-
-   - Go testing package
-   - Testify for assertions
-   - Mockery for mocking
-   - Testcontainers for integration tests
-
-4. **Utilities**
-   - Zap for logging
-   - Viper for configuration
-   - Wire for dependency injection
-   - UUID for IDs
+4. **Strategy Pattern**
+   - Storage strategy selection
+   - Caching strategy implementation
+   - Backup strategy management
 
 ### Data Models
 
-1. **Profile Model**
+1. **Storage Model**
 
 ```go
-type Profile struct {
+type Storage struct {
     ID          string    `json:"id"`
-    Email       string    `json:"email"`
-    Name        string    `json:"name"`
+    Type        string    `json:"type"`
+    Path        string    `json:"path"`
+    Size        int64     `json:"size"`
     CreatedAt   time.Time `json:"created_at"`
     UpdatedAt   time.Time `json:"updated_at"`
     DeletedAt   time.Time `json:"deleted_at,omitempty"`
@@ -113,65 +91,49 @@ type Profile struct {
 }
 
 type Metadata struct {
-    Version     int       `json:"version"`
-    LastLogin   time.Time `json:"last_login,omitempty"`
-    Preferences map[string]interface{} `json:"preferences"`
+    ContentType string                 `json:"content_type"`
+    Version     int                    `json:"version"`
+    Attributes  map[string]interface{} `json:"attributes"`
 }
 ```
 
-2. **Address Model**
+2. **Storage Request/Response Models**
 
 ```go
-type Address struct {
-    ID          string    `json:"id"`
-    ProfileID   string    `json:"profile_id"`
-    Type        string    `json:"type"`
-    Street      string    `json:"street"`
-    City        string    `json:"city"`
-    State       string    `json:"state"`
-    Country     string    `json:"country"`
-    PostalCode  string    `json:"postal_code"`
-    IsDefault   bool      `json:"is_default"`
-    CreatedAt   time.Time `json:"created_at"`
-    UpdatedAt   time.Time `json:"updated_at"`
+type StorageRequest struct {
+    Type     string                 `json:"type" validate:"required"`
+    Path     string                 `json:"path" validate:"required"`
+    Metadata map[string]interface{} `json:"metadata"`
+}
+
+type StorageResponse struct {
+    Status  string   `json:"status"`
+    Data    *Storage `json:"data,omitempty"`
+    Message string   `json:"message,omitempty"`
 }
 ```
 
-3. **Contact Model**
+### Integration Strategy
 
-```go
-type Contact struct {
-    ID          string    `json:"id"`
-    ProfileID   string    `json:"profile_id"`
-    Type        string    `json:"type"`
-    Value       string    `json:"value"`
-    IsVerified  bool      `json:"is_verified"`
-    CreatedAt   time.Time `json:"created_at"`
-    UpdatedAt   time.Time `json:"updated_at"`
-}
-```
+1. **Storage Providers**
 
-### Storage Strategy
+   - File system storage
+   - Object storage (MinIO)
+   - Database storage
+   - Cache storage
 
-1. **Data Types**
+2. **Caching Strategy**
 
-   - Profile data
-   - Address data
-   - Contact data
-   - Metadata
+   - Cache-aside pattern
+   - Write-through caching
+   - Cache invalidation
+   - Cache warming
 
-2. **Storage Patterns**
-
-   - CRUD operations
-   - Batch operations
-   - Query optimization
-   - Transaction management
-
-3. **Persistence Strategy**
-   - Data persistence
-   - Soft deletion
-   - Version control
-   - Audit logging
+3. **Backup Strategy**
+   - Incremental backups
+   - Full backups
+   - Backup rotation
+   - Restore procedures
 
 ### Error Handling
 
@@ -181,10 +143,10 @@ type Contact struct {
 type ErrorType string
 
 const (
-    ErrNotFound        ErrorType = "NOT_FOUND_ERROR"
     ErrValidation      ErrorType = "VALIDATION_ERROR"
-    ErrDatabase        ErrorType = "DATABASE_ERROR"
-    ErrDuplicateEntry ErrorType = "DUPLICATE_ENTRY_ERROR"
+    ErrNotFound        ErrorType = "NOT_FOUND_ERROR"
+    ErrStorageFull     ErrorType = "STORAGE_FULL_ERROR"
+    ErrStorageUnavailable ErrorType = "STORAGE_UNAVAILABLE_ERROR"
 )
 ```
 
@@ -209,45 +171,40 @@ type ErrorResponse struct {
 
 2. **Log Fields**
    - Request ID
-   - Profile ID
+   - Storage ID
    - Operation type
    - Duration
    - Error details
 
 ### Metrics Collection
 
-1. **Database Metrics**
+1. **Storage Metrics**
 
+   - Storage usage
+   - Operation rates
+   - Error rates
+   - Latency percentiles
+
+2. **Performance Metrics**
+   - Cache hit/miss rates
    - Query performance
-   - Connection pool
-   - Transaction rates
-   - Error rates
-
-2. **API Metrics**
-   - Request rates
-   - Response times
-   - Error rates
-   - Resource usage
+   - Resource utilization
+   - Throughput metrics
 
 ### Security Implementation
 
-1. **Authentication**
+1. **Access Control**
 
-   - JWT validation
-   - API key validation
    - Role-based access
+   - Permission management
+   - Resource access control
+   - API key management
 
-2. **Authorization**
-
-   - Data access control
-   - Operation permissions
-   - Resource limits
-
-3. **Data Security**
+2. **Data Security**
    - Data encryption
-   - Secure connections
+   - Secure transmission
    - Access logging
-   - Audit trail
+   - Audit trails
 
 ### Testing Strategy
 
@@ -255,18 +212,18 @@ type ErrorResponse struct {
 
    - Repository tests
    - Service tests
-   - API tests
-   - Validation tests
+   - Handler tests
+   - Utility tests
 
 2. **Integration Tests**
 
-   - Database integration
-   - API integration
-   - Service integration
-   - End-to-end tests
+   - Storage provider tests
+   - Database tests
+   - Cache tests
+   - API tests
 
 3. **Performance Tests**
-   - Query performance
-   - API performance
    - Load testing
    - Stress testing
+   - Endurance testing
+   - Scalability testing
