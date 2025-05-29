@@ -26,217 +26,431 @@ INITIAL CONTEXT FOR LLM - never change the context-----------------------------
 
 ---
 
-# Storage Service
+# Profile Storage Service
 
 ## Overview
 
-The Storage Service is a critical component of our microservices architecture, responsible for managing data persistence and retrieval operations. It provides a unified interface for storing and accessing data across different storage backends.
+The Profile Storage Service is responsible for data persistence and database operations. It integrates with shared libraries to provide robust data storage capabilities with proper monitoring, logging, and error handling.
 
-### Role in the System
+## Architecture
 
-The Storage Service interacts with several other services in our microservices ecosystem:
+### Core Components
 
-1. **Internal Services**
+1. **Storage Layer**
 
-   - Profile Service: Stores user profile data
-   - Auth Service: Manages authentication data
-   - Cache Service: Optimizes data access
-   - Queue Service: Handles async operations
-   - Monitoring Service: Tracks system health
-
-2. **External Services**
-   - PostgreSQL: Primary data storage
-   - Redis: Caching layer
-   - MinIO: Object storage
-   - Elasticsearch: Search indexing
-
-### Main Functionalities
-
-1. **Data Management**
-
-   - CRUD operations
-   - Data validation
+   - Database operations
+   - Data persistence
    - Transaction management
-   - Data integrity checks
-
-2. **Storage Operations**
-
-   - File upload/download
-   - Object storage
-   - Data backup/restore
-   - Data migration
-
-3. **Performance Optimization**
-
-   - Caching strategies
-   - Query optimization
    - Connection pooling
-   - Load balancing
 
-4. **Monitoring and Health**
-   - Health check endpoints
-   - Performance metrics
-   - Error tracking
-   - Resource monitoring
+2. **Service Layer**
 
-## Project Structure
+   - Business logic
+   - Data transformation
+   - Integration with shared libraries
+   - Error handling
 
+3. **Integration Layer**
+   - Shared libraries integration
+   - API services communication
+   - Circuit breaking
+   - Retry mechanisms
+
+### Shared Libraries Integration
+
+1. **Logging Library**
+
+   ```go
+   // Initialize logger
+   logger := logging.NewLogger("profile-storage")
+
+   // Usage example
+   logger.Info("Processing storage operation",
+       logging.WithField("operation", "update"),
+       logging.WithField("profile_id", profileID))
+   ```
+
+2. **Monitoring Library**
+
+   ```go
+   // Initialize collector
+   monitor := monitoring.NewCollector("profile-storage")
+
+   // Usage example
+   monitor.IncStorageOperations("update")
+   defer monitor.ObserveDuration("storage_update")
+   ```
+
+3. **Storage Library**
+
+   ```go
+   // Initialize storage client
+   storageClient := storage.NewAPIClient(storage.Config{
+       Endpoint: "http://storage-api:8080",
+       Timeout:  time.Second * 5,
+   })
+
+   // Usage example
+   err = storageClient.Update(ctx, "profiles", profileID, profileData)
+   ```
+
+### Service Integration Library
+
+```go
+// Initialize service integration
+integration := integration.NewServiceIntegration(integration.Config{
+    ServiceName: "profile-storage",
+    Discovery:   "kubernetes",
+})
+
+// Register health checks
+integration.RegisterHealthCheck("database", func() error {
+    return db.HealthCheck(ctx)
+})
+
+// Use circuit breaker
+breaker := integration.NewCircuitBreaker("database", integration.CircuitBreakerConfig{
+    Threshold: 5,
+    Timeout:   time.Second * 30,
+})
+
+// Use retry mechanism
+retry := integration.NewRetry(integration.RetryConfig{
+    MaxAttempts: 3,
+    Backoff:     time.Second * 2,
+})
 ```
-storage-service/
-├── cmd/
-│   └── storage-service/
-│       └── main.go
-├── internal/
-│   ├── api/
-│   │   ├── handlers/
-│   │   ├── middleware/
-│   │   └── routes/
-│   ├── domain/
-│   │   ├── models/
-│   │   ├── services/
-│   │   └── interfaces/
-│   ├── infrastructure/
-│   │   ├── database/
-│   │   ├── repository/
-│   │   └── storage/
-│   ├── config/
-│   ├── pkg/
-│   │   ├── logger/
-│   │   ├── metrics/
-│   │   └── utils/
-│   └── server/
-│       ├── http/
-│       └── grpc/
-├── pkg/
-│   └── client/
-├── api/
-│   ├── proto/
-│   └── openapi/
-├── deployments/
-├── docs/
-│   ├── api/
-│   └── architecture/
-├── scripts/
-├── test/
-│   ├── integration/
-│   └── e2e/
-├── Dockerfile
-├── go.mod
-├── go.sum
-├── README.md
-├── CONTEXT.md
-├── INTERFACE.md
-└── TRACKER.md
+
+## Complex Integration Patterns
+
+### 1. Transaction Management
+
+```go
+func (s *StorageService) UpdateProfile(ctx context.Context, profile *Profile) error {
+    // Create transaction context
+    txCtx := integration.NewTransactionContext(ctx)
+    defer txCtx.Cleanup()
+
+    // Begin transaction
+    if err := txCtx.Begin(); err != nil {
+        return err
+    }
+
+    // Update profile
+    if err := s.db.UpdateProfile(txCtx, profile); err != nil {
+        txCtx.Rollback()
+        return err
+    }
+
+    // Update related data
+    if err := s.db.UpdateProfileMetadata(txCtx, profile.ID, profile.Metadata); err != nil {
+        txCtx.Rollback()
+        return err
+    }
+
+    return txCtx.Commit()
+}
 ```
 
-## Quick Start
+### 2. Batch Processing
 
-### Prerequisites
+```go
+func (s *StorageService) BatchUpdateProfiles(ctx context.Context, profiles []*Profile) error {
+    // Setup batch processor
+    processor := integration.NewBatchProcessor(integration.BatchProcessorConfig{
+        BatchSize: 100,
+        Workers:   5,
+    })
 
-- Go 1.21 or later
-- Docker and Docker Compose
-- Kubernetes cluster (for production)
-- PostgreSQL 14 or later
-- Redis 6 or later
-- MinIO (for object storage)
+    // Process profiles in batches
+    return processor.Process(ctx, profiles, func(ctx context.Context, batch []*Profile) error {
+        return s.db.BatchUpdateProfiles(ctx, batch)
+    })
+}
+```
+
+## Configuration
+
+### Base Configuration
+
+```yaml
+service:
+  name: profile-storage
+  version: 1.0.0
+  port: 8080
+
+logging:
+  level: info
+  format: json
+  output: stdout
+
+monitoring:
+  enabled: true
+  prometheus:
+    path: /metrics
+    port: 9090
+
+integration:
+  service_discovery: kubernetes
+  circuit_breaker:
+    threshold: 5
+    timeout: 30s
+  retry:
+    max_attempts: 3
+    backoff: 2s
+```
+
+### Service-Specific Configuration
+
+```yaml
+database:
+  host: postgres
+  port: 5432
+  name: profiles
+  user: profile_storage
+  password: ${DB_PASSWORD}
+  max_connections: 20
+  connection_timeout: 5s
+  circuit_breaker:
+    threshold: 5
+    timeout: 30s
+```
+
+## Error Handling
+
+### Standard Error Patterns
+
+```go
+// Error handling with logging and monitoring
+if err != nil {
+    switch {
+    case errors.Is(err, db.ErrNotFound):
+        logger.Warn("Profile not found", logging.WithError(err))
+        monitor.IncNotFound()
+    case errors.Is(err, db.ErrConnection):
+        logger.Error("Database connection error", logging.WithError(err))
+        monitor.IncConnectionErrors()
+    case errors.Is(err, db.ErrTimeout):
+        logger.Error("Database timeout", logging.WithError(err))
+        monitor.IncTimeoutErrors()
+    default:
+        logger.Error("Unexpected error", logging.WithError(err))
+        monitor.IncErrors()
+    }
+    return nil, err
+}
+```
+
+## Health Checks
+
+### Service Health
+
+```go
+// Register health checks
+integration.RegisterHealthCheck("database", func() error {
+    return db.HealthCheck(ctx)
+})
+```
+
+## Metrics
+
+### Standard Metrics
+
+```go
+// Storage metrics
+monitor.IncStorageOperations("update")
+monitor.ObserveStorageLatency("update", latency)
+
+// Database metrics
+monitor.IncDatabaseOperations("update")
+monitor.ObserveDatabaseLatency("update", latency)
+monitor.ObserveConnectionPoolSize(poolSize)
+```
+
+## Development
 
 ### Setup
 
-1. **Clone the Repository**
-
-   ```bash
-   git clone https://github.com/your-org/microservices.git
-   cd microservices/services/storage-service
-   ```
-
-2. **Install Dependencies**
+1. Install dependencies:
 
    ```bash
    go mod download
    ```
 
-3. **Configuration**
-   Create a `config.yaml` file:
-
-   ```yaml
-   service:
-     name: storage-service
-     version: 1.0.0
-     port: 8080
-
-   database:
-     host: localhost
-     port: 5432
-     name: storage
-     user: postgres
-     password: your-password
-
-   redis:
-     host: localhost
-     port: 6379
-     password: your-password
-
-   minio:
-     endpoint: localhost:9000
-     access_key: minioadmin
-     secret_key: minioadmin
-     use_ssl: false
-   ```
-
-4. **Run Locally**
+2. Run tests:
 
    ```bash
-   go run cmd/storage-service/main.go
-   ```
-
-5. **Run with Docker**
-   ```bash
-   docker-compose up -d
-   ```
-
-### Development
-
-1. **Common Tasks**
-
-   ```bash
-   # Run tests
    go test ./...
-
-   # Build service
-   go build -o storage-service ./cmd/storage-service
-
-   # Run linter
-   golangci-lint run
    ```
 
-2. **Testing**
+3. Build service:
+   ```bash
+   go build -o profile-storage ./cmd/profile-storage
+   ```
+
+### Testing
+
+1. Unit tests:
 
    ```bash
-   # Unit tests
    go test -v ./internal/...
-
-   # Integration tests
-   go test -v ./test/integration/...
-
-   # Load tests
-   k6 run ./test/load/storage-service.js
    ```
 
-## Documentation
+2. Integration tests:
 
-For more detailed information, refer to:
+   ```bash
+   go test -v ./tests/integration/...
+   ```
 
-- [CONTEXT.md](./CONTEXT.md): Technical architecture and design decisions
-- [INTERFACE.md](./INTERFACE.md): API endpoints and service interactions
-- [TRACKER.md](./TRACKER.md): Development progress and planned features
+3. Load tests:
+   ```bash
+   k6 run ./tests/load/profile-storage.js
+   ```
+
+## Deployment
+
+### Kubernetes
+
+1. Apply configurations:
+
+   ```bash
+   kubectl apply -f k8s/
+   ```
+
+2. Verify deployment:
+
+   ```bash
+   kubectl get pods -n microservices
+   ```
+
+3. Check logs:
+   ```bash
+   kubectl logs -n microservices -l app=profile-storage
+   ```
+
+### Docker
+
+1. Build image:
+
+   ```bash
+   docker build -t profile-storage:latest .
+   ```
+
+2. Run container:
+   ```bash
+   docker run -p 8080:8080 profile-storage:latest
+   ```
+
+## Monitoring
+
+### Prometheus Metrics
+
+- Storage operation rates
+- Error rates
+- Latency percentiles
+- Connection pool metrics
+- Transaction metrics
+
+### Grafana Dashboards
+
+- Service overview
+- Error rates
+- Latency trends
+- Database performance
+- Connection pool status
+
+## Logging
+
+### Log Levels
+
+- ERROR: Service errors
+- WARN: Database warnings
+- INFO: Request processing
+- DEBUG: Detailed operations
+
+### Log Fields
+
+- service: profile-storage
+- trace_id: Request tracing
+- profile_id: Profile identifier
+- operation: Operation type
+- duration: Operation time
+- error: Error details
+
+## Security
+
+### Authentication
+
+- JWT token validation
+- Service-to-service authentication
+- API key management
+
+### Authorization
+
+- Role-based access control
+- Permission management
+- Resource access control
+
+## Dependencies
+
+### External Services
+
+- PostgreSQL Database
+- Storage API Service
+
+### Shared Libraries
+
+- Logging Library
+- Monitoring Library
+- Storage Client Library
+- Service Integration Library
+
+## API Documentation
+
+### OpenAPI Specification
+
+```yaml
+openapi: 3.0.0
+info:
+  title: Profile Storage API
+  version: 1.0.0
+paths:
+  /profiles:
+    get:
+      summary: List profiles
+      responses:
+        "200":
+          description: Success
+    post:
+      summary: Create profile
+      responses:
+        "201":
+          description: Created
+  /profiles/{id}:
+    get:
+      summary: Get profile
+      responses:
+        "200":
+          description: Success
+    put:
+      summary: Update profile
+      responses:
+        "200":
+          description: Success
+    delete:
+      summary: Delete profile
+      responses:
+        "204":
+          description: No Content
+```
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a pull request
+1. Fork repository
+2. Create feature branch
+3. Commit changes
+4. Push to branch
+5. Create pull request
 
 ## License
 

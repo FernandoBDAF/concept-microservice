@@ -1,31 +1,3 @@
-INITIAL CONTEXT FOR LLM - never change the context-----------------------------
--> THIS SECTION IS A GUIDELINE TO THE LLM CONSIDER BEFORE WORKING IN THIS FILE, DO NOT CHANGE THIS
-
--> GOES OF THE README FILE:
-
-- This file serves as the technical documentation of the service, providing a comprehensive overview of the codebase
-- It should document:
-  - Service architecture and design decisions
-  - Component structure and relationships
-  - API endpoints and interfaces
-  - Dependencies and integration points
-  - Configuration and deployment details
-- This is the primary reference for understanding the technical implementation
-- This file should be in sync with the `/TRACKER&MANAGER.md` where development progress and tasks are tracked
-- While TRACKER&MANAGER.md focuses on "what" and "when", this file focuses on "how" and "why"
-
--> CONSIDERER BEFORE UPDATING THIS FILE:
-
-- Never add fictional dates, version numbers, or metrics. Only include real, verified information. If information is not available, mark it as "To be determined" or remove the section.
-- The changes in this file need to be incremental or to update informations that you confidentilly have knowlegde, they should not be guesses. If there are questions or uncertanty add comments asking for clarification instead.
-- Check the `../../microservices/docs` folder for comprehensive project details, including architecture, development guidelines, and integration points. This will help in making informed decisions, haver better context and updates to the development plan. Always compare the implementation of this project with the plan described in the docs and whenever there are inconsistancies, add comments.
-- Consider structuring this documentation separating the components and describing each one of them and adding sections to how they interact with each other - because this will be very dinamic and updated during the development process it will make clear what to update after each change
-- This documentation is focusing in the current component that is part of a larger project, to have a more sistemic view check `../../microservices/TRACKER&MANAGER` and `../../microservices/README`
-- Do not forget to be LLM focus, so because this will be used
-- For LLM-specific guidelines and patterns, refer to [LLM Integration Guide](../../docs/llm/README.md)
-
----
-
 # Auth Service
 
 ## Overview
