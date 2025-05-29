@@ -1,96 +1,105 @@
-# Auth Service Technical Context
+# Auth Service Context
 
 ## Internal Architecture
 
 ### Core Components
 
-1. **API Layer** (`internal/api/`)
+1. **API Layer** (`internal/server/http`)
 
-   - REST API endpoints using Gin framework
-   - Request validation using validator
+   - REST API handlers
+   - gRPC service implementations
+   - Request validation
    - Response formatting
-   - Error handling middleware
-   - Rate limiting middleware
-   - CORS configuration
-
-2. **Authentication Module** (`internal/auth/`)
-
-   - JWT token generation and validation
-   - Password hashing using bcrypt
-   - Session management with Redis
-   - OAuth 2.0 integration
-   - Clerk integration layer
-
-3. **Authorization Module** (`internal/auth/rbac/`)
-
-   - Role-based access control (RBAC)
-   - Permission management
-   - Policy enforcement
-   - Access token validation
-
-4. **Service Layer** (`internal/service/`)
-
-   - Business logic implementation
-   - Transaction management
    - Error handling
-   - Event publishing
 
-5. **Repository Layer** (`internal/repository/`)
-   - Database operations using GORM
-   - Redis operations
-   - Data validation
-   - Query optimization
+2. **Domain Layer** (`internal/domain`)
+
+   - Authentication business logic
+   - Authorization rules
+   - User management
+   - Session handling
+   - Security policies
+
+3. **Infrastructure Layer** (`internal/infrastructure`)
+
+   - Database interactions
+   - Cache management
+   - External service clients
+   - Message queue integration
+   - File system operations
+
+4. **Configuration** (`internal/pkg/config`)
+
+   - Environment configuration
+   - Service settings
+   - Feature flags
+   - Security parameters
+
+5. **Internal Shared Packages** (`internal/pkg`)
+
+   - Logging utilities
+   - Metrics collection
+   - Common utilities
+   - Error handling
+   - Validation helpers
+
+6. **Server Setup** (`internal/server`)
+   - HTTP server configuration
+   - gRPC server setup
+   - Middleware configuration
+   - Route registration
+   - Server lifecycle management
 
 ### Design Patterns
 
 1. **Repository Pattern**
 
-   - Abstracts database operations
-   - Provides consistent data access interface
-   - Enables easy testing and mocking
+   - Data access abstraction
+   - Database operations
+   - Cache operations
+   - External service interactions
 
-2. **Service Layer Pattern**
+2. **Factory Pattern**
 
-   - Implements business logic
-   - Coordinates between repositories
-   - Handles transactions
+   - Service instantiation
+   - Client creation
+   - Configuration loading
+   - Dependency injection
 
-3. **Middleware Pattern**
+3. **Strategy Pattern**
 
-   - Authentication middleware
-   - Authorization middleware
-   - Logging middleware
-   - Error handling middleware
+   - Authentication methods
+   - Authorization policies
+   - Token validation
+   - Password hashing
 
-4. **Factory Pattern**
-   - Service factory
-   - Repository factory
-   - Client factory
+4. **Observer Pattern**
+   - Event handling
+   - Audit logging
+   - Metrics collection
+   - Health monitoring
 
 ### Frameworks and Libraries
 
 1. **Web Framework**
 
-   - Gin for HTTP routing and middleware
-   - Validator for request validation
-   - JWT-Go for token handling
+   - Gin for HTTP server
+   - gRPC for RPC
+   - JWT for tokens
+   - OAuth2 for authentication
 
-2. **Database**
+2. **Testing**
 
-   - GORM for PostgreSQL operations
-   - Redis for session storage
-   - Migrations using golang-migrate
+   - Go testing
+   - Testify
+   - Mockery
+   - k6 for load testing
 
-3. **Testing**
-
-   - Go testing package
-   - Testify for assertions
-   - Mockery for mocking
-
-4. **Monitoring**
-   - Prometheus for metrics
-   - OpenTelemetry for tracing
+3. **Utilities**
    - Zap for logging
+   - Prometheus for metrics
+   - Viper for config
+   - GORM for database
 
 ### Data Models
 
@@ -98,12 +107,13 @@
 
 ```go
 type User struct {
-    ID        string    `gorm:"primaryKey"`
-    Email     string    `gorm:"uniqueIndex"`
-    Password  string
-    Role      string
-    CreatedAt time.Time
-    UpdatedAt time.Time
+    ID        string    `json:"id" gorm:"primaryKey"`
+    Email     string    `json:"email" gorm:"uniqueIndex"`
+    Password  string    `json:"-"`
+    Role      string    `json:"role"`
+    Status    string    `json:"status"`
+    CreatedAt time.Time `json:"created_at"`
+    UpdatedAt time.Time `json:"updated_at"`
 }
 ```
 
@@ -111,44 +121,51 @@ type User struct {
 
 ```go
 type Session struct {
-    ID        string    `gorm:"primaryKey"`
-    UserID    string    `gorm:"index"`
-    Token     string    `gorm:"uniqueIndex"`
-    ExpiresAt time.Time
-    CreatedAt time.Time
+    ID        string    `json:"id" gorm:"primaryKey"`
+    UserID    string    `json:"user_id"`
+    Token     string    `json:"token"`
+    ExpiresAt time.Time `json:"expires_at"`
+    CreatedAt time.Time `json:"created_at"`
+    UpdatedAt time.Time `json:"updated_at"`
 }
 ```
 
-3. **Role Model**
+3. **Request/Response Models**
 
 ```go
-type Role struct {
-    ID          string    `gorm:"primaryKey"`
-    Name        string    `gorm:"uniqueIndex"`
-    Permissions []string  `gorm:"type:text[]"`
-    CreatedAt   time.Time
-    UpdatedAt   time.Time
+type LoginRequest struct {
+    Email    string `json:"email" binding:"required,email"`
+    Password string `json:"password" binding:"required,min=8"`
+}
+
+type LoginResponse struct {
+    Token     string    `json:"token"`
+    ExpiresAt time.Time `json:"expires_at"`
+    User      User      `json:"user"`
 }
 ```
 
-### Caching Strategy
+### Integration Strategy
 
-1. **Session Cache**
+1. **Service Communication**
 
-   - Redis-based session storage
-   - TTL-based expiration
-   - Distributed locking for concurrent access
+   - REST API endpoints
+   - gRPC services
+   - Message queues
+   - Event publishing
 
-2. **Token Cache**
+2. **Caching Strategy**
 
-   - Redis-based token blacklist
-   - TTL-based expiration
-   - Batch operations for efficiency
+   - Redis for sessions
+   - In-memory cache
+   - Cache invalidation
+   - Cache warming
 
-3. **User Cache**
-   - Redis-based user data cache
-   - Invalidation on updates
-   - TTL-based expiration
+3. **Queue Strategy**
+   - Event publishing
+   - Background jobs
+   - Task scheduling
+   - Job processing
 
 ### Error Handling
 
@@ -158,11 +175,11 @@ type Role struct {
 type ErrorType string
 
 const (
-    ErrInvalidInput    ErrorType = "INVALID_INPUT"
-    ErrUnauthorized    ErrorType = "UNAUTHORIZED"
-    ErrForbidden       ErrorType = "FORBIDDEN"
-    ErrNotFound        ErrorType = "NOT_FOUND"
-    ErrInternal        ErrorType = "INTERNAL_ERROR"
+    ValidationError     ErrorType = "VALIDATION_ERROR"
+    AuthenticationError ErrorType = "AUTHENTICATION_ERROR"
+    AuthorizationError  ErrorType = "AUTHORIZATION_ERROR"
+    NotFoundError      ErrorType = "NOT_FOUND_ERROR"
+    InternalError      ErrorType = "INTERNAL_ERROR"
 )
 ```
 
@@ -181,69 +198,70 @@ type ErrorResponse struct {
 1. **Structured Logging**
 
    - JSON format
-   - Contextual fields
    - Log levels
-   - Request tracing
+   - Context fields
+   - Correlation IDs
 
 2. **Log Fields**
    - Request ID
    - User ID
    - Action
+   - Status
    - Duration
    - Error details
 
 ### Metrics Collection
 
-1. **Authentication Metrics**
+1. **API Metrics**
+
+   - Request count
+   - Response time
+   - Error rate
+   - Status codes
+
+2. **Auth Metrics**
 
    - Login attempts
-   - Registration attempts
    - Token validations
    - Session creations
+   - Permission checks
 
-2. **Performance Metrics**
-   - Response times
-   - Error rates
-   - Cache hit rates
-   - Database query times
+3. **System Metrics**
+   - CPU usage
+   - Memory usage
+   - Goroutine count
+   - GC stats
 
 ### Security Implementation
 
-1. **Password Security**
+1. **Authentication**
 
-   - Bcrypt hashing
-   - Salt generation
-   - Password policies
+   - JWT tokens
+   - Password hashing
+   - Session management
    - Rate limiting
 
-2. **Token Security**
-
-   - JWT signing
-   - Token rotation
-   - Blacklisting
-   - Expiration handling
-
-3. **Session Security**
-   - Secure session storage
-   - Session invalidation
-   - Device tracking
-   - Concurrent session limits
+2. **Authorization**
+   - Role-based access
+   - Permission checks
+   - Resource policies
+   - Token validation
 
 ### Testing Strategy
 
 1. **Unit Tests**
 
-   - Service layer tests
-   - Repository layer tests
-   - Utility function tests
-   - Mock dependencies
+   - Business logic
+   - Service layer
+   - Repository layer
+   - Utility functions
 
 2. **Integration Tests**
 
-   - API endpoint tests
-   - Database integration tests
-   - Redis integration tests
-   - External service integration
+   - API endpoints
+   - Database operations
+   - Cache operations
+   - External services
 
 3. **Performance Tests**
    - Load testing

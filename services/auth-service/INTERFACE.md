@@ -1,269 +1,379 @@
-# Auth Service Interface Details
+# Auth Service Interface Documentation
 
-## API Endpoints
+## API Overview
 
-### Authentication Endpoints
+The Auth Service provides a RESTful API for managing authentication and authorization. All endpoints are prefixed with `/api/v1/auth`.
 
-1. **User Registration**
+## Authentication
 
-   ```http
-   POST /v1/auth/register
-   Content-Type: application/json
+All endpoints except login and registration require authentication using a Bearer token in the Authorization header:
 
-   {
-     "email": "user@example.com",
-     "password": "securePassword123",
-     "role": "user"
-   }
-   ```
+```
+Authorization: Bearer <token>
+```
 
-2. **User Login**
+## Endpoints
 
-   ```http
-   POST /v1/auth/login
-   Content-Type: application/json
+### Authentication Operations
 
-   {
-     "email": "user@example.com",
-     "password": "securePassword123"
-   }
-   ```
+#### Login
 
-3. **Token Refresh**
+```http
+POST /api/v1/auth/login
+```
 
-   ```http
-   POST /v1/auth/token/refresh
-   Content-Type: application/json
+Authenticates a user and returns a JWT token.
 
-   {
-     "refresh_token": "refresh_token"
-   }
-   ```
+##### Request Body
 
-4. **Token Validation**
+```json
+{
+  "email": "user@example.com",
+  "password": "securepassword"
+}
+```
 
-   ```http
-   POST /v1/auth/token/validate
-   Content-Type: application/json
+##### Response
 
-   {
-     "token": "access_token"
-   }
-   ```
+```json
+{
+  "status": "success",
+  "data": {
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "expires_at": "2024-02-21T10:00:00Z",
+    "user": {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "email": "user@example.com",
+      "role": "user",
+      "status": "active",
+      "created_at": "2024-02-20T10:00:00Z",
+      "updated_at": "2024-02-20T10:00:00Z"
+    }
+  }
+}
+```
 
-### User Management Endpoints
+#### Register
 
-1. **Get Current User**
+```http
+POST /api/v1/auth/register
+```
 
-   ```http
-   GET /v1/users/me
-   Authorization: Bearer access_token
-   ```
+Registers a new user.
 
-2. **Get User by ID**
-   ```http
-   GET /v1/users/{id}
-   Authorization: Bearer access_token
-   ```
+##### Request Body
 
-### OAuth Endpoints
+```json
+{
+  "email": "newuser@example.com",
+  "password": "securepassword",
+  "name": "New User"
+}
+```
 
-1. **OAuth Authorization**
+##### Response
 
-   ```http
-   GET /v1/oauth/authorize
-   ```
+```json
+{
+  "status": "success",
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "email": "newuser@example.com",
+    "name": "New User",
+    "role": "user",
+    "status": "active",
+    "created_at": "2024-02-20T10:00:00Z",
+    "updated_at": "2024-02-20T10:00:00Z"
+  }
+}
+```
 
-2. **OAuth Token**
+#### Validate Token
 
-   ```http
-   POST /v1/oauth/token
-   Content-Type: application/json
+```http
+POST /api/v1/auth/validate
+```
 
-   {
-     "grant_type": "authorization_code",
-     "code": "authorization_code"
-   }
-   ```
+Validates a JWT token.
 
-3. **OAuth User Info**
-   ```http
-   GET /v1/oauth/userinfo
-   Authorization: Bearer oauth_access_token
-   ```
+##### Request Body
+
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+##### Response
+
+```json
+{
+  "status": "success",
+  "data": {
+    "valid": true,
+    "user": {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "email": "user@example.com",
+      "role": "user",
+      "status": "active"
+    }
+  }
+}
+```
+
+#### Refresh Token
+
+```http
+POST /api/v1/auth/refresh
+```
+
+Refreshes an expired JWT token.
+
+##### Request Body
+
+```json
+{
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+##### Response
+
+```json
+{
+  "status": "success",
+  "data": {
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "expires_at": "2024-02-21T10:00:00Z"
+  }
+}
+```
+
+### Session Operations
+
+#### Create Session
+
+```http
+POST /api/v1/auth/sessions
+```
+
+Creates a new session for a user.
+
+##### Request Body
+
+```json
+{
+  "user_id": "550e8400-e29b-41d4-a716-446655440000",
+  "device_info": {
+    "device_id": "device123",
+    "platform": "web",
+    "browser": "chrome"
+  }
+}
+```
+
+##### Response
+
+```json
+{
+  "status": "success",
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "user_id": "550e8400-e29b-41d4-a716-446655440000",
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "expires_at": "2024-02-21T10:00:00Z",
+    "created_at": "2024-02-20T10:00:00Z",
+    "updated_at": "2024-02-20T10:00:00Z"
+  }
+}
+```
+
+#### Get Session
+
+```http
+GET /api/v1/auth/sessions/{id}
+```
+
+Retrieves session information.
+
+##### Response
+
+```json
+{
+  "status": "success",
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "user_id": "550e8400-e29b-41d4-a716-446655440000",
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "expires_at": "2024-02-21T10:00:00Z",
+    "created_at": "2024-02-20T10:00:00Z",
+    "updated_at": "2024-02-20T10:00:00Z"
+  }
+}
+```
+
+#### Delete Session
+
+```http
+DELETE /api/v1/auth/sessions/{id}
+```
+
+Invalidates a session.
+
+##### Response
+
+```json
+{
+  "status": "success",
+  "message": "Session invalidated successfully"
+}
+```
+
+### Health and Metrics
+
+#### Health Check
+
+```http
+GET /health
+```
+
+Checks the health status of the service.
+
+##### Response
+
+```json
+{
+  "status": "healthy",
+  "version": "1.0.0",
+  "timestamp": "2024-02-20T10:00:00Z"
+}
+```
+
+#### Metrics
+
+```http
+GET /metrics
+```
+
+Returns Prometheus metrics.
+
+##### Response
+
+```
+# HELP auth_service_requests_total Total number of requests
+# TYPE auth_service_requests_total counter
+auth_service_requests_total{endpoint="/api/v1/auth/login",method="POST"} 100
+
+# HELP auth_service_request_duration_seconds Request duration in seconds
+# TYPE auth_service_request_duration_seconds histogram
+auth_service_request_duration_seconds_bucket{endpoint="/api/v1/auth/login",method="POST",le="0.1"} 90
+```
+
+## Error Responses
+
+All endpoints may return the following error responses:
+
+### Validation Error
+
+```json
+{
+  "type": "VALIDATION_ERROR",
+  "message": "Invalid request data",
+  "details": ["Email is required", "Password must be at least 8 characters"]
+}
+```
+
+### Authentication Error
+
+```json
+{
+  "type": "AUTHENTICATION_ERROR",
+  "message": "Invalid credentials"
+}
+```
+
+### Authorization Error
+
+```json
+{
+  "type": "AUTHORIZATION_ERROR",
+  "message": "Insufficient permissions"
+}
+```
+
+### Not Found Error
+
+```json
+{
+  "type": "NOT_FOUND_ERROR",
+  "message": "Session not found"
+}
+```
+
+## Rate Limiting
+
+The API implements rate limiting:
+
+- 100 requests per minute per IP
+- 1000 requests per hour per IP
+
+Rate limit headers are included in all responses:
+
+```
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 99
+X-RateLimit-Reset: 1613822400
+```
 
 ## Service Dependencies
-
-### External Services
-
-1. **Clerk Authentication**
-
-   - Purpose: User authentication and management
-   - Integration: REST API and Webhooks
-   - Events: User creation, updates, deletion
-
-2. **Redis**
-
-   - Purpose: Session storage and token caching
-   - Operations: GET, SET, DEL
-   - Keys: `session:{id}`, `token:{id}`
-
-3. **PostgreSQL**
-   - Purpose: User data and role storage
-   - Tables: users, roles, permissions
-   - Operations: CRUD operations
 
 ### Internal Services
 
 1. **Profile Service**
 
    - Purpose: User profile management
-   - Integration: REST API
-   - Events: Profile updates
+   - Operations:
+     - User data retrieval
+     - Profile updates
+     - User status checks
 
 2. **Cache Service**
 
-   - Purpose: Distributed caching
-   - Integration: Redis protocol
-   - Operations: Cache invalidation
+   - Purpose: Session management
+   - Operations:
+     - Session storage
+     - Token caching
+     - Rate limiting
 
 3. **Monitoring Service**
+   - Purpose: Metrics and monitoring
+   - Operations:
+     - Security metrics
+     - Performance monitoring
+     - Health checks
+     - Alerting
 
-   - Purpose: Metrics and health monitoring
-   - Integration: Prometheus metrics
-   - Events: Health checks
+### External Services
 
-4. **Worker Service**
-   - Purpose: Background tasks
-   - Integration: Message queue
-   - Tasks: Email notifications, cleanup
+1. **PostgreSQL**
 
-## Message Queue Topics
+   - Purpose: User data storage
+   - Operations:
+     - User records
+     - Session data
+     - Audit logs
 
-1. **Authentication Events**
+2. **Redis**
 
-   ```
-   auth.events.user.created
-   auth.events.user.updated
-   auth.events.user.deleted
-   auth.events.session.created
-   auth.events.session.expired
-   ```
+   - Purpose: Session management
+   - Operations:
+     - Session storage
+     - Token blacklist
+     - Rate limiting
 
-2. **Notification Events**
-   ```
-   auth.notifications.email.verification
-   auth.notifications.password.reset
-   auth.notifications.security.alert
-   ```
-
-## Webhook Endpoints
-
-1. **Clerk Webhooks**
-
-   ```http
-   POST /v1/webhooks/clerk
-   Content-Type: application/json
-
-   {
-     "type": "user.created",
-     "data": {
-       "id": "user_id",
-       "email": "user@example.com"
-     }
-   }
-   ```
-
-2. **OAuth Webhooks**
-
-   ```http
-   POST /v1/webhooks/oauth
-   Content-Type: application/json
-
-   {
-     "type": "token.refreshed",
-     "data": {
-       "user_id": "user_id",
-       "token": "new_token"
-     }
-   }
-   ```
-
-## Response Formats
-
-### Success Response
-
-```json
-{
-  "status": "success",
-  "message": "Operation successful",
-  "data": {
-    // Response data specific to the endpoint
-  }
-}
-```
-
-### Error Response
-
-```json
-{
-  "status": "error",
-  "message": "Error message",
-  "errors": [
-    {
-      "field": "field_name",
-      "message": "Error details"
-    }
-  ]
-}
-```
-
-## Rate Limiting
-
-1. **Authentication Endpoints**
-
-   - 20 requests per minute per IP
-   - 100 requests per minute per user
-
-2. **API Endpoints**
-   - 100 requests per minute per token
-   - 1000 requests per minute per IP
-
-## Security Headers
-
-1. **Required Headers**
-
-   ```
-   Authorization: Bearer <token>
-   Content-Type: application/json
-   ```
-
-2. **Optional Headers**
-   ```
-   X-Request-ID: <uuid>
-   X-Client-Version: <version>
-   ```
-
-## CORS Configuration
-
-```go
-config := cors.Config{
-    AllowedOrigins: []string{
-        "https://app.example.com",
-        "https://api.example.com",
-    },
-    AllowedMethods: []string{
-        "GET",
-        "POST",
-        "PUT",
-        "DELETE",
-        "OPTIONS",
-    },
-    AllowedHeaders: []string{
-        "Authorization",
-        "Content-Type",
-        "X-Request-ID",
-    },
-    MaxAge: 86400,
-}
-```
+3. **OAuth2 Providers**
+   - Purpose: External authentication
+   - Operations:
+     - Social login
+     - Token validation
+     - User info retrieval

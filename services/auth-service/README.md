@@ -2,175 +2,199 @@
 
 ## Overview
 
-The Auth Service is a critical component of our microservices architecture that handles user authentication, authorization, and session management. It serves as the central authentication hub for all other services in the system, providing secure user management and token-based authentication.
+The Auth Service is a critical component of our microservices architecture, responsible for managing authentication, authorization, and user session management. It provides secure access control and identity verification for all other services in the system.
 
-## Role in the System
+### Role in the System
 
-The Auth Service interacts with several components:
+The Auth Service interacts with several other services in our microservices ecosystem:
 
-1. **Frontend Applications**
+1. **Internal Services**
 
-   - Mobile apps and web applications authenticate users through this service
-   - Receives login/registration requests
-   - Provides JWT tokens for authenticated sessions
+   - Profile Service: User identity verification
+   - Storage Service: Access control for stored data
+   - Cache Service: Session management
+   - Monitoring Service: Security metrics and alerts
 
-2. **Other Microservices**
+2. **External Services**
+   - PostgreSQL: User and session data storage
+   - Redis: Session caching and rate limiting
+   - JWT: Token management
+   - OAuth2 providers: External authentication
 
-   - Profile Service: Validates user tokens and retrieves user information
-   - Cache Service: Stores session data and token blacklists
-   - Monitoring Service: Reports authentication metrics and health status
-   - Worker Service: Processes background authentication tasks
-
-3. **External Services**
-   - Clerk (Authentication Provider): Handles user authentication and management
-   - Redis: Manages session storage and token caching
-   - PostgreSQL: Stores user data and role information
-
-## Main Functionalities
+### Main Functionalities
 
 1. **Authentication**
 
-   - User registration and login
-   - JWT token generation and validation
-   - Session management
-   - OAuth 2.0 integration
+   - User authentication
+   - OAuth2 integration
+   - JWT token management
+   - Session handling
 
 2. **Authorization**
 
-   - Role-based access control (RBAC)
+   - Role-based access control
    - Permission management
    - Policy enforcement
+   - Resource access control
 
 3. **Security**
-   - Password hashing and validation
+
+   - Password hashing
+   - Token encryption
    - Rate limiting
-   - Token revocation
-   - Session management
+   - Security logging
+
+4. **Monitoring and Health**
+   - Security metrics
+   - Audit logging
+   - Health checks
+   - Performance monitoring
+
+## Project Structure
+
+```
+auth-service/
+├── cmd/
+│   └── auth-service/
+│       └── main.go
+├── internal/
+│   ├── domain/
+│   │   ├── models/
+│   │   ├── services/
+│   │   ├── security/
+│   │   └── interfaces/
+│   ├── infrastructure/
+│   │   ├── database/
+│   │   ├── repository/
+│   │   └── cache/
+│   ├── pkg/
+│   │   ├── config/
+│   │   ├── logger/
+│   │   └── utils/
+│   └── server/
+│       ├── http/
+│       └── grpc/
+├── pkg/
+│   └── client/
+├── api/
+│   ├── proto/
+│   └── openapi/
+├── deployments/
+│   ├── docker/
+│   └── k8s/
+├── docs/
+│   ├── api/
+│   └── architecture/
+├── scripts/
+├── test/
+│   ├── integration/
+│   └── e2e/
+├── Dockerfile
+├── go.mod
+├── go.sum
+├── README.md
+├── CONTEXT.md
+├── INTERFACE.md
+└── TRACKER.md
+```
 
 ## Quick Start
 
 ### Prerequisites
 
-- Go 1.21 or higher
+- Go 1.21 or later
 - Docker and Docker Compose
-- Make
-- PostgreSQL
-- Redis
+- Kubernetes cluster (for production)
+- PostgreSQL 14 or later
+- Redis 6 or later
 
 ### Setup
 
-1. Clone the repository:
+1. **Clone the Repository**
 
-```bash
-git clone <repository-url>
-cd auth-service
-```
+   ```bash
+   git clone https://github.com/your-org/microservices.git
+   cd microservices/services/auth-service
+   ```
 
-2. Install dependencies:
+2. **Install Dependencies**
 
-```bash
-make deps
-```
+   ```bash
+   go mod download
+   ```
 
-3. Configure environment:
+3. **Configuration**
+   Create a `config.yaml` file:
 
-```bash
-cp .env.example .env
-# Edit .env with your configuration
-```
+   ```yaml
+   service:
+     name: auth-service
+     version: 1.0.0
+     port: 8080
 
-4. Start the service:
+   database:
+     host: localhost
+     port: 5432
+     name: auth
+     user: postgres
+     password: your-password
 
-```bash
-make run
-```
+   redis:
+     host: localhost
+     port: 6379
+     password: your-password
 
-### Configuration
+   jwt:
+     secret: your-secret-key
+     expiration: 24h
+   ```
 
-Essential environment variables:
+4. **Run Locally**
 
-```bash
-# Service Configuration
-SERVICE_NAME=profile-auth
-SERVICE_PORT=8080
-METRICS_PORT=9090
+   ```bash
+   go run cmd/auth-service/main.go
+   ```
 
-# JWT Configuration
-JWT_SECRET=your-secret-key
-JWT_EXPIRATION=24h
-JWT_REFRESH_EXPIRATION=168h
+5. **Run with Docker**
+   ```bash
+   docker-compose up -d
+   ```
 
-# Database
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=auth_db
-DB_USER=auth_user
-DB_PASSWORD=your-password
+### Development
 
-# Redis
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=your-password
+1. **Common Tasks**
 
-# Clerk (if using)
-CLERK_SECRET_KEY=your-clerk-secret-key
-CLERK_FRONTEND_API=your-clerk-frontend-api
-CLERK_BACKEND_API=your-clerk-backend-api
-```
+   ```bash
+   # Run tests
+   go test ./...
 
-### Running with Docker
+   # Build service
+   go build -o auth-service ./cmd/auth-service
 
-```bash
-# Build and run
-docker-compose up --build
-```
+   # Run linter
+   golangci-lint run
+   ```
 
-## Development
+2. **Testing**
 
-### Common Tasks
+   ```bash
+   # Unit tests
+   go test -v ./internal/...
 
-1. Run tests:
+   # Integration tests
+   go test -v ./test/integration/...
 
-```bash
-make test
-```
-
-2. Build service:
-
-```bash
-make build
-```
-
-3. Run linter:
-
-```bash
-make lint
-```
-
-### Project Structure
-
-```
-auth-service/
-├── cmd/              # Application entry points
-├── internal/         # Private application code
-│   ├── api/         # API handlers and routes
-│   ├── auth/        # Authentication logic
-│   ├── config/      # Configuration
-│   ├── models/      # Data models
-│   ├── repository/  # Data access
-│   └── service/     # Business logic
-├── pkg/             # Public libraries
-├── test/            # Test files
-└── docs/            # Documentation
-```
+   # Load tests
+   k6 run ./test/load/auth-service.js
+   ```
 
 ## Documentation
 
-- [Context](./CONTEXT.md) - Technical details and architecture
-- [Interface](./INTERFACE.md) - Service connections and APIs
-- [Tracker](./TRACKER.md) - Development tasks and progress
-- [API Documentation](./docs/api.md) - API endpoints and usage
-- [Development Guide](./docs/development.md) - Development guidelines
+For more detailed information, refer to:
+
+- [CONTEXT.md](./CONTEXT.md): Technical architecture and design decisions
+- [INTERFACE.md](./INTERFACE.md): API endpoints and service interactions
+- [TRACKER.md](./TRACKER.md): Development progress and planned features
 
 ## Contributing
 
@@ -178,11 +202,11 @@ auth-service/
 2. Create a feature branch
 3. Commit your changes
 4. Push to the branch
-5. Create a Pull Request
+5. Create a pull request
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+MIT License
 
 ## Clerk Migration Plan
 
