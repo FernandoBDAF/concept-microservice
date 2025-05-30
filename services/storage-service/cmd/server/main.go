@@ -13,14 +13,14 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 
-	pb "microservices/services/storage-service/api/proto/profile"
-	grpcapi "microservices/services/storage-service/internal/api/grpc"
-	"microservices/services/storage-service/internal/api/rest"
-	"microservices/services/storage-service/internal/config"
-	"microservices/services/storage-service/internal/domain/service"
-	"microservices/services/storage-service/internal/infrastructure/database"
-	"microservices/services/storage-service/internal/infrastructure/repository"
-	"microservices/services/storage-service/internal/pkg/logger"
+	grpcapi "microservices/services/profile-storage/internal/api/grpc"
+	"microservices/services/profile-storage/internal/api/rest"
+	"microservices/services/profile-storage/internal/config"
+	"microservices/services/profile-storage/internal/database"
+	"microservices/services/profile-storage/internal/logger"
+	"microservices/services/profile-storage/internal/repository"
+	"microservices/services/profile-storage/internal/service"
+	pb "microservices/services/profile-storage/proto/profile"
 )
 
 func main() {

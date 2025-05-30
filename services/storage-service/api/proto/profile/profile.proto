@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package profile;
 
-option go_package = "microservices/services/storage-service/api/proto/profile";
+option go_package = "microservices/services/profile-storage/proto/profile";
 
 // Profile service definition
 service ProfileService {

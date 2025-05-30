@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"microservices/services/storage-service/internal/pkg/logger"
+	"microservices/services/profile-storage/internal/logger"
 )
 
 // LoggingConfig holds the logging configuration

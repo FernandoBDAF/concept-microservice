@@ -1,3 +1,12 @@
+Please use the template from @LLM.md to create a prompt for implementing 'Create logging package' as defined in @TRACKER.MD . The prompt should follow the Task Execution and Verification Guide from @TASK_EXECUTION.md , including:
+A clear breakdown of sub-tasks based on the task's effort level (5 story points)
+Specific verification steps for each change
+Documentation update requirements
+A completion checklist
+I will use this prompt in a new chat to implement the changes systematically.
+
+follow the guidelines bellow to implement the following task. Keep the @logging_package_prompt.md updated so we do not lose tracker of where we are and context:
+
 # Working with Cursor and Documentation
 
 ## Documentation Overview

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"microservices/services/storage-service/internal/infrastructure/database"
+	"microservices/services/profile-storage/internal/database"
 
 	"github.com/gorilla/mux"
 )

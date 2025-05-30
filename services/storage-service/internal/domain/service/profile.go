@@ -11,9 +11,9 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"microservices/services/storage-service/internal/domain/models"
-	"microservices/services/storage-service/internal/infrastructure/repository"
-	"microservices/services/storage-service/internal/pkg/logger"
+	"microservices/services/profile-storage/internal/logger"
+	"microservices/services/profile-storage/internal/models"
+	"microservices/services/profile-storage/internal/repository"
 )
 
 // Service errors

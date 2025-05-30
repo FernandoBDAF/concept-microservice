@@ -62,20 +62,35 @@
 
 ### Shared Component Strategy
 
-| Decision          | Centralized Common Package                                                                          |
-| ----------------- | --------------------------------------------------------------------------------------------------- | ---------- | ---------- | -------- |
-| Context           | Need for shared functionality across services                                                       |
-| Options           | 1. Monolithic common package<br>2. Multiple focused packages<br>3. Service-specific implementations |
-| Decision Matrix   |                                                                                                     | Option 1   | Option 2   | Option 3 |
-| ----------------- | ----------                                                                                          | ---------- | ---------- |
-| Maintainability   | 7                                                                                                   | 9          | 5          |
-| Reusability       | 8                                                                                                   | 7          | 4          |
-| Complexity        | 6                                                                                                   | 8          | 7          |
-| Testing           | 7                                                                                                   | 8          | 6          |
-| **Total Score**   | **28**                                                                                              | **32**     | **22**     |
-| Decision          | Multiple focused packages in `common/`                                                              |
-| Rationale         | Better maintainability and testing                                                                  |
-| Impact            | - Easier maintenance<br>- Better testing<br>- More packages to manage<br>- Clearer boundaries       |
+| Decision          | Centralized Package Structure                                                                   |
+| ----------------- | ----------------------------------------------------------------------------------------------- | ---------- | ---------- | -------- |
+| Context           | Need for shared functionality across services                                                   |
+| Options           | 1. Flat package structure<br>2. Nested package structure<br>3. Service-specific implementations |
+| Decision Matrix   |                                                                                                 | Option 1   | Option 2   | Option 3 |
+| ----------------- | ----------                                                                                      | ---------- | ---------- |
+| Maintainability   | 9                                                                                               | 7          | 5          |
+| Reusability       | 8                                                                                               | 7          | 4          |
+| Complexity        | 8                                                                                               | 6          | 7          |
+| Testing           | 8                                                                                               | 7          | 6          |
+| **Total Score**   | **33**                                                                                          | **27**     | **22**     |
+| Decision          | Flat package structure in `pkg/`                                                                |
+| Rationale         | Better maintainability and testing                                                              |
+| Impact            | - Easier maintenance<br>- Better testing<br>- Clearer boundaries<br>- Simplified imports        |
+
+### Package Organization
+
+```
+pkg/
+├── config/          # Configuration management
+├── errors/          # Error handling utilities
+├── interfaces/      # Shared interfaces
+├── logging/         # Logging utilities
+├── middleware/      # HTTP middleware
+├── models/          # Shared data models
+├── monitoring/      # Monitoring and metrics
+├── security/        # Security utilities
+└── utils/           # Common utilities
+```
 
 ### Model Compatibility Strategy
 

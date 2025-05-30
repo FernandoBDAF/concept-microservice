@@ -49,6 +49,23 @@ Each service follows a consistent structure:
 └── README.md        # Service documentation
 ```
 
+### Shared Package Structure
+
+The project uses a centralized package structure for shared functionality:
+
+```
+pkg/
+├── config/          # Configuration management
+├── errors/          # Error handling utilities
+├── interfaces/      # Shared interfaces
+├── logging/         # Logging utilities
+├── middleware/      # HTTP middleware
+├── models/          # Shared data models
+├── monitoring/      # Monitoring and metrics
+├── security/        # Security utilities
+└── utils/           # Common utilities
+```
+
 ## Implementation Standards
 
 ### Clean Architecture Adaptation

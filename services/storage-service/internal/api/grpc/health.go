@@ -10,7 +10,7 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 
-	"microservices/services/storage-service/internal/pkg/logger"
+	"microservices/services/profile-storage/internal/logger"
 )
 
 // HealthServer implements the gRPC health check service

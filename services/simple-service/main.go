@@ -80,6 +80,21 @@ type GetUserResponse struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// GinLoggerAdapter adapts our logger to the middleware's LogRequest interface
+type GinLoggerAdapter struct {
+	logger *logging.Logger
+}
+
+func (g *GinLoggerAdapter) LogRequest(r *http.Request, statusCode int, duration time.Duration) {
+	g.logger.Info("HTTP request",
+		zap.String("method", r.Method),
+		zap.String("path", r.URL.Path),
+		zap.String("ip", r.RemoteAddr),
+		zap.Int("status", statusCode),
+		zap.Duration("duration", duration),
+	)
+}
+
 // CreateUser handles requests to create a user
 func (h *UserHandler) CreateUser(c *gin.Context) {
 	// Log request
@@ -210,8 +225,9 @@ func main() {
 	// Create gin engine
 	r := gin.Default()
 
-	// Use middleware
-	r.Use(middleware.LoggingMiddleware(service.logger))
+	// Use middleware with the adapter
+	ginLogger := &GinLoggerAdapter{logger: service.logger}
+	r.Use(middleware.LoggingMiddleware(ginLogger))
 	r.Use(middleware.RecoveryMiddleware())
 	r.Use(middleware.CORSMiddleware())
 
