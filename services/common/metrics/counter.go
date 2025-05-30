@@ -19,7 +19,6 @@ func NewCounter(name, help string, labels []string) Counter {
 			labels: labels,
 			mType:  CounterType,
 		},
-		value: 0,
 	}
 }
 
@@ -30,10 +29,9 @@ func (c *counter) Inc() {
 
 // Add increments the counter by the given value
 func (c *counter) Add(value float64) {
-	if value < 0 {
-		return // Counters can only increase
+	if value > 0 {
+		atomic.AddUint64(&c.value, uint64(value))
 	}
-	atomic.AddUint64(&c.value, uint64(value))
 }
 
 // Get returns the current counter value

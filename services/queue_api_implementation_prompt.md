@@ -36,6 +36,63 @@ Implement a Queue API service that provides reliable message queuing capabilitie
    - Development configuration
    - RabbitMQ test documentation
 
+### Required Improvements 🔄
+
+Based on the API test results, the following improvements are needed:
+
+1. **Metrics Implementation**
+
+   - Implement missing Prometheus metrics:
+     - `queue_messages_total` with labels for queue and message type
+     - `queue_processing_duration_seconds` as a histogram with queue and type labels
+     - `queue_size` as a gauge with queue label
+     - `queue_errors_total` with labels for queue, type, and error
+   - Ensure metrics are properly registered and exposed
+   - Add metrics documentation
+   - Implement metrics validation in tests
+
+2. **Message Validation**
+
+   - Add comprehensive message validation:
+     - Required fields: id, type, timestamp, payload, priority
+     - Message type validation against allowed types
+     - Priority range validation (0-9)
+     - Payload structure validation
+     - Correlation ID presence
+   - Implement validation error responses
+   - Add validation tests
+
+3. **Queue Operations**
+
+   - Improve message publishing:
+     - Add message ID generation
+     - Implement timestamp handling
+     - Add correlation ID support
+     - Support message priority
+   - Enhance status endpoint:
+     - Add timestamp to status response
+     - Implement proper status tracking
+     - Add status validation
+   - Add operation tests
+
+4. **Error Handling**
+
+   - Implement proper error responses
+   - Add error logging
+   - Implement error metrics
+   - Add error recovery
+   - Add error tests
+
+5. **Testing**
+   - Add comprehensive test suite:
+     - Health check tests
+     - Queue operation tests
+     - Metrics tests
+     - Error handling tests
+     - Message validation tests
+   - Implement test automation
+   - Add test documentation
+
 ### In Progress 🔄
 
 1. **Message Processing**
@@ -256,6 +313,266 @@ dependencies:
    - [ ] Add integration tests
    - [ ] Implement performance tests
    - [ ] Set up test automation
+
+### Phase 5: RabbitMQ Client Improvements 🔄
+
+1. **Message Persistence Implementation**
+
+   - [ ] Configure persistent message delivery
+
+   ```go
+   amqp.Publishing{
+       DeliveryMode: amqp.Persistent,
+       ContentType: "application/json",
+       Body: body,
+   }
+   ```
+
+   - [ ] Ensure queues are declared as durable
+   - [ ] Add persistence configuration options
+   - [ ] Implement persistence metrics
+
+2. **Dead Letter Queue (DLQ) Setup**
+
+   - [ ] Create DLX (Dead Letter Exchange)
+
+   ```go
+   channel.ExchangeDeclare(
+       "dlx",
+       "direct",
+       true,  // durable
+       false, // auto-delete
+       false, // internal
+       false, // no-wait
+       nil,   // arguments
+   )
+   ```
+
+   - [ ] Configure DLQ with TTL
+
+   ```go
+   args := amqp.Table{
+       "x-dead-letter-exchange":    "dlx",
+       "x-dead-letter-routing-key": queueName,
+       "x-message-ttl":             int32(24 * 60 * 60 * 1000), // 24 hours
+   }
+   ```
+
+   - [ ] Set up DLQ message handling
+   - [ ] Implement DLQ monitoring
+   - [ ] Add DLQ metrics collection
+
+3. **Message Priority Support**
+
+   - [ ] Configure queue with priority support
+
+   ```go
+   args := amqp.Table{
+       "x-max-priority": 10, // Support 10 priority levels
+   }
+   ```
+
+   - [ ] Add priority to message publishing
+
+   ```go
+   amqp.Publishing{
+       Priority: uint8(priority),
+       // ... other properties
+   }
+   ```
+
+   - [ ] Implement priority-based routing
+   - [ ] Add priority metrics
+
+4. **Error Handling & Recovery**
+
+   - [ ] Implement retry mechanism
+
+   ```go
+   type RetryConfig struct {
+       MaxRetries    int
+       RetryDelay    time.Duration
+       MaxRetryDelay time.Duration
+   }
+   ```
+
+   - [ ] Add circuit breaker pattern
+   - [ ] Implement backoff strategy
+   - [ ] Add error metrics collection
+   - [ ] Set up error monitoring
+
+5. **Connection Management**
+
+   - [ ] Implement connection pooling
+
+   ```go
+   type ConnectionPool struct {
+       MaxConnections int
+       MaxChannels    int
+       IdleTimeout    time.Duration
+   }
+   ```
+
+   - [ ] Add connection health checks
+   - [ ] Implement automatic reconnection
+   - [ ] Add connection metrics
+   - [ ] Set up connection monitoring
+
+6. **Message TTL Configuration**
+
+   - [ ] Add TTL configuration
+
+   ```go
+   type TTLConfig struct {
+       DefaultTTL    time.Duration
+       MaxTTL        time.Duration
+       PerQueueTTL   map[string]time.Duration
+   }
+   ```
+
+   - [ ] Implement per-message TTL
+   - [ ] Add TTL validation
+   - [ ] Set up TTL monitoring
+   - [ ] Add TTL metrics
+
+7. **Monitoring & Metrics**
+
+   - [ ] Add message processing metrics
+
+   ```go
+   metrics:
+     - name: message_processing_duration
+       type: histogram
+       labels:
+         - queue
+         - priority
+     - name: message_retry_count
+       type: counter
+       labels:
+         - queue
+         - error_type
+   ```
+
+   - [ ] Implement queue depth monitoring
+   - [ ] Add consumer lag metrics
+   - [ ] Set up alerting rules
+   - [ ] Create monitoring dashboards
+
+8. **Configuration Management**
+
+   - [ ] Add comprehensive configuration options
+
+   ```yaml
+   rabbitmq:
+     connection:
+       pool_size: 5
+       idle_timeout: 60s
+     queue:
+       durable: true
+       auto_delete: false
+       max_priority: 10
+     message:
+       persistent: true
+       ttl: 24h
+     dlq:
+       enabled: true
+       ttl: 72h
+     retry:
+       max_attempts: 3
+       initial_delay: 1s
+       max_delay: 30s
+   ```
+
+   - [ ] Implement configuration validation
+   - [ ] Add configuration documentation
+   - [ ] Set up configuration monitoring
+
+9. **Testing Requirements**
+
+   - [ ] Add unit tests for new features
+   - [ ] Implement integration tests
+   - [ ] Add performance tests
+   - [ ] Create chaos tests
+   - [ ] Set up load tests
+
+10. **Documentation Updates**
+
+    - [ ] Update API documentation
+    - [ ] Add configuration guide
+    - [ ] Create troubleshooting guide
+    - [ ] Update monitoring guide
+    - [ ] Add performance tuning guide
+
+### Verification Steps for RabbitMQ Improvements
+
+1. **Message Persistence**
+
+   - [ ] Verify messages survive broker restart
+   - [ ] Test persistence with different message sizes
+   - [ ] Validate persistence metrics
+
+2. **DLQ Functionality**
+
+   - [ ] Test message routing to DLQ
+   - [ ] Verify TTL expiration
+   - [ ] Test DLQ message processing
+   - [ ] Validate DLQ metrics
+
+3. **Priority Handling**
+
+   - [ ] Test priority-based message ordering
+   - [ ] Verify priority limits
+   - [ ] Test priority with different queue depths
+   - [ ] Validate priority metrics
+
+4. **Error Recovery**
+
+   - [ ] Test retry mechanism
+   - [ ] Verify circuit breaker functionality
+   - [ ] Test backoff strategy
+   - [ ] Validate error metrics
+
+5. **Connection Management**
+
+   - [ ] Test connection pooling
+   - [ ] Verify reconnection logic
+   - [ ] Test connection limits
+   - [ ] Validate connection metrics
+
+6. **TTL Handling**
+   - [ ] Test message expiration
+   - [ ] Verify TTL configuration
+   - [ ] Test per-message TTL
+   - [ ] Validate TTL metrics
+
+### Success Criteria
+
+1. **Performance**
+
+   - Message persistence overhead < 10%
+   - Priority handling latency < 100ms
+   - Connection recovery time < 5s
+   - TTL processing delay < 1s
+
+2. **Reliability**
+
+   - Message loss rate < 0.01%
+   - DLQ processing success rate > 99.9%
+   - Connection stability > 99.9%
+   - Error recovery success rate > 99%
+
+3. **Monitoring**
+
+   - All metrics available in Prometheus
+   - Alerting rules configured
+   - Dashboards created
+   - Logging properly configured
+
+4. **Documentation**
+   - All features documented
+   - Configuration guide complete
+   - Troubleshooting guide available
+   - Performance tuning guide ready
 
 ## Next Steps
 

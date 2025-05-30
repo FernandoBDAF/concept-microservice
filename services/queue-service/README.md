@@ -33,6 +33,7 @@ The service follows clean architecture principles with the following layers:
 - Message persistence
 - Priority queues
 - Dead letter queues
+- Message TTL (Time-To-Live)
 
 ## Prerequisites
 
@@ -44,15 +45,67 @@ The service follows clean architecture principles with the following layers:
 
 The service can be configured using environment variables:
 
-| Variable        | Description                            | Default        |
-| --------------- | -------------------------------------- | -------------- |
-| SERVICE_PORT    | HTTP server port                       | 8080           |
-| SERVICE_ENV     | Environment (development/production)   | development    |
-| RABBITMQ_NODES  | Comma-separated list of RabbitMQ nodes | localhost:5672 |
-| LOG_LEVEL       | Logging level                          | info           |
-| LOG_FORMAT      | Log format (json/text)                 | json           |
-| METRICS_ENABLED | Enable Prometheus metrics              | true           |
-| METRICS_PORT    | Prometheus metrics port                | 9090           |
+| Variable             | Description                            | Default        |
+| -------------------- | -------------------------------------- | -------------- |
+| SERVICE_PORT         | HTTP server port                       | 8080           |
+| SERVICE_ENV          | Environment (development/production)   | development    |
+| RABBITMQ_NODES       | Comma-separated list of RabbitMQ nodes | localhost:5672 |
+| RABBITMQ_USERNAME    | RabbitMQ username                      | guest          |
+| RABBITMQ_PASSWORD    | RabbitMQ password                      | guest          |
+| RABBITMQ_VHOST       | RabbitMQ virtual host                  | /              |
+| RABBITMQ_MESSAGE_TTL | Message time-to-live duration          | 24h            |
+| LOG_LEVEL            | Logging level                          | info           |
+| LOG_FORMAT           | Log format (json/text)                 | json           |
+| METRICS_ENABLED      | Enable Prometheus metrics              | true           |
+| METRICS_PORT         | Prometheus metrics port                | 9090           |
+
+### Message Persistence
+
+Messages are persisted to disk by default, ensuring they survive RabbitMQ restarts and node failures. This is achieved through:
+
+- Durable queues
+- Persistent message delivery mode
+- Message acknowledgments
+- Dead letter queues for failed messages
+
+### Dead Letter Queues
+
+The service automatically creates dead letter queues (DLQ) for each queue. Failed messages are moved to the DLQ when:
+
+- Message processing fails
+- Message is rejected
+- Message TTL expires
+
+To inspect messages in the DLQ:
+
+```bash
+# List all queues including DLQs
+rabbitmqctl list_queues name messages_ready messages_unacknowledged
+
+# Get messages from a DLQ
+rabbitmqctl get_queue queue_name.dlq
+```
+
+### Message TTL
+
+Messages have a configurable time-to-live (TTL). When a message expires:
+
+1. It is automatically moved to the DLQ
+2. The original message is removed from the queue
+3. The message can be inspected in the DLQ
+
+Configure TTL using the `RABBITMQ_MESSAGE_TTL` environment variable:
+
+```bash
+# Set TTL to 1 hour
+export RABBITMQ_MESSAGE_TTL="1h"
+
+# Set TTL to 30 minutes
+export RABBITMQ_MESSAGE_TTL="30m"
+
+# Set TTL to 7 days
+export RABBITMQ_MESSAGE_TTL="168h"
+```
 
 ## API Endpoints
 
@@ -69,6 +122,10 @@ Content-Type: application/json
     "changes": {
       "name": "John Doe"
     }
+  },
+  "headers": {
+    "correlation_id": "123e4567-e89b-12d3-a456-426614174000",
+    "priority": 1
   }
 }
 ```
@@ -146,6 +203,16 @@ components:
           enum: [profile_update, cache_invalidation, background_job]
         payload:
           type: object
+        headers:
+          type: object
+          properties:
+            correlation_id:
+              type: string
+              format: uuid
+            priority:
+              type: integer
+              minimum: 0
+              maximum: 9
 ```
 
 ## Development
@@ -191,6 +258,8 @@ The service exposes Prometheus metrics at `/metrics`. Key metrics include:
 - Message processing latency
 - Error rates
 - Queue sizes
+- DLQ sizes
+- Message TTL statistics
 
 ## Error Handling
 
@@ -201,6 +270,8 @@ The service implements comprehensive error handling:
 - RabbitMQ connection errors
 - Message processing errors
 - Graceful degradation
+- Dead letter queue handling
+- Message TTL management
 
 ## Security
 
@@ -226,6 +297,10 @@ The service implements comprehensive error handling:
    export SERVICE_PORT=8080
    export SERVICE_ENV=production
    export RABBITMQ_NODES=rabbitmq-1:5672,rabbitmq-2:5672
+   export RABBITMQ_USERNAME=queue_user
+   export RABBITMQ_PASSWORD=secure_password
+   export RABBITMQ_VHOST=/queue
+   export RABBITMQ_MESSAGE_TTL=24h
    export LOG_LEVEL=info
    export LOG_FORMAT=json
    export METRICS_ENABLED=true
@@ -260,6 +335,8 @@ The service implements comprehensive error handling:
    - Error rates
    - Processing latency
    - Queue sizes
+   - DLQ sizes
+   - Message TTL statistics
 
 ## Troubleshooting Guide
 
@@ -276,11 +353,19 @@ The service implements comprehensive error handling:
    - Check message format
    - Verify queue configuration
    - Check consumer status
+   - Inspect DLQ for failed messages
 
 3. **Performance Issues**
+
    - Monitor message throughput
    - Check resource usage
    - Verify queue sizes
+   - Monitor DLQ sizes
+
+4. **Message TTL Issues**
+   - Verify TTL configuration
+   - Check DLQ for expired messages
+   - Monitor message age metrics
 
 ### Logging
 
@@ -307,6 +392,7 @@ The service implements comprehensive error handling:
 - Message encryption
 - Secure connections (TLS)
 - Audit logging
+- Message persistence security
 
 ### Best Practices
 
@@ -315,6 +401,7 @@ The service implements comprehensive error handling:
    - Use secrets management
    - Encrypt sensitive data
    - Regular key rotation
+   - Configure appropriate TTL values
 
 2. **Network**
 
@@ -326,6 +413,7 @@ The service implements comprehensive error handling:
    - Track security events
    - Monitor access patterns
    - Alert on anomalies
+   - Monitor DLQ sizes
 
 ## License
 

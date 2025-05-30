@@ -32,26 +32,3 @@ database:
   user: postgres
   password: postgres
   ssl_mode: disable
-
-environment: development
-version: 1.0.0
-settings:
-  server.port: 8080
-  server.host: localhost
-  server.timeout: 30s
-  logging.level: info
-  logging.format: json
-  logging.output: console
-  security.jwt_secret: "your-secret-key"
-  security.token_expiry: 24h
-  security.password_hash_cost: 10
-  metrics.enabled: true
-  metrics.prometheus.enabled: true
-  metrics.prometheus.path: /metrics
-  metrics.prometheus.port: 9090
-  database.host: localhost
-  database.port: 5432
-  database.name: users
-  database.user: postgres
-  database.password: postgres
-  database.ssl_mode: disable

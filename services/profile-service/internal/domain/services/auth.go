@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/fernandobarroso/profile-service/microservices/services/profile-service/internal/config"
+	"github.com/fernandobarroso/microservices/services/profile-service/internal/config"
 )
 
 // AuthServiceClient handles communication with the auth service

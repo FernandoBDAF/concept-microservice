@@ -7,6 +7,7 @@ resources:
   - auth
   - database
   - queue-service
+  - worker-service
 
 labels:
   - pairs:

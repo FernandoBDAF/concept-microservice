@@ -1,19 +1,27 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: rabbitmq
   labels:
     app: rabbitmq
     tier: database
+    service: profile
 spec:
+  serviceName: rabbitmq
   replicas: 1
   selector:
     matchLabels:
       app: rabbitmq
+      service: profile
   template:
     metadata:
       labels:
         app: rabbitmq
+        service: profile
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "15692"
+        prometheus.io/path: "/metrics"
     spec:
       containers:
         - name: rabbitmq
@@ -23,13 +31,8 @@ spec:
               containerPort: 5672
             - name: management
               containerPort: 15672
-          resources:
-            requests:
-              cpu: 200m
-              memory: 256Mi
-            limits:
-              cpu: 500m
-              memory: 512Mi
+            - name: metrics
+              containerPort: 15692
           env:
             - name: RABBITMQ_DEFAULT_USER
               valueFrom:
@@ -46,6 +49,17 @@ spec:
                 secretKeyRef:
                   name: rabbitmq-secrets
                   key: RABBITMQ_VHOST
+            - name: RABBITMQ_PROMETHEUS
+              value: "true"
+            - name: RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS
+              value: "-rabbit log_levels [{connection,info},{channel,info},{queue,info}]"
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
           volumeMounts:
             - name: rabbitmq-data
               mountPath: /var/lib/rabbitmq
@@ -75,9 +89,12 @@ metadata:
   labels:
     app: rabbitmq
     tier: database
+    service: profile
 spec:
+  clusterIP: None
   selector:
     app: rabbitmq
+    service: profile
   ports:
     - name: amqp
       port: 5672
@@ -85,6 +102,9 @@ spec:
     - name: management
       port: 15672
       targetPort: 15672
+    - name: metrics
+      port: 15692
+      targetPort: 15692
   type: ClusterIP
 ---
 apiVersion: v1
@@ -94,6 +114,7 @@ metadata:
   labels:
     app: rabbitmq
     tier: database
+    service: profile
 spec:
   accessModes:
     - ReadWriteOnce
@@ -108,6 +129,7 @@ metadata:
   labels:
     app: rabbitmq
     tier: database
+    service: profile
 type: Opaque
 data:
   RABBITMQ_USERNAME: cmFiYml0bXEtdXNlcg== # rabbitmq-user

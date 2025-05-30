@@ -27,6 +27,7 @@ type QueueConfig struct {
 			PrefetchCount     int
 			ReconnectInterval time.Duration
 			MaxRetries        int
+			MessageTTL        time.Duration
 		}
 	}
 	Logging struct {
@@ -53,6 +54,7 @@ func NewConfig() *QueueConfig {
 	config.RabbitMQ.Options.PrefetchCount = 10
 	config.RabbitMQ.Options.ReconnectInterval = 5 * time.Second
 	config.RabbitMQ.Options.MaxRetries = 3
+	config.RabbitMQ.Options.MessageTTL = 24 * time.Hour // Default TTL of 24 hours
 
 	// Logging defaults
 	config.Logging.Level = "info"
@@ -99,6 +101,15 @@ func (c *QueueConfig) LoadFromEnv() error {
 		}
 	}
 
+	// Message TTL configuration
+	if ttl := os.Getenv("RABBITMQ_MESSAGE_TTL"); ttl != "" {
+		if t, err := time.ParseDuration(ttl); err == nil {
+			c.RabbitMQ.Options.MessageTTL = t
+		} else {
+			return fmt.Errorf("invalid message TTL: %s", ttl)
+		}
+	}
+
 	// Logging configuration
 	if level := os.Getenv("LOG_LEVEL"); level != "" {
 		c.Logging.Level = level
@@ -132,6 +143,10 @@ func (c *QueueConfig) Validate() error {
 
 	if c.Metrics.Enabled && c.Metrics.Port <= 0 {
 		return fmt.Errorf("invalid metrics port: %d", c.Metrics.Port)
+	}
+
+	if c.RabbitMQ.Options.MessageTTL <= 0 {
+		return fmt.Errorf("invalid message TTL: %v", c.RabbitMQ.Options.MessageTTL)
 	}
 
 	return nil

@@ -1,36 +1,206 @@
-INITIAL CONTEXT FOR LLM - never change the context-----------------------------
--> THIS SECTION IS A GUIDELINE TO THE LLM CONSIDER BEFORE WORKING IN THIS FILE, DO NOT CHANGE THIS
-
--> GOES OF THE README FILE:
-
-- This file serves as the technical documentation of the service, providing a comprehensive overview of the codebase
-- It should document:
-  - Service architecture and design decisions
-  - Component structure and relationships
-  - API endpoints and interfaces
-  - Dependencies and integration points
-  - Configuration and deployment details
-- This is the primary reference for understanding the technical implementation
-- This file should be in sync with the `/TRACKER&MANAGER.md` where development progress and tasks are tracked
-- While TRACKER&MANAGER.md focuses on "what" and "when", this file focuses on "how" and "why"
-
--> CONSIDERER BEFORE UPDATING THIS FILE:
-
-- Never add fictional dates, version numbers, or metrics. Only include real, verified information. If information is not available, mark it as "To be determined" or remove the section.
-- The changes in this file need to be incremental or to update informations that you confidentilly have knowlegde, they should not be guesses. If there are questions or uncertanty add comments asking for clarification instead.
-- Check the `../../microservices/docs` folder for comprehensive project details, including architecture, development guidelines, and integration points. This will help in making informed decisions, haver better context and updates to the development plan. Always compare the implementation of this project with the plan described in the docs and whenever there are inconsistancies, add comments.
-- Consider structuring this documentation separating the components and describing each one of them and adding sections to how they interact with each other - because this will be very dinamic and updated during the development process it will make clear what to update after each change
-- This documentation is focusing in the current component that is part of a larger project, to have a more sistemic view check `../../microservices/TRACKER&MANAGER` and `../../microservices/README`
-- Do not forget to be LLM focus, so because this will be used
-- For LLM-specific guidelines and patterns, refer to [LLM Integration Guide](../../docs/llm/README.md)
-
----
-
 # Profile Service
 
 ## Overview
 
-The Profile Service is the primary entry point for client applications, handling user profile management operations. It integrates with various shared libraries and API services to provide a robust and scalable solution.
+The Profile Service is a microservice responsible for managing user profiles in the system. It provides a REST API for profile management operations and integrates with various other services to provide a complete profile management solution.
+
+### Purpose
+
+- Manage user profiles (create, read, update, delete)
+- Handle profile-related tasks through a queue-based system
+- Provide profile data to other services in the system
+- Ensure data consistency and reliability
+
+### Main Functionalities
+
+1. Profile Management
+
+   - Create new user profiles
+   - Retrieve profile information
+   - Update profile details
+   - Delete profiles
+   - List all profiles
+
+2. Task Processing
+   - Submit profile-related tasks to a queue
+   - Track task status and progress
+   - Handle task responses
+
+### Service Integration
+
+The Profile Service interacts with several other services:
+
+- Queue Service: For asynchronous task processing
+- Storage Service: For persistent profile data storage
+- Auth Service: For user authentication and authorization
+- Cache Service: For performance optimization
+
+### Setup and Running
+
+1. Prerequisites
+
+   ```bash
+   # Required environment variables
+   export SERVER_HOST=0.0.0.0
+   export SERVER_PORT=8080
+   export QUEUE_URL=amqp://guest:guest@localhost:5672/
+   export QUEUE_NAME=profile_queue
+   export STORAGE_HOST=profile-storage
+   export STORAGE_PORT=8080
+   export AUTH_SERVICE_URL=http://auth-service
+   ```
+
+2. Installation
+
+   ```bash
+   # Clone the repository
+   git clone https://github.com/fernandobarroso/microservices.git
+   cd microservices/services/profile-service
+
+   # Install dependencies
+   go mod download
+   ```
+
+3. Running the Service
+
+   ```bash
+   # Development mode
+   go run cmd/main.go
+
+   # Production build
+   go build -o profile-service ./cmd/main.go
+   ./profile-service
+   ```
+
+4. Docker
+
+   ```bash
+   # Build the image
+   docker build -t profile-service:latest .
+
+   # Run the container
+   docker run -p 8080:8080 profile-service:latest
+   ```
+
+### API Endpoints
+
+1. Profile Management
+
+   ```http
+   GET    /api/v1/profiles          # List all profiles
+   GET    /api/v1/profiles/{id}     # Get profile by ID
+   POST   /api/v1/profiles          # Create new profile
+   PUT    /api/v1/profiles/{id}     # Update profile
+   DELETE /api/v1/profiles/{id}     # Delete profile
+   ```
+
+2. Task Management
+
+   ```http
+   POST   /api/v1/profiles/{id}/tasks  # Submit a new task
+   ```
+
+3. Health and Metrics
+   ```http
+   GET    /health                     # Health check
+   GET    /metrics                    # Prometheus metrics
+   ```
+
+### Configuration
+
+The service can be configured through environment variables or a configuration file. Key configuration options include:
+
+```yaml
+server:
+  host: 0.0.0.0
+  port: 8080
+
+queue:
+  url: amqp://guest:guest@localhost:5672/
+  timeout: 5s
+  retries: 3
+  queue_name: profile_queue
+
+storage:
+  host: profile-storage
+  port: 8080
+  database: profile_service
+  type: memory
+  max_retries: 3
+  retry_delay: 100ms
+
+auth:
+  host: localhost
+  port: 80
+  url: http://auth-service
+
+logging:
+  level: info
+  format: text
+  log_file: app.log
+```
+
+### Monitoring and Logging
+
+The service includes built-in monitoring and logging capabilities:
+
+1. Metrics (Prometheus)
+
+   - Request rates
+   - Error rates
+   - Latency percentiles
+   - Queue operation metrics
+   - Storage operation metrics
+
+2. Logging
+   - Structured logging with Zap
+   - Multiple log levels (DEBUG, INFO, WARN, ERROR)
+   - Request tracing
+   - Error tracking
+
+### Development
+
+1. Running Tests
+
+   ```bash
+   # Run all tests
+   go test ./...
+
+   # Run specific test
+   go test ./internal/domain/services/...
+   ```
+
+2. Code Style
+   ```bash
+   # Run linter
+   golangci-lint run
+   ```
+
+### Deployment
+
+The service can be deployed using Docker or Kubernetes:
+
+1. Docker
+
+   ```bash
+   docker build -t profile-service:latest .
+   docker run -p 8080:8080 profile-service:latest
+   ```
+
+2. Kubernetes
+   ```bash
+   kubectl apply -f k8s/
+   ```
+
+### Security
+
+The service implements several security measures:
+
+- JWT-based authentication
+- Role-based access control
+- Input validation
+- Rate limiting
+- Secure configuration management
 
 ## Architecture
 

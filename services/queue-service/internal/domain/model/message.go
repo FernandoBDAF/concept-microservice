@@ -98,3 +98,9 @@ type BackgroundJob struct {
 	Parameters map[string]interface{} `json:"parameters"`
 	Priority   int32                  `json:"priority" validate:"min=0,max=9"`
 }
+
+type MessageStatus struct {
+	ID        string `json:"id"`
+	Status    string `json:"status"`
+	Timestamp string `json:"timestamp"`
+}

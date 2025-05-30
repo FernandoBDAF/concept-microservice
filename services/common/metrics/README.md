@@ -1,21 +1,24 @@
 # Metrics Package
 
-A flexible metrics collection package for Go microservices with support for multiple backends and metric types.
+A flexible metrics collection package for Go microservices with Prometheus integration.
 
 ## Overview
 
-The metrics package provides a standardized way to collect, aggregate, and report metrics across services. It supports various metric types, backends, and aggregation methods, making it easy to monitor service performance and health.
+The metrics package provides a standardized way to collect, aggregate, and report metrics across services. It supports various metric types and integrates seamlessly with Prometheus, making it easy to monitor service performance and health.
 
 ## Features
 
 - Multiple metric types (Counter, Gauge, Histogram, Timer)
-- Prometheus integration
+- Prometheus integration with collectors
+- Thread-safe operations using atomic operations
 - Custom metric labels
 - Metric aggregation
 - Performance optimized
-- Multiple backends support
 - Metric validation
 - Default metrics collection
+- Service-specific collectors (HTTP, Queue)
+- Automatic middleware for HTTP metrics
+- Vector metrics support with labels
 
 ## Installation
 
@@ -29,22 +32,36 @@ go get github.com/your-org/common/metrics
 package main
 
 import (
+    "net/http"
     "github.com/your-org/common/metrics"
+    "github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
-    // Create a new metrics collector
-    collector := metrics.NewCollector()
+    // Create a new HTTP metrics collector
+    collector := metrics.NewHTTPCollector()
 
-    // Create metrics
-    requestCounter := collector.Counter("http_requests_total", "Total number of HTTP requests")
-    responseTime := collector.Histogram("http_response_time_seconds", "HTTP response time in seconds")
-    activeUsers := collector.Gauge("active_users", "Number of active users")
+    // Create HTTP handler
+    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        // Record request
+        collector.RecordHTTPRequest(r.Method, r.URL.Path, "200")
 
-    // Record metrics
-    requestCounter.Inc()
-    responseTime.Observe(0.42)
-    activeUsers.Set(100)
+        // Record request duration
+        collector.RecordHTTPRequestDuration(r.Method, r.URL.Path, 0.42)
+
+        w.Write([]byte("Hello, World!"))
+    })
+
+    // Expose metrics endpoint
+    http.Handle("/metrics", promhttp.HandlerFor(
+        prometheus.Gatherers{
+            prometheus.DefaultGatherer,
+            metrics.DefaultRegistry.Registry,
+        },
+        promhttp.HandlerOpts{},
+    ))
+
+    http.ListenAndServe(":8080", nil)
 }
 ```
 
@@ -54,7 +71,7 @@ func main() {
 
 ```go
 // Create a counter
-counter := collector.Counter("requests_total", "Total number of requests")
+counter := metrics.NewCounter("requests_total", "Total number of requests", nil)
 
 // Increment counter
 counter.Inc()
@@ -63,14 +80,14 @@ counter.Inc()
 counter.Add(5)
 
 // Get current value
-value := counter.Value()
+value := counter.Get()
 ```
 
 ### Gauge
 
 ```go
 // Create a gauge
-gauge := collector.Gauge("memory_usage", "Memory usage in bytes")
+gauge := metrics.NewGauge("memory_usage", "Memory usage in bytes", nil)
 
 // Set value
 gauge.Set(1024)
@@ -82,13 +99,17 @@ gauge.Dec()
 // Add/Subtract
 gauge.Add(100)
 gauge.Sub(50)
+
+// Get current value
+value := gauge.Get()
 ```
 
 ### Histogram
 
 ```go
-// Create a histogram
-histogram := collector.Histogram("response_time", "Response time in seconds")
+// Create a histogram with custom buckets
+buckets := []float64{0.1, 0.5, 1.0, 2.5, 5.0}
+histogram := metrics.NewHistogram("response_time", "Response time in seconds", nil, buckets)
 
 // Record observations
 histogram.Observe(0.1)
@@ -96,30 +117,37 @@ histogram.Observe(0.2)
 histogram.Observe(0.3)
 
 // Get statistics
-count := histogram.Count()
-sum := histogram.Sum()
-avg := histogram.Mean()
+stats := histogram.Get()
+count := stats["count"]
+sum := stats["sum"]
+avg := stats["avg"]
+p95 := stats["p95"]
 ```
 
 ### Timer
 
 ```go
 // Create a timer
-timer := collector.Timer("operation_duration", "Operation duration in seconds")
+timer := metrics.NewTimer("operation_duration", "Operation duration in seconds", nil)
 
 // Time an operation
-timer.Time(func() {
-    // Operation to time
-    time.Sleep(100 * time.Millisecond)
-})
+timer.Start()
+// ... perform operation ...
+timer.Stop()
 
 // Get statistics
-count := timer.Count()
-sum := timer.Sum()
-avg := timer.Mean()
+stats := timer.Get()
+count := stats["count"]
+sum := stats["sum_seconds"]
+avg := stats["avg_seconds"]
+p95 := stats["p95_seconds"]
 ```
 
-## Prometheus Integration
+## Service-Specific Collectors
+
+### HTTP Collector
+
+The package includes a pre-configured HTTP metrics collector for common HTTP metrics:
 
 ```go
 package main
@@ -131,15 +159,94 @@ import (
 )
 
 func main() {
-    // Create collector with Prometheus backend
-    collector := metrics.NewCollector(metrics.WithPrometheus())
+    // Create HTTP metrics collector
+    collector := metrics.NewHTTPCollector()
 
-    // Create metrics
-    requestCounter := collector.Counter("http_requests_total", "Total number of HTTP requests")
+    // Create HTTP handler with metrics
+    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        // Record request
+        collector.RecordHTTPRequest(r.Method, r.URL.Path, "200")
+
+        // Record request duration
+        collector.RecordHTTPRequestDuration(r.Method, r.URL.Path, 0.42)
+
+        w.Write([]byte("Hello, World!"))
+    })
 
     // Expose metrics endpoint
-    http.Handle("/metrics", promhttp.Handler())
+    http.Handle("/metrics", promhttp.HandlerFor(
+        prometheus.Gatherers{
+            prometheus.DefaultGatherer,
+            metrics.DefaultRegistry.Registry,
+        },
+        promhttp.HandlerOpts{},
+    ))
+
     http.ListenAndServe(":8080", nil)
+}
+```
+
+### Queue Collector
+
+The package includes a specialized collector for queue services:
+
+```go
+package main
+
+import (
+    "github.com/your-org/common/metrics"
+    "github.com/gin-gonic/gin"
+)
+
+func main() {
+    // Create queue metrics collector
+    collector := metrics.NewQueueCollector()
+
+    // Record queue metrics
+    collector.SetQueueSize("default", 100)
+    collector.RecordMessagePublished("default", "email")
+    collector.RecordMessageProcessTime("default", "email", 0.5)
+    collector.RecordMessageError("default", "timeout")
+    collector.RecordQueueLatency("default", 0.1)
+    collector.IncrementActiveConnections()
+}
+```
+
+The Queue Collector provides the following metrics:
+
+- `queue_size`: Current number of messages in the queue
+- `queue_messages_published_total`: Total number of messages published
+- `queue_message_process_time_seconds`: Time taken to process messages
+- `queue_message_errors_total`: Total number of message processing errors
+- `queue_latency_seconds`: Queue latency measurements
+- `queue_active_connections`: Number of active connections
+
+## HTTP Middleware
+
+The package provides middleware for automatic HTTP metrics collection:
+
+```go
+package main
+
+import (
+    "github.com/your-org/common/metrics"
+    "github.com/gin-gonic/gin"
+)
+
+func main() {
+    router := gin.Default()
+    collector := metrics.NewQueueCollector()
+
+    // Add metrics middleware
+    router.Use(func(c *gin.Context) {
+        start := time.Now()
+        c.Next()
+        duration := time.Since(start).Seconds()
+        collector.RecordHTTPRequest(c.Request.Method, c.Request.URL.Path, fmt.Sprintf("%d", c.Writer.Status()))
+        collector.RecordHTTPRequestDuration(c.Request.Method, c.Request.URL.Path, duration)
+    })
+
+    // Your routes here...
 }
 ```
 
@@ -148,116 +255,47 @@ func main() {
 1. **Metric Naming**
 
    - Use descriptive names
-   - Follow naming conventions
-   - Use appropriate units
-   - Be consistent
+   - Follow naming conventions (e.g., `queue_messages_published_total`)
+   - Use appropriate units in names (e.g., `_seconds`, `_bytes`)
+   - Be consistent across services
 
 2. **Labels**
 
-   - Use meaningful labels
+   - Use meaningful labels (e.g., `queue_name`, `message_type`)
    - Keep label cardinality low
    - Document label meanings
    - Validate label values
+   - Use consistent label names across services
 
 3. **Performance**
 
-   - Use appropriate metric types
+   - Use appropriate metric types for each use case
    - Avoid high-cardinality labels
-   - Batch metric updates
+   - Batch metric updates when possible
    - Monitor metric collection overhead
+   - Use vector metrics for labeled data
 
-4. **Maintenance**
-   - Document metrics
-   - Set up alerts
+4. **Service-Specific Metrics**
+
+   - Include service-specific collectors
+   - Track business metrics
+   - Monitor error rates by type
+   - Measure latency and throughput
+   - Track resource usage
+
+5. **Maintenance**
+
+   - Document metrics and their purposes
+   - Set up alerts for critical metrics
    - Monitor metric growth
    - Clean up unused metrics
+   - Version metric names when making breaking changes
 
-## Examples
-
-### HTTP Server
-
-```go
-package main
-
-import (
-    "net/http"
-    "github.com/your-org/common/metrics"
-)
-
-func main() {
-    collector := metrics.NewCollector()
-
-    // Create metrics
-    requestCounter := collector.Counter("http_requests_total", "Total number of HTTP requests")
-    responseTime := collector.Histogram("http_response_time_seconds", "HTTP response time in seconds")
-
-    // Create HTTP handler
-    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-        requestCounter.Inc()
-
-        timer := collector.Timer("request_duration", "Request duration in seconds")
-        timer.Time(func() {
-            // Handle request
-            w.Write([]byte("Hello, World!"))
-        })
-    })
-
-    http.ListenAndServe(":8080", nil)
-}
-```
-
-### Database Operations
-
-```go
-package main
-
-import (
-    "database/sql"
-    "github.com/your-org/common/metrics"
-)
-
-func main() {
-    collector := metrics.NewCollector()
-
-    // Create metrics
-    queryCounter := collector.Counter("db_queries_total", "Total number of database queries")
-    queryTime := collector.Histogram("db_query_time_seconds", "Database query time in seconds")
-
-    // Execute query
-    func executeQuery(db *sql.DB, query string) error {
-        queryCounter.Inc()
-
-        timer := collector.Timer("query_duration", "Query duration in seconds")
-        return timer.Time(func() error {
-            _, err := db.Exec(query)
-            return err
-        })
-    }
-}
-```
-
-### Custom Metrics
-
-```go
-package main
-
-import (
-    "github.com/your-org/common/metrics"
-)
-
-func main() {
-    collector := metrics.NewCollector()
-
-    // Create custom metric
-    customMetric := collector.Counter("custom_metric", "Custom metric description",
-        metrics.WithLabels("label1", "label2"),
-        metrics.WithHelp("Detailed help message"),
-    )
-
-    // Record metric with labels
-    customMetric.WithLabels("value1", "value2").Inc()
-}
-```
+6. **Security**
+   - Use non-root users in containers
+   - Implement proper access controls
+   - Sanitize metric labels
+   - Monitor for metric abuse
 
 ## Contributing
 

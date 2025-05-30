@@ -732,7 +732,7 @@ All endpoints have been verified working from within the cluster, with successfu
        "created_at": "2025-05-25T05:51:05.849323Z",
        "updated_at": "2025-05-25T05:51:05.849323Z"
      }
-   }
+    }
    ```
 
 4. **Update Profile**

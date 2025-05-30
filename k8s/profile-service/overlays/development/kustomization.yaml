@@ -12,9 +12,11 @@ patches:
   - path: profile-api/patch-deployment.yaml
   - path: profile-storage/patch-deployment.yaml
   - path: auth/patch-deployment.yaml
-  - path: database/patch-deployment.yaml
   - path: database/patch-rabbitmq.yaml
+  - path: database/patch-postgres.yaml
+  - path: database/patch-redis.yaml
   - path: queue-service/patch-deployment.yaml
+  - path: worker-service/patch-deployment.yaml
 
 configMapGenerator:
   - name: profile-service-config

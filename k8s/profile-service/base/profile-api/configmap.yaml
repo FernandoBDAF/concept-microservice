@@ -10,3 +10,4 @@ data:
   AUTH_SERVICE_PORT: "80"
   SERVER_PORT: "8080"
   LOG_LEVEL: "info"
+  QUEUE_SERVICE_URL: "http://queue-service:80"

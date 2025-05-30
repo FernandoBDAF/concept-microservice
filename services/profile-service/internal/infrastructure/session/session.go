@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/fernandobarroso/profile-service/microservices/services/profile-service/internal/domain/services"
+	"github.com/fernandobarroso/microservices/services/profile-service/internal/domain/services"
 	"github.com/redis/go-redis/v9"
 )
 

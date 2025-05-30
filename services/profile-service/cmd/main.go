@@ -4,12 +4,17 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
-	"github.com/fernandobarroso/profile-service/microservices/services/profile-service/internal/api/routes"
-	"github.com/fernandobarroso/profile-service/microservices/services/profile-service/internal/config"
-	"github.com/fernandobarroso/profile-service/microservices/services/profile-service/internal/domain/services"
-	"github.com/fernandobarroso/profile-service/microservices/services/profile-service/internal/pkg/logger"
-	"github.com/fernandobarroso/profile-service/microservices/services/profile-service/internal/session"
+	api "github.com/fernandobarroso/microservices/services/profile-service/internal/api/routes"
+	"github.com/fernandobarroso/microservices/services/profile-service/internal/config"
+	"github.com/fernandobarroso/microservices/services/profile-service/internal/domain/services"
+	"github.com/fernandobarroso/microservices/services/profile-service/internal/infrastructure/session"
+	"github.com/fernandobarroso/microservices/services/profile-service/internal/pkg/logger"
 	"go.uber.org/zap"
 )
 
@@ -52,14 +57,41 @@ func main() {
 	}
 	defer sessionManager.Close()
 
+	// Initialize storage client
+	storageClient := services.NewStorageClient(cfg)
+
+	// Initialize profile service
+	profileService := services.NewProfileService(cfg, storageClient)
+
 	// Initialize router
-	router := api.NewRouter(cfg, authClient, sessionManager)
+	router := api.NewRouter(cfg, authClient, sessionManager, profileService)
 
 	// Start server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	logger.LogInfo(ctx, "Starting server",
 		zap.String("address", addr))
-	if err := router.Run(addr); err != nil {
+
+	server := &http.Server{
+		Addr:    addr,
+		Handler: router,
+	}
+
+	// Handle graceful shutdown
+	done := make(chan os.Signal, 1)
+	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		<-done
+		logger.LogInfo(ctx, "Shutting down server")
+		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		if err := server.Shutdown(ctx); err != nil {
+			logger.LogError(ctx, "Failed to shutdown server", err)
+			log.Fatalf("Failed to shutdown server: %v", err)
+		}
+	}()
+
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		logger.LogError(ctx, "Failed to start server", err)
 		log.Fatalf("Failed to start server: %v", err)
 	}

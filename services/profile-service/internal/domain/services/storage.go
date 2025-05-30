@@ -10,9 +10,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/fernandobarroso/profile-service/microservices/services/profile-service/internal/config"
-	"github.com/fernandobarroso/profile-service/microservices/services/profile-service/internal/domain/models"
-	"github.com/fernandobarroso/profile-service/microservices/services/profile-service/internal/pkg/metrics"
+	"github.com/fernandobarroso/microservices/services/profile-service/internal/config"
+	"github.com/fernandobarroso/microservices/services/profile-service/internal/domain/models"
+	"github.com/fernandobarroso/microservices/services/profile-service/internal/pkg/metrics"
 )
 
 // getEnvOrDefault returns the value of the environment variable or a default value

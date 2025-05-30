@@ -151,3 +151,8 @@ func LogInfo(ctx context.Context, msg string, fields ...zap.Field) {
 func LogDebug(ctx context.Context, msg string, fields ...zap.Field) {
 	WithContext(ctx).Debug(msg, fields...)
 }
+
+// LogWarn logs a warning message
+func LogWarn(ctx context.Context, msg string, fields ...zap.Field) {
+	WithContext(ctx).Warn(msg, fields...)
+}

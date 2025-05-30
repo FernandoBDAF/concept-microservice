@@ -1,18 +1,20 @@
 package metrics
 
 import (
+	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 // timer implements the Timer interface
 type timer struct {
 	baseMetric
-	mu       sync.RWMutex
-	start    time.Time
-	duration time.Duration
-	count    uint64
-	sum      time.Duration
+	startTime time.Time
+	durations []time.Duration
+	count     uint64
+	sum       uint64 // Store sum in nanoseconds for atomic operations
+	mu        sync.RWMutex
 }
 
 // NewTimer creates a new timer metric
@@ -24,6 +26,7 @@ func NewTimer(name, help string, labels []string) Timer {
 			labels: labels,
 			mType:  TimerType,
 		},
+		durations: make([]time.Duration, 0),
 	}
 }
 
@@ -31,7 +34,7 @@ func NewTimer(name, help string, labels []string) Timer {
 func (t *timer) Start() Timer {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.start = time.Now()
+	t.startTime = time.Now()
 	return t
 }
 
@@ -39,12 +42,12 @@ func (t *timer) Start() Timer {
 func (t *timer) Stop() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-
-	if !t.start.IsZero() {
-		t.duration = time.Since(t.start)
-		t.sum += t.duration
-		t.count++
-		t.start = time.Time{} // Reset start time
+	if !t.startTime.IsZero() {
+		duration := time.Since(t.startTime)
+		t.durations = append(t.durations, duration)
+		atomic.AddUint64(&t.count, 1)
+		atomic.AddUint64(&t.sum, uint64(duration))
+		t.startTime = time.Time{} // Reset start time
 	}
 }
 
@@ -53,12 +56,48 @@ func (t *timer) Get() map[string]float64 {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	stats := make(map[string]float64)
-	stats["count"] = float64(t.count)
-	stats["sum_seconds"] = t.sum.Seconds()
+	if len(t.durations) == 0 {
+		return map[string]float64{
+			"count": 0,
+			"sum":   0,
+		}
+	}
 
-	if t.count > 0 {
-		stats["avg_seconds"] = t.sum.Seconds() / float64(t.count)
+	// Calculate statistics
+	count := float64(atomic.LoadUint64(&t.count))
+	sum := float64(atomic.LoadUint64(&t.sum)) / float64(time.Second) // Convert to seconds
+
+	stats := map[string]float64{
+		"count":       count,
+		"sum_seconds": sum,
+		"avg_seconds": sum / count,
+	}
+
+	// Calculate percentiles
+	durations := make([]float64, len(t.durations))
+	for i, d := range t.durations {
+		durations[i] = float64(d) / float64(time.Second)
+	}
+
+	// Sort durations for percentile calculation
+	sort.Float64s(durations)
+
+	// Calculate percentiles
+	percentiles := []struct {
+		name string
+		p    float64
+	}{
+		{"p50", 0.5},
+		{"p90", 0.9},
+		{"p95", 0.95},
+		{"p99", 0.99},
+	}
+
+	for _, p := range percentiles {
+		index := int(float64(len(durations)) * p.p)
+		if index >= 0 && index < len(durations) {
+			stats[p.name+"_seconds"] = durations[index]
+		}
 	}
 
 	return stats

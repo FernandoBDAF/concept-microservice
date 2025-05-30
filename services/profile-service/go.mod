@@ -1,13 +1,20 @@
-module github.com/fernandobarroso/profile-service/microservices/services/profile-service
+module github.com/fernandobarroso/microservices/services/profile-service
 
 go 1.21
 
 require (
 	github.com/gin-gonic/gin v1.9.1
 	github.com/golang-jwt/jwt v3.2.2+incompatible
+	github.com/google/uuid v1.6.0
+	github.com/rabbitmq/amqp091-go v1.9.0
 	github.com/redis/go-redis/v9 v9.8.0
 	go.uber.org/zap v1.27.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
+)
+
+require (
+	github.com/kr/pretty v0.1.0 // indirect
+	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127 // indirect
 )
 
 require (

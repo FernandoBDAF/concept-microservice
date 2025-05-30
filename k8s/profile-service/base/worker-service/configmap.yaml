@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: worker-service-config
+  labels:
+    app: worker-service
+    service: profile
+    app.kubernetes.io/part-of: profile-service
+    app.kubernetes.io/managed-by: kustomize
+    environment: development
+    tier: worker
+  annotations:
+    description: Worker Service Configuration
+data:
+  rabbitmq_url: "amqp://guest:guest@rabbitmq:5672/"
+  log_level: "info"
+  metrics_enabled: "true"
+  metrics_port: "8080"
+  metrics_path: "/metrics"
+  rabbitmq_prefetch_count: "10"
+  rabbitmq_reconnect_interval: "5s"
+  rabbitmq_max_retries: "3"
+  rabbitmq_message_ttl: "24h"
+  rabbitmq_dead_letter_exchange: "dlx"
+  rabbitmq_dead_letter_queue: "dlq"
+  rabbitmq_queue_ttl: "168h"
+  rabbitmq_dlq_ttl: "24h"
+  rabbitmq_persistent_messages: "true"
+  rabbitmq_queue_durable: "true"
+  rabbitmq_exchange_durable: "true"

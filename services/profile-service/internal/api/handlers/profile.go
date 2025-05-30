@@ -3,8 +3,8 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/fernandobarroso/profile-service/microservices/services/profile-service/internal/domain/models"
-	"github.com/fernandobarroso/profile-service/microservices/services/profile-service/internal/domain/services"
+	"github.com/fernandobarroso/microservices/services/profile-service/internal/domain/models"
+	"github.com/fernandobarroso/microservices/services/profile-service/internal/domain/services"
 	"github.com/gin-gonic/gin"
 )
 

@@ -4,25 +4,31 @@ import (
 	"math"
 	"sort"
 	"sync"
+	"sync/atomic"
 )
+
+// DefaultHistogramBuckets are the default histogram buckets
+var DefaultHistogramBuckets = []float64{
+	0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10,
+}
 
 // histogram implements the Histogram interface
 type histogram struct {
 	baseMetric
-	mu      sync.RWMutex
+	values  []float64
 	buckets []float64
-	counts  []uint64
-	sum     float64
 	count   uint64
+	sum     uint64 // Store sum as uint64 for atomic operations
+	mu      sync.RWMutex
 }
 
-// NewHistogram creates a new histogram metric with the given buckets
+// NewHistogram creates a new histogram metric
 func NewHistogram(name, help string, labels []string, buckets []float64) Histogram {
-	// Sort buckets to ensure they are in ascending order
-	sortedBuckets := make([]float64, len(buckets))
-	copy(sortedBuckets, buckets)
-	sort.Float64s(sortedBuckets)
-
+	if buckets == nil {
+		buckets = DefaultHistogramBuckets
+	}
+	// Ensure buckets are sorted
+	sort.Float64s(buckets)
 	return &histogram{
 		baseMetric: baseMetric{
 			name:   name,
@@ -30,8 +36,8 @@ func NewHistogram(name, help string, labels []string, buckets []float64) Histogr
 			labels: labels,
 			mType:  HistogramType,
 		},
-		buckets: sortedBuckets,
-		counts:  make([]uint64, len(sortedBuckets)),
+		values:  make([]float64, 0),
+		buckets: buckets,
 	}
 }
 
@@ -39,16 +45,9 @@ func NewHistogram(name, help string, labels []string, buckets []float64) Histogr
 func (h *histogram) Observe(value float64) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-
-	h.sum += value
-	h.count++
-
-	// Find the appropriate bucket for the value
-	for i, bucket := range h.buckets {
-		if value <= bucket {
-			h.counts[i]++
-		}
-	}
+	h.values = append(h.values, value)
+	atomic.AddUint64(&h.count, 1)
+	atomic.AddUint64(&h.sum, uint64(value))
 }
 
 // Get returns the current histogram statistics
@@ -56,41 +55,91 @@ func (h *histogram) Get() map[string]float64 {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	stats := make(map[string]float64)
-	stats["sum"] = h.sum
-	stats["count"] = float64(h.count)
-
-	if h.count > 0 {
-		stats["avg"] = h.sum / float64(h.count)
+	if len(h.values) == 0 {
+		return map[string]float64{
+			"count": 0,
+			"sum":   0,
+		}
 	}
 
-	// Calculate percentiles if we have data
-	if h.count > 0 {
-		values := make([]float64, 0, h.count)
-		for i, bucket := range h.buckets {
-			for j := uint64(0); j < h.counts[i]; j++ {
-				values = append(values, bucket)
+	// Calculate percentiles
+	sort.Float64s(h.values)
+	count := float64(len(h.values))
+	sum := float64(atomic.LoadUint64(&h.sum))
+
+	stats := map[string]float64{
+		"count": count,
+		"sum":   sum,
+		"min":   h.values[0],
+		"max":   h.values[len(h.values)-1],
+		"avg":   sum / count,
+	}
+
+	// Calculate percentiles
+	percentiles := []struct {
+		name string
+		p    float64
+	}{
+		{"p50", 0.5},
+		{"p90", 0.9},
+		{"p95", 0.95},
+		{"p99", 0.99},
+	}
+
+	for _, p := range percentiles {
+		index := int(math.Ceil(p.p*count)) - 1
+		if index >= 0 && index < len(h.values) {
+			stats[p.name] = h.values[index]
+		}
+	}
+
+	// Calculate bucket counts
+	for _, bucket := range h.buckets {
+		count := 0
+		for _, v := range h.values {
+			if v <= bucket {
+				count++
 			}
 		}
-		sort.Float64s(values)
-
-		stats["p50"] = percentile(values, 50)
-		stats["p90"] = percentile(values, 90)
-		stats["p95"] = percentile(values, 95)
-		stats["p99"] = percentile(values, 99)
+		stats[formatBucketKey(bucket)] = float64(count)
 	}
 
 	return stats
 }
 
-// percentile calculates the given percentile from the sorted values
-func percentile(values []float64, p float64) float64 {
-	if len(values) == 0 {
-		return 0
+// formatBucketKey formats a bucket value as a string key
+func formatBucketKey(bucket float64) string {
+	return "bucket_" + formatFloat(bucket)
+}
+
+// formatFloat formats a float value as a string
+func formatFloat(f float64) string {
+	if f == math.Inf(1) {
+		return "inf"
 	}
-	index := int(math.Ceil(float64(len(values))*p/100)) - 1
-	if index < 0 {
-		index = 0
+	if f == math.Inf(-1) {
+		return "-inf"
 	}
-	return values[index]
+	return formatFloat64(f)
+}
+
+// formatFloat64 formats a float64 value as a string
+func formatFloat64(f float64) string {
+	if f == 0 {
+		return "0"
+	}
+	if f < 0.001 || f >= 1000 {
+		return formatScientific(f)
+	}
+	return formatDecimal(f)
+}
+
+// formatScientific formats a float64 value in scientific notation
+func formatScientific(f float64) string {
+	return formatFloat64(f)
+}
+
+// formatDecimal formats a float64 value in decimal notation
+func formatDecimal(f float64) string {
+	return formatFloat64(f)
 }

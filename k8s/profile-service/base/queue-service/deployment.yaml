@@ -11,7 +11,7 @@ metadata:
   annotations:
     description: Profile Service Base Configuration
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: queue-service
@@ -81,7 +81,7 @@ spec:
               path: /health
               port: http
             initialDelaySeconds: 5
-            periodSeconds: 5
+            periodSeconds: 20
             timeoutSeconds: 1
             failureThreshold: 3
           # startupProbe:
@@ -90,3 +90,4 @@ spec:
           #     port: http
           #   failureThreshold: 30
           #   periodSeconds: 10
+ 

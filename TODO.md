@@ -3,7 +3,7 @@
 ok- implement the data layer inside k8s
 ok- deploy the project using Kustomize
 ok- plan a work schedule with Allan
-- create libraries that will be shared by the go services thought the project
+ok- create libraries that will be shared by the go services thought the project
 - create endpoint that calls the worker using queue that goes in AI API and do a computational intensive task
     - send email
     - generate image on the create

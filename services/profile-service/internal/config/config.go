@@ -56,11 +56,12 @@ type CacheConfig struct {
 	Enabled bool
 }
 
-// QueueConfig holds the queue service configuration
+// QueueConfig holds the configuration for the queue service
 type QueueConfig struct {
-	Host    string
-	Port    int
-	Enabled bool
+	URL       string        `mapstructure:"url"`
+	Timeout   time.Duration `mapstructure:"timeout"`
+	Retries   int           `mapstructure:"retries"`
+	QueueName string        `mapstructure:"queue_name"`
 }
 
 // SecurityConfig holds the security configuration
@@ -119,9 +120,10 @@ func LoadConfig() *Config {
 			Enabled: getEnvBool("CACHE_ENABLED", false),
 		},
 		Queue: QueueConfig{
-			Host:    getEnv("QUEUE_HOST", "localhost"),
-			Port:    getEnvAsInt("QUEUE_PORT", 5672),
-			Enabled: getEnvBool("QUEUE_ENABLED", false),
+			URL:       getEnv("QUEUE_SERVICE_URL", "http://queue-service:80"),
+			Timeout:   getDurationEnv("QUEUE_TIMEOUT_MS", 5*time.Second),
+			Retries:   getEnvAsInt("QUEUE_RETRIES", 3),
+			QueueName: getEnv("QUEUE_NAME", "profile_queue"),
 		},
 		Security: SecurityConfig{
 			Enabled: getEnvBool("SECURITY_ENABLED", true),

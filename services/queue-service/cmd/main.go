@@ -15,21 +15,17 @@ import (
 	"github.com/FBDAF/microservices/services/queue-service/internal/config"
 	"github.com/FBDAF/microservices/services/queue-service/internal/domain/service"
 	"github.com/gin-gonic/gin"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
-	// Initialize logger
-	logger := log.New(os.Stdout, "[QUEUE-SERVICE] ", log.LstdFlags)
-
 	// Load configuration
 	cfg := config.NewConfig()
 	if err := cfg.LoadFromEnv(); err != nil {
-		logger.Fatalf("Failed to load configuration: %v", err)
+		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
 	if err := cfg.Validate(); err != nil {
-		logger.Fatalf("Invalid configuration: %v", err)
+		log.Fatalf("Invalid configuration: %v", err)
 	}
 
 	// Initialize RabbitMQ
@@ -41,6 +37,7 @@ func main() {
 		PrefetchCount:    cfg.RabbitMQ.Options.PrefetchCount,
 		ReconnectTimeout: cfg.RabbitMQ.Options.ReconnectInterval,
 		MaxRetries:       cfg.RabbitMQ.Options.MaxRetries,
+		MessageTTL:       cfg.RabbitMQ.Options.MessageTTL,
 	}
 
 	// Convert node configurations to host strings
@@ -50,12 +47,19 @@ func main() {
 
 	rmq, err := rabbitmq.New(rmqConfig)
 	if err != nil {
-		logger.Fatalf("Failed to initialize RabbitMQ: %v", err)
+		log.Fatalf("Failed to initialize RabbitMQ: %v", err)
 	}
 	defer rmq.Close()
 
 	// Initialize queue service
-	queueService := service.NewQueueService()
+	queueService := service.NewQueueService(rmq, "default")
+
+	// Start consuming messages
+	go func() {
+		if err := queueService.StartConsuming(); err != nil {
+			log.Printf("Failed to start consuming messages: %v", err)
+		}
+	}()
 
 	// Initialize HTTP handler
 	handler := httpadapter.NewHandler(queueService)
@@ -66,44 +70,33 @@ func main() {
 	// Register routes
 	handler.RegisterRoutes(router)
 
-	// Add health check endpoint
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"status": "healthy",
-		})
-	})
-
-	// Add metrics endpoint
-	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
-
 	// Create HTTP server
-	srv := &http.Server{
-		Addr:    ":8080",
+	server := &http.Server{
+		Addr:    fmt.Sprintf(":%d", cfg.Service.Port),
 		Handler: router,
 	}
 
-	// Start server in a goroutine
+	// Start HTTP server
 	go func() {
-		logger.Printf("Starting server on :8080")
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Fatalf("Failed to start server: %v", err)
+		log.Printf("Starting HTTP server on port %d", cfg.Service.Port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Failed to start HTTP server: %v", err)
 		}
 	}()
 
-	// Wait for interrupt signal to gracefully shutdown the server
+	// Wait for shutdown signal
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	logger.Println("Shutting down server...")
 
-	// Create shutdown context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// Graceful shutdown
+	log.Println("Shutting down server...")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Attempt graceful shutdown
-	if err := srv.Shutdown(ctx); err != nil {
-		logger.Fatalf("Server forced to shutdown: %v", err)
+	if err := server.Shutdown(ctx); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
 	}
 
-	logger.Println("Server exiting")
+	log.Println("Server exited properly")
 }

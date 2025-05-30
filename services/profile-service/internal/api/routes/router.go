@@ -1,10 +1,12 @@
-package api
+package routes
 
 import (
-	"github.com/fernandobarroso/profile-service/microservices/services/profile-service/internal/api/handlers"
-	"github.com/fernandobarroso/profile-service/microservices/services/profile-service/internal/api/middleware"
-	"github.com/fernandobarroso/profile-service/microservices/services/profile-service/internal/config"
-	"github.com/fernandobarroso/profile-service/microservices/services/profile-service/internal/domain/services"
+	"net/http"
+
+	"github.com/fernandobarroso/microservices/services/profile-service/internal/api/handlers"
+	"github.com/fernandobarroso/microservices/services/profile-service/internal/api/middleware"
+	"github.com/fernandobarroso/microservices/services/profile-service/internal/config"
+	"github.com/fernandobarroso/microservices/services/profile-service/internal/domain/services"
 	"github.com/gin-gonic/gin"
 )
 
@@ -14,15 +16,17 @@ type Router struct {
 	cfg            *config.Config
 	authClient     *services.AuthServiceClient
 	sessionManager handlers.SessionManagerInterface
+	profileService *services.ProfileService
 }
 
 // NewRouter creates a new API router
-func NewRouter(cfg *config.Config, authClient *services.AuthServiceClient, sessionManager handlers.SessionManagerInterface) *Router {
+func NewRouter(cfg *config.Config, authClient *services.AuthServiceClient, sessionManager handlers.SessionManagerInterface, profileService *services.ProfileService) *Router {
 	router := &Router{
 		engine:         gin.Default(),
 		cfg:            cfg,
 		authClient:     authClient,
 		sessionManager: sessionManager,
+		profileService: profileService,
 	}
 	router.setupRoutes()
 	return router
@@ -30,7 +34,7 @@ func NewRouter(cfg *config.Config, authClient *services.AuthServiceClient, sessi
 
 // setupRoutes configures all the routes for the API
 func (r *Router) setupRoutes() {
-	// Health check endpoint
+	// Health check endpoint - skip logging
 	r.engine.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{
 			"status": "ok",
@@ -59,14 +63,8 @@ func (r *Router) setupRoutes() {
 		// Profile endpoints
 		profiles := v1.Group("/profiles")
 		{
-			// Initialize storage client
-			storageClient := services.NewStorageClient(r.cfg)
-
-			// Initialize profile service
-			profileService := services.NewProfileService(r.cfg, storageClient)
-
 			// Initialize profile handler
-			profileHandler := handlers.NewProfileHandler(profileService)
+			profileHandler := handlers.NewProfileHandler(r.profileService)
 
 			// Apply session middleware
 			profiles.Use(middleware.SessionMiddleware(r.sessionManager))
@@ -77,6 +75,10 @@ func (r *Router) setupRoutes() {
 			profiles.POST("", profileHandler.CreateProfile)
 			profiles.PUT("/:id", profileHandler.UpdateProfile)
 			profiles.DELETE("/:id", profileHandler.DeleteProfile)
+
+			// Task routes
+			taskHandler := handlers.NewTaskHandler(r.profileService)
+			profiles.POST("/:id/tasks", taskHandler.SubmitTask)
 		}
 	}
 }
@@ -84,4 +86,9 @@ func (r *Router) setupRoutes() {
 // Run starts the API server
 func (r *Router) Run(addr string) error {
 	return r.engine.Run(addr)
+}
+
+// ServeHTTP implements the http.Handler interface
+func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	r.engine.ServeHTTP(w, req)
 }

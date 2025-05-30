@@ -3,7 +3,7 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/fernandobarroso/profile-service/microservices/services/profile-service/internal/session"
+	"github.com/fernandobarroso/microservices/services/profile-service/internal/infrastructure/session"
 	"github.com/gin-gonic/gin"
 )
 
