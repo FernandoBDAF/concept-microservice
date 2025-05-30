@@ -7,9 +7,10 @@ ok- plan a work schedule with Allan
 - create endpoint that calls the worker using queue that goes in AI API and do a computational intensive task
     - send email
     - generate image on the create
-- insert tests on the project
+- implement prometheus
 - add HPA and simulate a high demand traffic in the system
 - go back to the system design book to increment the plans for the project with more capabilities
+- insert tests on the project
 
 Backlog:
 - integrate a crypto functionality

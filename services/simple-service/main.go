@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/FBDAF/microservices/services/common/config"
 	"github.com/FBDAF/microservices/services/common/errors"
+	"github.com/FBDAF/microservices/services/common/interfaces/transport"
 	"github.com/FBDAF/microservices/services/common/logging"
 	"github.com/FBDAF/microservices/services/common/middleware"
 	"github.com/FBDAF/microservices/services/common/models"
@@ -13,74 +16,132 @@ import (
 	"go.uber.org/zap"
 )
 
-// Service represents our simple service
-type Service struct {
-	config *config.Config
+// UserService implements the service.Service interface for User entities
+type UserService struct {
 	logger *logging.Logger
-	// metrics  *metrics.Collector
-	// security *security.Manager
+	// TODO: Add repository once available
 }
 
-// NewService creates a new service instance
-func NewService() (*Service, error) {
-	// Initialize configuration
-	cfg, err := config.LoadConfig("config.yaml")
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to load configuration")
-	}
-
-	// Initialize logger
-	logger, err := logging.New()
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to initialize logger")
-	}
-
-	// TODO: Integrate metrics and security once APIs are available
-	// collector := metrics.NewCollector()
-	// manager := security.NewManager()
-
-	return &Service{
-		config: cfg,
+// NewUserService creates a new UserService
+func NewUserService(logger *logging.Logger) *UserService {
+	return &UserService{
 		logger: logger,
-		// metrics:  collector,
-		// security: manager,
+	}
+}
+
+// Create implements service.Service.Create
+func (s *UserService) Create(ctx context.Context, user *models.User) error {
+	// TODO: Add repository integration
+	s.logger.Info("Creating user", zap.String("email", user.Email))
+	return nil
+}
+
+// Get implements service.Service.Get
+func (s *UserService) Get(ctx context.Context, id string) (*models.User, error) {
+	// TODO: Add repository integration
+	s.logger.Info("Getting user", zap.String("id", id))
+	return &models.User{
+		ID:        id,
+		Name:      "Test User",
+		Email:     "test@example.com",
+		CreatedAt: time.Now(),
 	}, nil
 }
 
-// UserHandler handles user-related requests
+// List implements service.Service.List
+func (s *UserService) List(ctx context.Context) ([]*models.User, error) {
+	// TODO: Add repository integration
+	s.logger.Info("Listing users")
+	return []*models.User{}, nil
+}
+
+// Update implements service.Service.Update
+func (s *UserService) Update(ctx context.Context, user *models.User) error {
+	// TODO: Add repository integration
+	s.logger.Info("Updating user", zap.String("id", user.ID))
+	return nil
+}
+
+// Delete implements service.Service.Delete
+func (s *UserService) Delete(ctx context.Context, id string) error {
+	// TODO: Add repository integration
+	s.logger.Info("Deleting user", zap.String("id", id))
+	return nil
+}
+
+// Validate implements service.Validator.Validate
+func (s *UserService) Validate(ctx context.Context, user *models.User) error {
+	if user.Name == "" {
+		return errors.New("name is required")
+	}
+	if user.Email == "" {
+		return errors.New("email is required")
+	}
+	if len(user.Password) < 8 {
+		return errors.New("password must be at least 8 characters")
+	}
+	return nil
+}
+
+// UserHandler implements transport.Handler
 type UserHandler struct {
-	service *Service
+	service *UserService
+	logger  *logging.Logger
 }
 
-// CreateUserRequest represents a request to create a user
-type CreateUserRequest struct {
-	Name     string `json:"name" validate:"required"`
-	Email    string `json:"email" validate:"required,email"`
-	Password string `json:"password" validate:"required,min=8"`
+// NewUserHandler creates a new UserHandler
+func NewUserHandler(service *UserService, logger *logging.Logger) *UserHandler {
+	return &UserHandler{
+		service: service,
+		logger:  logger,
+	}
 }
 
-// CreateUserResponse represents the response for user creation
-type CreateUserResponse struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Email     string    `json:"email"`
-	CreatedAt time.Time `json:"created_at"`
+// RegisterRoutes implements transport.Handler.RegisterRoutes
+func (h *UserHandler) RegisterRoutes(router *gin.Engine) {
+	router.POST("/users", h.CreateUser)
+	router.GET("/users/:id", h.GetUser)
 }
 
-// GetUserRequest represents a request to get user details
-type GetUserRequest struct {
-	ID string `json:"id" validate:"required"`
+// CreateUser handles user creation
+func (h *UserHandler) CreateUser(c *gin.Context) {
+	var req models.User
+	if err := c.ShouldBindJSON(&req); err != nil {
+		transport.ErrorResponse(c, http.StatusBadRequest, err)
+		return
+	}
+
+	if err := h.service.Validate(c.Request.Context(), &req); err != nil {
+		transport.ErrorResponse(c, http.StatusBadRequest, err)
+		return
+	}
+
+	if err := h.service.Create(c.Request.Context(), &req); err != nil {
+		transport.ErrorResponse(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	transport.SuccessResponse(c, http.StatusCreated, req)
 }
 
-// GetUserResponse represents the response for user details
-type GetUserResponse struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Email     string    `json:"email"`
-	CreatedAt time.Time `json:"created_at"`
+// GetUser handles user retrieval
+func (h *UserHandler) GetUser(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		transport.ErrorResponse(c, http.StatusBadRequest, errors.New("id is required"))
+		return
+	}
+
+	user, err := h.service.Get(c.Request.Context(), id)
+	if err != nil {
+		transport.ErrorResponse(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	transport.SuccessResponse(c, http.StatusOK, user)
 }
 
-// GinLoggerAdapter adapts our logger to the middleware's LogRequest interface
+// GinLoggerAdapter implements middleware.LogRequest interface
 type GinLoggerAdapter struct {
 	logger *logging.Logger
 }
@@ -95,150 +156,47 @@ func (g *GinLoggerAdapter) LogRequest(r *http.Request, statusCode int, duration 
 	)
 }
 
-// CreateUser handles requests to create a user
-func (h *UserHandler) CreateUser(c *gin.Context) {
-	// Log request
-	h.service.logger.Info("Processing create user request",
-		zap.String("method", c.Request.Method),
-		zap.String("path", c.Request.URL.Path),
-		zap.String("ip", c.ClientIP()),
-	)
-
-	// Parse request body
-	var req CreateUserRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		h.service.logger.Error("Failed to parse request", zap.Error(err))
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
-		return
-	}
-
-	// Validate request
-	if err := h.validateRequest(req); err != nil {
-		h.service.logger.Error("Validation failed", zap.Error(err))
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	// Create user
-	user := &models.User{
-		ID:        "generated-id", // h.service.security.GenerateUUID(),
-		Name:      req.Name,
-		Email:     req.Email,
-		Password:  req.Password, // hashedPassword,
-		CreatedAt: time.Now(),
-	}
-
-	// Create response
-	resp := CreateUserResponse{
-		ID:        user.ID,
-		Name:      user.Name,
-		Email:     user.Email,
-		CreatedAt: user.CreatedAt,
-	}
-
-	// Log success
-	h.service.logger.Info("User created successfully",
-		zap.String("user_id", user.ID),
-		zap.String("email", user.Email),
-	)
-
-	c.JSON(http.StatusOK, resp)
-}
-
-// GetUser handles requests to retrieve user details
-func (h *UserHandler) GetUser(c *gin.Context) {
-	// Log request
-	h.service.logger.Info("Processing get user request",
-		zap.String("method", c.Request.Method),
-		zap.String("path", c.Request.URL.Path),
-		zap.String("ip", c.ClientIP()),
-	)
-
-	// Parse request body
-	var req GetUserRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		h.service.logger.Error("Failed to parse request", zap.Error(err))
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
-		return
-	}
-
-	// Validate request
-	if req.ID == "" {
-		h.service.logger.Error("Validation failed", zap.Error(errors.New("id is required")))
-		c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
-		return
-	}
-
-	// TODO: Retrieve user details from a database or service
-	user := &models.User{
-		ID:        req.ID,
-		Name:      "Test User",
-		Email:     "test@example.com",
-		CreatedAt: time.Now(),
-	}
-
-	// Create response
-	resp := GetUserResponse{
-		ID:        user.ID,
-		Name:      user.Name,
-		Email:     user.Email,
-		CreatedAt: user.CreatedAt,
-	}
-
-	// Log success
-	h.service.logger.Info("User retrieved successfully",
-		zap.String("user_id", user.ID),
-		zap.String("email", user.Email),
-	)
-
-	c.JSON(http.StatusOK, resp)
-}
-
-// validateRequest validates the create user request
-func (h *UserHandler) validateRequest(req CreateUserRequest) error {
-	if req.Name == "" {
-		return errors.New("name is required")
-	}
-	if req.Email == "" {
-		return errors.New("email is required")
-	}
-	// TODO: Integrate security once available
-	// if !h.service.security.IsValidEmail(req.Email) {
-	// 	return errors.New("invalid email format")
-	// }
-	if len(req.Password) < 8 {
-		return errors.New("password must be at least 8 characters")
-	}
-	return nil
-}
-
 func main() {
-	// Create service
-	service, err := NewService()
+	// Initialize configuration
+	cfg, err := config.LoadConfig("config.yaml")
 	if err != nil {
-		panic(err)
+		panic(errors.Wrap(err, "failed to load configuration"))
 	}
 
-	// Create user handler
-	userHandler := &UserHandler{service: service}
+	// Initialize logger
+	logger, err := logging.New()
+	if err != nil {
+		panic(errors.Wrap(err, "failed to initialize logger"))
+	}
+
+	// Create service
+	userService := NewUserService(logger)
+
+	// Create handler
+	userHandler := NewUserHandler(userService, logger)
 
 	// Create gin engine
 	r := gin.Default()
 
 	// Use middleware with the adapter
-	ginLogger := &GinLoggerAdapter{logger: service.logger}
+	ginLogger := &GinLoggerAdapter{logger: logger}
 	r.Use(middleware.LoggingMiddleware(ginLogger))
 	r.Use(middleware.RecoveryMiddleware())
 	r.Use(middleware.CORSMiddleware())
 
-	// Define routes
-	r.POST("/users", userHandler.CreateUser)
-	r.GET("/users", userHandler.GetUser)
+	// Register routes
+	userHandler.RegisterRoutes(r)
 
 	// Start server
-	service.logger.Info("Starting server", zap.Int("port", 8080))
-	if err := r.Run(":8080"); err != nil {
-		service.logger.Error("Server failed", zap.Error(err))
+	port := 8080 // Default port
+	if cfg != nil {
+		if cfgPort := cfg.GetInt("server.port"); cfgPort > 0 {
+			port = cfgPort
+		}
+	}
+	logger.Info("Starting server", zap.Int("port", port))
+	if err := r.Run(fmt.Sprintf(":%d", port)); err != nil {
+		logger.Error("Server failed", zap.Error(err))
 		panic(err)
 	}
 }

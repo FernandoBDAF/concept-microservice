@@ -28,6 +28,7 @@
    - [ ] Implement retry mechanism
    - [ ] Add dead letter queue handling
    - [ ] Improve error logging
+   - [ ] Enhance error handling in the RabbitMQ connection method
 
 3. **Security**
    - [ ] Add authentication
@@ -62,9 +63,13 @@
    - [ ] Add message routing
 
 2. **Optimization**
+
    - [ ] Optimize message processing
    - [ ] Add caching
    - [ ] Improve performance
+
+3. **Configuration**
+   - [ ] Add validation for the Config struct to ensure all required fields are provided before attempting to connect to RabbitMQ
 
 ## Known Issues
 

@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: queue-service-config
+  labels:
+    app: queue-service
+    tier: queue
+data:
+  SERVICE_PORT: "8080"
+  SERVICE_ENV: "development"
+  RABBITMQ_NODES: "rabbitmq:5672"
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+  METRICS_ENABLED: "true"
+  METRICS_PORT: "9090"
+  RABBITMQ_PREFETCH_COUNT: "10"
+  RABBITMQ_RECONNECT_INTERVAL: "5s"
+  RABBITMQ_MAX_RETRIES: "3"
+  RABBITMQ_MESSAGE_TTL: "86400"
+  RABBITMQ_DEAD_LETTER_EXCHANGE: "dlx"
+  RABBITMQ_DEAD_LETTER_QUEUE: "dlq"

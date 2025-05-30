@@ -406,3 +406,20 @@ func (s *QueueService) LivenessCheck() error {
        Status    string
    }
    ```
+
+## DEPLOYMENT
+
+### RabbitMQ Deployment
+
+- **Overview**: RabbitMQ is deployed as a Kubernetes pod within the cluster. It is configured to handle message queuing and is accessible via the AMQP port (5672) and the management port (15672).
+- **Manifest**: The RabbitMQ deployment is defined in the `k8s/profile-service/base/database/rabbitmq.yaml` file. It includes configurations for resource limits, environment variables sourced from a Kubernetes secret, and health checks.
+- **Health Checks**: The deployment uses liveness and readiness probes to ensure that RabbitMQ is operational. The probes are configured to check the AMQP port for connectivity.
+- **Resource Limits**: The RabbitMQ pod is allocated specific CPU and memory resources to ensure optimal performance and stability.
+
+### Queue Service Deployment
+
+- **Overview**: The queue-service is deployed as a Kubernetes pod that interacts with RabbitMQ. It is responsible for managing message queuing and processing.
+- **Manifest**: The queue-service deployment is defined in the `k8s/profile-service/base/queue-service/deployment.yaml` file. It includes configurations for resource limits, environment variables, and health checks.
+- **Environment Variables**: The service is configured with environment variables such as `RABBITMQ_NODES` to specify the RabbitMQ connection details.
+- **Health Checks**: The deployment uses liveness, readiness, and startup probes to ensure that the queue-service is operational and can communicate with RabbitMQ.
+- **Resource Limits**: The queue-service pod is allocated specific CPU and memory resources to ensure optimal performance and stability.

@@ -86,6 +86,9 @@ This directory contains all Kubernetes manifests for the microservices project. 
   - Profile API → Redis (TCP)
   - Profile Storage → PostgreSQL (TCP)
   - Auth Service → Redis (TCP)
+  - Profile API → Queue Service (HTTP)
+  - Queue Service → RabbitMQ (TCP)
+  - Queue Service → Profile Storage (gRPC)
 - **External Access**:
   - No external access configured
   - All services are cluster-internal only
@@ -241,6 +244,11 @@ This directory contains all Kubernetes manifests for the microservices project. 
 - List required ports and protocols
 - Define service health check endpoints
 
+- Queue Service
+  - Depends on: RabbitMQ
+  - Provides: Message queuing
+  - Status: Implemented
+
 ### Network Performance
 
 - Document expected latency between services
@@ -289,8 +297,8 @@ This directory contains all Kubernetes manifests for the microservices project. 
 
 Common labels across services:
 
-- `app`: Service name (e.g., profile-api, profile-storage)
-- `tier`: Service tier (api, storage, auth)
+- `app`: Service name (e.g., profile-api, profile-storage, queue-service)
+- `tier`: Service tier (api, storage, auth, queue)
 - `environment`: Deployment environment
 
 ### Resource Limits
@@ -307,6 +315,14 @@ Profile Storage:
 - Memory: Request 256Mi, Limit 512Mi
 
 Auth Service:
+- CPU: Request 200m, Limit 500m
+- Memory: Request 256Mi, Limit 512Mi
+
+Queue Service:
+- CPU: Request 200m, Limit 500m
+- Memory: Request 256Mi, Limit 512Mi
+
+RabbitMQ:
 - CPU: Request 200m, Limit 500m
 - Memory: Request 256Mi, Limit 512Mi
 ```
@@ -366,6 +382,15 @@ Auth Service:
 - Created TRACKER&MANAGER.md
 - Removed network policies for testing
 - Updated service configurations
+- Added Queue Service implementation:
+  - Created base configuration with deployment, service, configmap, and secrets
+  - Set up development overlay with resource patches
+  - Configured RabbitMQ integration with proper credentials
+  - Added health checks and metrics endpoints
+  - Set up service replication (2 replicas)
+  - Implemented dead letter queues and message TTL
+  - Added resource limits and requests
+  - Configured development environment settings
 
 ## Suggested Improvements
 
@@ -567,6 +592,7 @@ aof-use-rdb-preamble yes
      - Token validation endpoints
 
 3. **Profile Storage Service** (`/services/profile-storage`)
+
    - Manages data persistence and database operations
    - Ensures data integrity and consistency
    - Provides efficient data access patterns
@@ -582,6 +608,25 @@ aof-use-rdb-preamble yes
      - Service replication (2 replicas)
      - Proper error handling
      - Transaction management
+
+4. **Queue Service** (`/services/queue-service`)
+
+   - Handles message queuing and processing
+   - Manages RabbitMQ integration
+   - Provides message status tracking
+   - Implements dead letter queues
+   - Status: Implemented
+   - Key Features:
+     - Message publishing and consumption
+     - Multiple message type support
+     - Message status tracking
+     - Prometheus metrics
+     - Health checks
+     - Graceful shutdown
+     - Service replication (2 replicas)
+     - RabbitMQ cluster support
+     - Dead letter queue support
+     - Message TTL support
 
 #### API Examples
 
@@ -819,9 +864,10 @@ resources:
   - auth
   - database
 
-commonLabels:
-  app.kubernetes.io/part-of: profile-service
-  app.kubernetes.io/managed-by: kustomize
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: profile-service
+      app.kubernetes.io/managed-by: kustomize
 
 commonAnnotations:
   description: "Profile Service Base Configuration"
@@ -839,10 +885,10 @@ kind: Kustomization
 resources:
   - ../../base
 
-namespace: profile-dev
-
-commonLabels:
-  environment: development
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: profile-service
+      app.kubernetes.io/managed-by: kustomize
 
 patches:
   - path: profile-api/patch-deployment.yaml

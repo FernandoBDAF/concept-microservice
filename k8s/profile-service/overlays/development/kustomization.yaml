@@ -4,8 +4,6 @@ kind: Kustomization
 resources:
   - ../../base
 
-namespace: profile-dev
-
 labels:
   - pairs:
       environment: development
@@ -15,10 +13,11 @@ patches:
   - path: profile-storage/patch-deployment.yaml
   - path: auth/patch-deployment.yaml
   - path: database/patch-deployment.yaml
+  - path: database/patch-rabbitmq.yaml
+  - path: queue-service/patch-deployment.yaml
 
 configMapGenerator:
   - name: profile-service-config
     literals:
       - ENVIRONMENT=development
       - LOG_LEVEL=debug
- 

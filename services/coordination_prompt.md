@@ -13,13 +13,19 @@ Dependencies: None
 ### simple-service
 
 - Status: Integration in Progress
-- Logger: Migrated to new common/logging package, linter errors being fixed
+- Logger: Migrated to new common/logging package, linter errors resolved
 - Config: Using common/config, integration complete
 - Metrics: Integration pending (API changes required)
 - Security: Integration pending (API changes required)
 - Models: Using common/models
 - Errors: Using common/errors
-- Next Step: Ensure all linter errors are fixed and the service builds cleanly before further improvements
+- Interfaces: Integration pending
+- Middleware: Basic logging, recovery, and CORS middleware integrated; further middleware integration planned
+- Utils: Integration pending
+- Documentation:
+  - Added `INTEGRATION_CHALLENGES.md` to document common integration issues, examples, and solutions
+  - Updated `README.md` with a "Planned Improvements" section outlining next steps for deeper integration and cross-package examples
+- Next Step: Implement and integrate @common/interfaces, @common/middleware (advanced features), and @common/utils for a more complete example. Continue to expand documentation and integration examples.
 
 ## Package Structure Reorganization
 
@@ -195,6 +201,39 @@ Each package in the `common/` directory should:
   2. Add unit tests
   3. Create integration tests
   4. Expand usage documentation
+
+### 6. Interfaces Integration (High Priority)
+
+- Status: In Progress
+- Effort: 5 story points
+- Dependencies: None
+- Current Phase: Implementation
+- Next Steps:
+  1. Identify required interfaces from @common/interfaces
+  2. Implement and integrate these interfaces in @simple-service to serve as a model service
+  3. Update documentation and examples
+
+### 7. Advanced Middleware Integration (High Priority)
+
+- Status: In Progress
+- Effort: 5 story points
+- Dependencies: None
+- Current Phase: Implementation
+- Next Steps:
+  1. Identify advanced middleware features from @common/middleware
+  2. Implement and integrate these features in @simple-service to serve as a model service
+  3. Update documentation and examples
+
+### 8. Utils Integration (High Priority)
+
+- Status: ✅ Completed
+- Effort: 5 story points
+- Dependencies: None
+- Current Phase: Completed
+- Next Steps:
+  1. ✅ Identify required utilities from @common/utils
+  2. ✅ Implement and integrate these utilities in @simple-service to serve as a model service
+  3. ✅ Update documentation and examples
 
 ## Implementation Strategy
 
@@ -379,25 +418,10 @@ Each package in the `common/` directory should:
 
 ### Next Steps
 
-1. Documentation Completion
-
-   - Create package-specific README files for each package
-   - Add API documentation
-   - Create integration examples
-   - Update main documentation
-
-2. Integration Testing
-
-   - Create integration tests
-   - Run system-wide tests
-   - Verify all package integrations
-   - Document test results
-
-3. Release Preparation
-   - Prepare release package
-   - Create changelog
-   - Update version numbers
-   - Announce release
+1. Complete integration of @common/interfaces, @common/middleware (beyond basic logging/recovery/CORS), and @common/utils in simple-service
+2. Expand usage examples and documentation in simple-service, including cross-package interactions
+3. Continue to update `INTEGRATION_CHALLENGES.md` and `README.md` as new integration patterns and solutions are discovered
+4. Prepare for system-wide integration testing and final documentation review
 
 ## Blockers/Questions
 

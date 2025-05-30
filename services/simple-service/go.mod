@@ -10,6 +10,7 @@ require (
 	github.com/FBDAF/microservices/services/common/logging v0.0.0
 	github.com/FBDAF/microservices/services/common/middleware v0.0.0-00010101000000-000000000000
 	github.com/FBDAF/microservices/services/common/models v0.0.0
+	github.com/FBDAF/microservices/services/common/utils v0.0.0
 	github.com/gin-gonic/gin v1.10.1
 	go.uber.org/zap v1.27.0
 )

@@ -4,9 +4,9 @@ kind: Kustomization
 resources:
   - postgres.yaml
   - redis.yaml
+  - rabbitmq.yaml
 
 labels:
   - pairs:
       app.kubernetes.io/name: database
       app.kubernetes.io/part-of: profile-service
- 

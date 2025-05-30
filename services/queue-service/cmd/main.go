@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -33,13 +34,18 @@ func main() {
 
 	// Initialize RabbitMQ
 	rmqConfig := &rabbitmq.Config{
-		Hosts:            []string{"localhost:5672"}, // TODO: Get from config
-		Username:         "guest",                    // TODO: Get from config
-		Password:         "guest",                    // TODO: Get from config
-		VHost:            "/",
+		Hosts:            make([]string, len(cfg.RabbitMQ.Cluster.Nodes)),
+		Username:         os.Getenv("RABBITMQ_USERNAME"),
+		Password:         os.Getenv("RABBITMQ_PASSWORD"),
+		VHost:            os.Getenv("RABBITMQ_VHOST"),
 		PrefetchCount:    cfg.RabbitMQ.Options.PrefetchCount,
 		ReconnectTimeout: cfg.RabbitMQ.Options.ReconnectInterval,
 		MaxRetries:       cfg.RabbitMQ.Options.MaxRetries,
+	}
+
+	// Convert node configurations to host strings
+	for i, node := range cfg.RabbitMQ.Cluster.Nodes {
+		rmqConfig.Hosts[i] = fmt.Sprintf("%s:%d", node.Host, node.Port)
 	}
 
 	rmq, err := rabbitmq.New(rmqConfig)

@@ -2,11 +2,10 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
-  - profile-api
-  - profile-storage
-  - auth
-  - database
-  - queue-service
+  - deployment.yaml
+  - service.yaml
+  - configmap.yaml
+  - secrets.yaml
 
 labels:
   - pairs:
@@ -14,4 +13,4 @@ labels:
       app.kubernetes.io/managed-by: kustomize
 
 commonAnnotations:
-  description: "Profile Service Base Configuration"
+  description: "Queue Service Base Configuration"

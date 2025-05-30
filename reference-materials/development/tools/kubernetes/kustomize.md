@@ -45,9 +45,10 @@ resources:
   - ingress.yaml
   - hpa.yaml
 
-commonLabels:
-  app: profile-service
-  environment: base
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: profile-service
+      app.kubernetes.io/managed-by: kustomize
 
 commonAnnotations:
   description: "Profile Service Base Configuration"
@@ -95,12 +96,12 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
-  - ../../base
+  - ../../baseprofile-dev
 
-namespace: profile-dev
-
-commonLabels:
-  environment: development
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: profile-service
+      app.kubernetes.io/managed-by: kustomize
 
 patches:
   - path: patch-deployment.yaml
