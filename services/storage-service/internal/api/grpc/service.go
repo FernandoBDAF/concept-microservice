@@ -10,10 +10,10 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"microservices/services/profile-storage/internal/logger"
-	"microservices/services/profile-storage/internal/models"
-	"microservices/services/profile-storage/internal/service"
-	pb "microservices/services/profile-storage/proto/profile"
+	pb "microservices/services/profile-storage/api/proto/profile"
+	"microservices/services/profile-storage/internal/domain/models"
+	"microservices/services/profile-storage/internal/domain/service"
+	"microservices/services/profile-storage/internal/pkg/logger"
 )
 
 // Server implements the gRPC profile service
@@ -47,7 +47,7 @@ func (s *Server) CreateProfile(ctx context.Context, req *pb.CreateProfileRequest
 
 	// Convert addresses
 	for _, addr := range req.Addresses {
-		profileReq.Addresses = append(profileReq.Addresses, models.Address{
+		profileReq.Addresses = append(profileReq.Addresses, models.AddressRequest{
 			Street:     addr.Street,
 			City:       addr.City,
 			State:      addr.State,
@@ -59,7 +59,7 @@ func (s *Server) CreateProfile(ctx context.Context, req *pb.CreateProfileRequest
 
 	// Convert contacts
 	for _, contact := range req.Contacts {
-		profileReq.Contacts = append(profileReq.Contacts, models.Contact{
+		profileReq.Contacts = append(profileReq.Contacts, models.ContactRequest{
 			Type:      contact.Type,
 			Value:     contact.Value,
 			IsPrimary: contact.IsPrimary,
@@ -163,7 +163,7 @@ func (s *Server) UpdateProfile(ctx context.Context, req *pb.UpdateProfileRequest
 
 	// Convert addresses
 	for _, addr := range req.Addresses {
-		profileReq.Addresses = append(profileReq.Addresses, models.Address{
+		profileReq.Addresses = append(profileReq.Addresses, models.AddressRequest{
 			Street:     addr.Street,
 			City:       addr.City,
 			State:      addr.State,
@@ -175,7 +175,7 @@ func (s *Server) UpdateProfile(ctx context.Context, req *pb.UpdateProfileRequest
 
 	// Convert contacts
 	for _, contact := range req.Contacts {
-		profileReq.Contacts = append(profileReq.Contacts, models.Contact{
+		profileReq.Contacts = append(profileReq.Contacts, models.ContactRequest{
 			Type:      contact.Type,
 			Value:     contact.Value,
 			IsPrimary: contact.IsPrimary,

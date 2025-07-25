@@ -33,6 +33,27 @@ type Config struct {
 	LogEnvironment string
 	LogLevel       string
 	ServiceName    string
+
+	// RabbitMQ configuration
+	RabbitMQURL            string
+	RabbitMQExchange       string
+	RabbitMQQueue          string
+	RabbitMQRoutingKey     string
+	RabbitMQConsumerTag    string
+	RabbitMQPrefetch       int
+	RabbitMQReconnectDelay time.Duration
+	RabbitMQProcessTimeout time.Duration
+
+	// Dead Letter Queue configuration
+	DLQEnabled      bool
+	DLQExchangeName string
+	DLQQueueName    string
+	DLQMaxRetries   int
+
+	// Queue processing configuration
+	QueueEnabled      bool
+	QueueMaxBatchSize int
+	QueueBatchTimeout time.Duration
 }
 
 // New creates a new Config with values from environment variables
@@ -63,6 +84,27 @@ func New() *Config {
 		LogEnvironment: getEnv("LOG_ENVIRONMENT", "development"),
 		LogLevel:       getEnv("LOG_LEVEL", "info"),
 		ServiceName:    getEnv("SERVICE_NAME", "profile-storage"),
+
+		// RabbitMQ configuration
+		RabbitMQURL:            getEnv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/"),
+		RabbitMQExchange:       getEnv("RABBITMQ_EXCHANGE", "storage-processing"),
+		RabbitMQQueue:          getEnv("RABBITMQ_QUEUE", "storage-processing"),
+		RabbitMQRoutingKey:     getEnv("RABBITMQ_ROUTING_KEY", "storage.*"),
+		RabbitMQConsumerTag:    getEnv("RABBITMQ_CONSUMER_TAG", "storage-service-consumer"),
+		RabbitMQPrefetch:       getIntEnv("RABBITMQ_PREFETCH", 10),
+		RabbitMQReconnectDelay: getDurationEnv("RABBITMQ_RECONNECT_DELAY", 5*time.Second),
+		RabbitMQProcessTimeout: getDurationEnv("RABBITMQ_PROCESS_TIMEOUT", 30*time.Second),
+
+		// Dead Letter Queue configuration
+		DLQEnabled:      getBoolEnv("DLQ_ENABLED", true),
+		DLQExchangeName: getEnv("DLQ_EXCHANGE_NAME", "storage-dlq"),
+		DLQQueueName:    getEnv("DLQ_QUEUE_NAME", "storage-dlq"),
+		DLQMaxRetries:   getIntEnv("DLQ_MAX_RETRIES", 3),
+
+		// Queue processing configuration
+		QueueEnabled:      getBoolEnv("QUEUE_ENABLED", true),
+		QueueMaxBatchSize: getIntEnv("QUEUE_MAX_BATCH_SIZE", 100),
+		QueueBatchTimeout: getDurationEnv("QUEUE_BATCH_TIMEOUT", 30*time.Second),
 	}
 }
 
@@ -99,6 +141,16 @@ func getIntEnv(key string, defaultValue int) int {
 	if value, exists := os.LookupEnv(key); exists {
 		if intValue, err := strconv.Atoi(value); err == nil {
 			return intValue
+		}
+	}
+	return defaultValue
+}
+
+// Helper function to get boolean from environment variable
+func getBoolEnv(key string, defaultValue bool) bool {
+	if value, exists := os.LookupEnv(key); exists {
+		if boolValue, err := strconv.ParseBool(value); err == nil {
+			return boolValue
 		}
 	}
 	return defaultValue

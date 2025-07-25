@@ -4,12 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
-	"os"
 	"time"
 
 	"github.com/fernandobarroso/microservices/services/profile-service/internal/domain/services"
-	"github.com/redis/go-redis/v9"
+	"github.com/fernandobarroso/microservices/services/profile-service/internal/infrastructure/cache"
+	"go.uber.org/zap"
 )
 
 // Session represents a user session
@@ -28,48 +27,35 @@ type SessionManagerInterface interface {
 	Close() error
 }
 
-// SessionManager implements session management using Redis
+// SessionManager implements session management using HTTP cache service
 type SessionManager struct {
-	authClient *services.AuthServiceClient
-	redis      *redis.Client
+	authClient  *services.AuthServiceClient
+	cacheClient cache.CacheClientInterface
+	logger      *zap.Logger
 }
 
-// NewSessionManager creates a new session manager
-func NewSessionManager(authClient *services.AuthServiceClient) (*SessionManager, error) {
-	// Get Redis configuration from environment variables with defaults
-	redisAddr := getEnvOrDefault("REDIS_ADDR", "localhost:6379")
-	redisPassword := getEnvOrDefault("REDIS_PASSWORD", "")
-	redisDB := 0 // Default DB
+// NewSessionManager creates a new session manager using HTTP cache service
+func NewSessionManager(authClient *services.AuthServiceClient, cacheClient cache.CacheClientInterface, logger *zap.Logger) (*SessionManager, error) {
+	if cacheClient == nil {
+		return nil, fmt.Errorf("cache client is required")
+	}
 
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     redisAddr,
-		Password: redisPassword,
-		DB:       redisDB,
-	})
-
-	// Test the connection
+	// Test the cache service connection
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := rdb.Ping(ctx).Err(); err != nil {
-		log.Printf("[NewSessionManager] Failed to connect to Redis at %s: %v", redisAddr, err)
-		return nil, fmt.Errorf("failed to connect to Redis: %v", err)
+	if err := cacheClient.Ping(ctx); err != nil {
+		logger.Error("Failed to connect to cache service", zap.Error(err))
+		return nil, fmt.Errorf("failed to connect to cache service: %w", err)
 	}
 
-	log.Printf("[NewSessionManager] Successfully connected to Redis at %s", redisAddr)
+	logger.Info("SessionManager successfully connected to cache service via HTTP")
 
 	return &SessionManager{
-		authClient: authClient,
-		redis:      rdb,
+		authClient:  authClient,
+		cacheClient: cacheClient,
+		logger:      logger,
 	}, nil
-}
-
-// getEnvOrDefault returns the value of the environment variable or a default value
-func getEnvOrDefault(key, defaultValue string) string {
-	if value, exists := os.LookupEnv(key); exists {
-		return value
-	}
-	return defaultValue
 }
 
 // CreateSession creates a new session for a user
@@ -77,8 +63,8 @@ func (m *SessionManager) CreateSession(userID, password string) (string, error) 
 	// Get token from auth service
 	token, err := m.authClient.GetToken(context.Background(), userID, password)
 	if err != nil {
-		log.Printf("[CreateSession] Error getting token: %v", err)
-		return "", err
+		m.logger.Error("Error getting token from auth service", zap.String("user_id", userID), zap.Error(err))
+		return "", fmt.Errorf("failed to get token from auth service: %w", err)
 	}
 
 	// Create session
@@ -89,23 +75,26 @@ func (m *SessionManager) CreateSession(userID, password string) (string, error) 
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 	}
 
-	// Store session in Redis
+	// Store session in cache service via HTTP
 	sessionJSON, err := json.Marshal(session)
 	if err != nil {
-		log.Printf("[CreateSession] Error marshaling session: %v", err)
-		return "", err
+		m.logger.Error("Error marshaling session", zap.String("user_id", userID), zap.Error(err))
+		return "", fmt.Errorf("failed to marshal session: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	err = m.redis.Set(ctx, token, sessionJSON, 24*time.Hour).Err()
+	// Use the cache client's SetSession method with appropriate TTL
+	err = m.cacheClient.SetSession(ctx, token, sessionJSON, 24*time.Hour)
 	if err != nil {
-		log.Printf("[CreateSession] Error storing session in Redis: %v", err)
-		return "", err
+		m.logger.Error("Error storing session in cache service", zap.String("user_id", userID), zap.Error(err))
+		return "", fmt.Errorf("failed to store session in cache service: %w", err)
 	}
 
-	log.Printf("[CreateSession] Session stored in Redis for user: %s", userID)
+	m.logger.Info("Session stored in cache service via HTTP",
+		zap.String("user_id", userID),
+		zap.String("session_id", token))
 	return token, nil
 }
 
@@ -114,48 +103,62 @@ func (m *SessionManager) ValidateSession(tokenString string) (*Session, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Get session from Redis
-	sessionJSON, err := m.redis.Get(ctx, tokenString).Bytes()
-	if err == redis.Nil {
-		log.Printf("[ValidateSession] Session not found in Redis for token: %s", tokenString)
+	// Get session from cache service via HTTP
+	sessionJSON, err := m.cacheClient.GetSession(ctx, tokenString)
+	if err == cache.ErrKeyNotFound {
+		m.logger.Debug("Session not found in cache service", zap.String("token", tokenString))
 		return nil, ErrInvalidSession
 	} else if err != nil {
-		log.Printf("[ValidateSession] Error getting session from Redis: %v", err)
-		return nil, ErrInvalidSession
+		m.logger.Error("Error getting session from cache service", zap.String("token", tokenString), zap.Error(err))
+		return nil, fmt.Errorf("failed to get session from cache service: %w", err)
 	}
 
 	var session Session
 	if err := json.Unmarshal(sessionJSON, &session); err != nil {
-		log.Printf("[ValidateSession] Error unmarshaling session: %v", err)
+		m.logger.Error("Error unmarshaling session", zap.String("token", tokenString), zap.Error(err))
 		return nil, ErrInvalidSession
 	}
 
 	// Check if session is expired
 	if time.Now().After(session.ExpiresAt) {
-		log.Printf("[ValidateSession] Session expired for user: %s", session.UserID)
-		m.InvalidateSession(tokenString)
+		m.logger.Info("Session expired, invalidating", zap.String("user_id", session.UserID))
+		// Async cleanup - don't fail validation if cleanup fails
+		go func() {
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cleanupCancel()
+			_ = m.cacheClient.Delete(cleanupCtx, fmt.Sprintf("session:%s", tokenString))
+		}()
 		return nil, ErrSessionExpired
 	}
 
 	// Validate token with auth service
 	_, err = m.authClient.ValidateToken(context.Background(), tokenString)
 	if err != nil {
-		log.Printf("[ValidateSession] Auth service validation failed for user: %s, error: %v", session.UserID, err)
+		m.logger.Error("Auth service validation failed",
+			zap.String("user_id", session.UserID),
+			zap.String("token", tokenString),
+			zap.Error(err))
 		return nil, ErrInvalidSession
 	}
 
 	// TODO: Re-enable these checks when using real auth service
 	// // Verify user ID and role match
 	// if session.UserID != validateResp.Data.User.ID {
-	// 	log.Printf("[ValidateSession] User ID mismatch: session=%s, auth=%s", session.UserID, validateResp.Data.User.ID)
+	// 	m.logger.Error("User ID mismatch",
+	//		zap.String("session_user", session.UserID),
+	//		zap.String("auth_user", validateResp.Data.User.ID))
 	// 	return nil, ErrInvalidSession
 	// }
 	// if session.Role != validateResp.Data.User.Role {
-	// 	log.Printf("[ValidateSession] Role mismatch: session=%s, auth=%s", session.Role, validateResp.Data.User.Role)
+	// 	m.logger.Error("Role mismatch",
+	//		zap.String("session_role", session.Role),
+	//		zap.String("auth_role", validateResp.Data.User.Role))
 	// 	return nil, ErrInvalidSession
 	// }
 
-	log.Printf("[ValidateSession] Session validated successfully for user: %s", session.UserID)
+	m.logger.Debug("Session validated successfully via cache service",
+		zap.String("user_id", session.UserID),
+		zap.String("token", tokenString))
 	return &session, nil
 }
 
@@ -164,17 +167,21 @@ func (m *SessionManager) InvalidateSession(tokenString string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	err := m.redis.Del(ctx, tokenString).Err()
+	// Delete session from cache service via HTTP
+	err := m.cacheClient.Delete(ctx, fmt.Sprintf("session:%s", tokenString))
 	if err != nil {
-		log.Printf("[InvalidateSession] Error deleting session from Redis: %v", err)
-		return err
+		m.logger.Error("Error deleting session from cache service", zap.String("token", tokenString), zap.Error(err))
+		return fmt.Errorf("failed to delete session from cache service: %w", err)
 	}
+
+	m.logger.Info("Session invalidated via cache service", zap.String("token", tokenString))
 	return nil
 }
 
 // Close cleans up the session manager
 func (m *SessionManager) Close() error {
-	return m.redis.Close()
+	m.logger.Info("Closing session manager")
+	return m.cacheClient.Close()
 }
 
 // Error definitions

@@ -1,0 +1,230 @@
+# PostgreSQL Database for Development
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-dev
+  labels:
+    app: postgres
+    environment: development
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+        environment: development
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: "profiles"
+            - name: POSTGRES_USER
+              value: "profile_user"
+            - name: POSTGRES_PASSWORD
+              value: "profile_password"
+            - name: PGDATA
+              value: "/var/lib/postgresql/data/pgdata"
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - profile_user
+                - -d
+                - profiles
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - profile_user
+                - -d
+                - profiles
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+      volumes:
+        - name: postgres-storage
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-dev
+  labels:
+    app: postgres
+    environment: development
+spec:
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+  type: ClusterIP
+
+---
+# RabbitMQ Message Queue for Development
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rabbitmq-dev
+  labels:
+    app: rabbitmq
+    environment: development
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rabbitmq
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+        environment: development
+    spec:
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:3.11-management-alpine
+          ports:
+            - containerPort: 5672
+              name: amqp
+            - containerPort: 15672
+              name: management
+          env:
+            - name: RABBITMQ_DEFAULT_USER
+              value: "admin"
+            - name: RABBITMQ_DEFAULT_PASS
+              value: "password"
+            - name: RABBITMQ_VM_MEMORY_HIGH_WATERMARK
+              value: "0.6"
+          volumeMounts:
+            - name: rabbitmq-data
+              mountPath: /var/lib/rabbitmq
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          livenessProbe:
+            exec:
+              command:
+                - rabbitmq-diagnostics
+                - ping
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - rabbitmq-diagnostics
+                - check_port_connectivity
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: rabbitmq-data
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq-dev
+  labels:
+    app: rabbitmq
+    environment: development
+spec:
+  selector:
+    app: rabbitmq
+  ports:
+    - name: amqp
+      port: 5672
+      targetPort: 5672
+    - name: management
+      port: 15672
+      targetPort: 15672
+  type: ClusterIP
+
+---
+# Optional: RabbitMQ NodePort Service for external access during development
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq-dev-external
+  labels:
+    app: rabbitmq
+    environment: development
+spec:
+  selector:
+    app: rabbitmq
+  ports:
+    - name: management
+      port: 15672
+      targetPort: 15672
+      nodePort: 30672
+  type: NodePort
+
+---
+# ConfigMap for RabbitMQ configuration (optional advanced config)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rabbitmq-dev-config
+  labels:
+    app: rabbitmq
+    environment: development
+data:
+  enabled_plugins: |
+    [rabbitmq_management,rabbitmq_peer_discovery_k8s].
+  rabbitmq.conf: |
+    # RabbitMQ Configuration for Development
+    default_user = admin
+    default_pass = password
+
+    # Memory and disk thresholds
+    vm_memory_high_watermark.relative = 0.6
+    disk_free_limit.relative = 1.0
+
+    # Clustering (disabled for single node)
+    cluster_formation.peer_discovery_backend = classic_config
+
+    # Management plugin
+    management.tcp.port = 15672
+
+    # AMQP port
+    listeners.tcp.default = 5672
+
+    # Logging
+    log.console = true
+    log.console.level = info
+
+    # Queue settings for development
+    queue_master_locator = min-masters

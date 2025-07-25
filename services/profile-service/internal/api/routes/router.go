@@ -76,9 +76,19 @@ func (r *Router) setupRoutes() {
 			profiles.PUT("/:id", profileHandler.UpdateProfile)
 			profiles.DELETE("/:id", profileHandler.DeleteProfile)
 
-			// Task routes
+			// ✅ ENHANCED: Task routes with multi-worker support
 			taskHandler := handlers.NewTaskHandler(r.profileService)
+
+			// Generic task submission endpoint (maintain backward compatibility)
 			profiles.POST("/:id/tasks", taskHandler.SubmitTask)
+
+			// ✅ NEW: Specialized task endpoints for Phase 2 Multi-Worker Task Support
+			profiles.POST("/:id/tasks/email", taskHandler.SubmitEmailTask)     // Email notifications
+			profiles.POST("/:id/tasks/image", taskHandler.SubmitImageTask)     // Image processing
+			profiles.POST("/:id/tasks/profile", taskHandler.SubmitProfileTask) // Profile tasks
+
+			// ✅ NEW: Task statistics and monitoring endpoints
+			profiles.GET("/:id/tasks/stats", taskHandler.GetTaskTypeStats) // Task statistics
 		}
 	}
 }

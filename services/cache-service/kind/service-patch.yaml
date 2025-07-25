@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: cache-service
+  annotations:
+    service.kubernetes.io/environment: "kind-local"
+    service.kubernetes.io/load-balancer-source-ranges: "0.0.0.0/0"
+spec:
+  # Change to NodePort for Kind local access
+  type: NodePort
+
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      nodePort: 30080 # Fixed NodePort for consistent access
+      protocol: TCP
+    - name: grpc
+      port: 9090
+      targetPort: 9090
+      nodePort: 30090 # Fixed NodePort for gRPC access
+      protocol: TCP
+    - name: metrics
+      port: 8081
+      targetPort: 8081
+      nodePort: 30081 # Fixed NodePort for metrics access
+      protocol: TCP
+
+  # Selector remains the same to target cache-service pods
+  selector:
+    app: cache-service
+
+  # Session affinity for consistent connections during development
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 3600 # 1 hour session affinity
+
+---
+# Additional service for Redis development access (optional)
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-dev-external
+  labels:
+    app: redis
+    component: development-access
+  annotations:
+    service.kubernetes.io/environment: "kind-local"
+spec:
+  type: NodePort
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+      nodePort: 30379 # Fixed NodePort for Redis access
+      protocol: TCP
+  selector:
+    app: redis-dev # Target development Redis instance

@@ -1,0 +1,32 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: profile-service-kind
+  annotations:
+    # Reference to manual deployment for analysis
+    deployment.microservices.io/manual-alternative: "../scripts/manual-deploy.sh --analyze"
+    deployment.microservices.io/cleanup-script: "../scripts/manual-cleanup.sh"
+    deployment.microservices.io/step-by-step-guide: "../STEP_BY_STEP_DEPLOYMENT_GUIDE.md"
+
+# Base configuration and additional resources
+resources:
+  - ../kubernetes
+  # Development dependencies (temporary - remove when real cache-service is available)
+  - profile-dependencies.yaml # Local to kind/ directory
+  # Monitoring (ConfigMap only - no Prometheus Operator required)
+  - monitoring-configmap.yaml # Local to kind/ directory
+
+# Kind-specific patches
+patchesStrategicMerge:
+  - deployment-patch.yaml
+  - service-patch.yaml
+
+# Kind-specific namespace
+namespace: default
+
+# Additional labels for kind deployment
+labels:
+  - pairs:
+      environment: local-kind
+      deployment-tool: kustomize

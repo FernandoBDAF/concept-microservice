@@ -9,7 +9,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"microservices/services/profile-storage/internal/logger"
+	"microservices/services/profile-storage/internal/pkg/logger"
 )
 
 const (

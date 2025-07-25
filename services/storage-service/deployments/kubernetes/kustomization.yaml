@@ -1,0 +1,60 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: storage-service-base
+  labels:
+    app: storage-service
+    service: storage-service
+
+# Base resources
+resources:
+  - deployment.yaml
+  - service.yaml
+  - configmap.yaml
+  - secrets.yaml
+
+# Common labels applied to all resources
+commonLabels:
+  app: storage-service
+  service: storage-service
+  version: v1
+  component: storage
+
+# Common annotations applied to all resources
+commonAnnotations:
+  deployment.kubernetes.io/revision: "1"
+  app.kubernetes.io/managed-by: "kustomize"
+
+# Namespace (can be overridden in overlays)
+namespace: default
+
+# Name prefix for all resources
+namePrefix: ""
+
+# Images (can be overridden in overlays)
+images:
+  - name: storage-service
+    newTag: latest
+
+# ConfigMap generators (additional config if needed)
+configMapGenerator: []
+
+# Secret generators (for production, use external secret management)
+secretGenerator: []
+
+# Resource patches (can be used in overlays)
+patches: []
+
+# Replicas (can be overridden in overlays)
+replicas:
+  - name: storage-service
+    count: 3
+
+# Resources for validation
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    app: storage-service
+  annotations:
+    generated-by: "kustomize"

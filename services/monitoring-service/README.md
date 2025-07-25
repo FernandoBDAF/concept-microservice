@@ -1,1 +1,0 @@
-Service Overview: Purpose of this service, how to set it up and run it, and its role in the overall system. This might include its main functionalities and which other components or users interact with it. (For example, the API service README would note it’s a backend providing REST endpoints for the mobile app and sending jobs to the worker.)

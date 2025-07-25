@@ -10,7 +10,7 @@ import (
 	"github.com/FBDAF/microservices/services/queue-service/pkg/queue"
 )
 
-// QueueService implements the queue operations
+// QueueService implements the queue operations with routing key support
 type QueueService struct {
 	messageStore map[string]*model.MessageStatus
 	mu           sync.RWMutex
@@ -29,8 +29,8 @@ func NewQueueService(rmq *rabbitmq.RabbitMQ, queueName string) *QueueService {
 	}
 }
 
-// PublishMessage publishes a message to the queue
-func (s *QueueService) PublishMessage(msg *model.Message) error {
+// PublishWithRoutingKey publishes a message with specific routing key
+func (s *QueueService) PublishWithRoutingKey(routingKey string, msg *model.Message) error {
 	start := time.Now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -42,11 +42,18 @@ func (s *QueueService) PublishMessage(msg *model.Message) error {
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	}
 
-	// Publish message to RabbitMQ
-	if err := s.rabbitmq.Publish(s.queueName, msg); err != nil {
+	// Publish message to RabbitMQ with routing key
+	if err := s.rabbitmq.PublishWithRoutingKey(routingKey, msg); err != nil {
+		// Update status to failed on error
+		s.messageStore[msg.ID].Status = "failed"
+		s.messageStore[msg.ID].Timestamp = time.Now().UTC().Format(time.RFC3339)
 		s.metrics.ErrorsTotal.Inc()
 		return fmt.Errorf("failed to publish message to RabbitMQ: %w", err)
 	}
+
+	// Update status to published
+	s.messageStore[msg.ID].Status = "published"
+	s.messageStore[msg.ID].Timestamp = time.Now().UTC().Format(time.RFC3339)
 
 	// Record metrics
 	s.metrics.MessagesTotal.Inc()
@@ -54,6 +61,28 @@ func (s *QueueService) PublishMessage(msg *model.Message) error {
 	s.metrics.Size.Inc()
 
 	return nil
+}
+
+// PublishMessage publishes a message (backward compatibility with routing key inference)
+func (s *QueueService) PublishMessage(msg *model.Message) error {
+	// Infer routing key from message type for backward compatibility
+	routingKey := "profile.task" // default
+
+	switch msg.Type {
+	case "profile_update", "profile_task":
+		routingKey = "profile.task"
+	case "email_send", "email_task":
+		routingKey = "email.send"
+	case "image_process", "image_task":
+		routingKey = "image.process"
+	default:
+		// For unknown message types, check if there's a routing key in metadata
+		if rk, exists := msg.Metadata["routing_key"]; exists {
+			routingKey = rk
+		}
+	}
+
+	return s.PublishWithRoutingKey(routingKey, msg)
 }
 
 // GetMessageStatus retrieves the status of a message
@@ -111,4 +140,13 @@ func (s *QueueService) StartConsuming() error {
 
 		return nil
 	})
+}
+
+// GetSupportedRoutingKeys returns list of supported routing keys
+func (s *QueueService) GetSupportedRoutingKeys() []string {
+	keys := make([]string, 0, len(model.DefaultRoutingMap))
+	for key := range model.DefaultRoutingMap {
+		keys = append(keys, key)
+	}
+	return keys
 }

@@ -13,9 +13,9 @@ import (
 	"github.com/gorilla/mux"
 	"go.uber.org/zap"
 
-	"microservices/services/profile-storage/internal/logger"
-	"microservices/services/profile-storage/internal/models"
-	"microservices/services/profile-storage/internal/service"
+	"microservices/services/profile-storage/internal/domain/models"
+	"microservices/services/profile-storage/internal/domain/service"
+	"microservices/services/profile-storage/internal/pkg/logger"
 )
 
 // ErrorResponse represents an error response

@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: storage-service
+spec:
+  replicas: 2
+  template:
+    spec:
+      containers:
+        - name: storage-service
+          # Reduced resources for Kind cluster
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+
+          # Development-specific environment variables
+          env:
+            - name: ENVIRONMENT
+              value: "development"
+            - name: LOG_LEVEL
+              value: "debug"
+            - name: METRICS_DEBUG
+              value: "true"
+            - name: ENABLE_PROFILING
+              value: "true"
+            - name: DB_HOST
+              value: "postgres-dev"
+            - name: RABBITMQ_HOST
+              value: "rabbitmq-dev"
+
+          # Relaxed health checks for development
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 5
+
+          startupProbe:
+            httpGet:
+              path: /health/ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 60
+
+      # Remove resource constraints for development
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+
+      # Simplified affinity rules for Kind
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 50
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - storage-service
+                topologyKey: kubernetes.io/hostname

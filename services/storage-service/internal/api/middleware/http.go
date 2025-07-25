@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"microservices/services/profile-storage/internal/logger"
+	"microservices/services/profile-storage/internal/pkg/logger"
 )
 
 // RequestIDKey is the context key for the request ID

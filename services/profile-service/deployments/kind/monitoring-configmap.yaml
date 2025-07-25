@@ -1,0 +1,83 @@
+# Monitoring ConfigMap for Local Development
+#
+# This contains only the Grafana dashboard ConfigMap which doesn't require
+# Prometheus Operator. The ServiceMonitor and PrometheusRule are excluded
+# for local kind development.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: profile-service-grafana-dashboard
+  labels:
+    app: profile-service
+    grafana_dashboard: "1"
+data:
+  profile-service-dashboard.json: |
+    {
+      "dashboard": {
+        "id": null,
+        "title": "Profile Service - Multi-Worker Architecture",
+        "tags": ["profile-service", "microservices", "multi-worker"],
+        "style": "dark",
+        "timezone": "browser",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Request Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(profile_api_requests_total[5m])",
+                "legendFormat": "{{method}} {{status}}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+          },
+          {
+            "id": 2,
+            "title": "Task Distribution by Routing Key",
+            "type": "piechart",
+            "targets": [
+              {
+                "expr": "sum by (routing_key) (rate(profile_tasks_routing_key_distribution[5m]))",
+                "legendFormat": "{{routing_key}}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+          },
+          {
+            "id": 3,
+            "title": "Response Time",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, rate(profile_api_request_duration_seconds_bucket[5m]))",
+                "legendFormat": "95th percentile"
+              },
+              {
+                "expr": "histogram_quantile(0.50, rate(profile_api_request_duration_seconds_bucket[5m]))",
+                "legendFormat": "50th percentile"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+          },
+          {
+            "id": 4,
+            "title": "Error Rate",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "rate(profile_api_requests_total{status=~\"5..\"}[5m]) / rate(profile_api_requests_total[5m]) * 100",
+                "legendFormat": "Error Rate %"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+          }
+        ],
+        "time": {
+          "from": "now-1h",
+          "to": "now"
+        },
+        "refresh": "5s"
+      }
+    }

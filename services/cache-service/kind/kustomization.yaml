@@ -1,0 +1,87 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: cache-service-kind
+  annotations:
+    config.kubernetes.io/local-config: "true"
+
+# Base resources from the main deployment directory
+resources:
+  - ../deployments/k8s/secret.yaml
+  - ../deployments/k8s/configmap.yaml
+  - ../deployments/k8s/service.yaml
+  - ../deployments/k8s/deployment.yaml
+  - cache-dependencies.yaml  # Kind-specific Redis for development
+
+# Kind-specific patches for local development
+patches:
+  # Patch cache service deployment for reduced resources
+  - path: deployment-patch.yaml
+    target:
+      kind: Deployment
+      name: cache-service
+
+  # Patch cache service for NodePort access
+  - path: service-patch.yaml
+    target:
+      kind: Service
+      name: cache-service
+
+# ConfigMap generator for Kind-specific configuration
+configMapGenerator:
+  - name: cache-service-kind-config
+    literals:
+      - CACHE_SERVER_HTTP_PORT="8080"
+      - CACHE_SERVER_GRPC_PORT="9090"
+      - CACHE_SERVER_METRICS_PORT="8081"
+      - CACHE_REDIS_HOST="redis-dev"
+      - CACHE_REDIS_PORT="6379"
+      - CACHE_REDIS_POOL_SIZE="20"  # Reduced for local dev
+      - CACHE_CACHE_DEFAULT_TTL="10m"
+      - CACHE_CACHE_PROFILE_TTL="15m"  # Reduced for testing
+      - CACHE_CACHE_TASK_TTL="5m"     # Reduced for testing  
+      - CACHE_CACHE_SESSION_TTL="15m" # Reduced for testing
+      - CACHE_CIRCUIT_BREAKER_ENABLED="true"
+      - CACHE_CIRCUIT_BREAKER_MAX_REQUESTS="10"  # Lower threshold for testing
+      - CACHE_CIRCUIT_BREAKER_INTERVAL="30s"
+      - CACHE_CIRCUIT_BREAKER_TIMEOUT="5s"
+      - CACHE_LOG_LEVEL="debug"  # Verbose logging for development
+      - CACHE_METRICS_ENABLED="true"
+      - KIND_DEPLOYMENT="true"  # Flag to indicate Kind environment
+
+# Secret generator for development (with well-known values for testing)
+secretGenerator:
+  - name: cache-service-dev-secret
+    literals:
+      - CACHE_REDIS_PASSWORD="dev-redis-password"
+      - JWT_SECRET_KEY="dev-jwt-secret-key-change-in-production"
+
+# Common labels for Kind deployment
+commonLabels:
+  app.kubernetes.io/instance: cache-service-kind
+  app.kubernetes.io/managed-by: kustomize
+  environment: development
+  deployment-method: kind
+
+# Common annotations
+commonAnnotations:
+  config.kubernetes.io/local-config: "true"
+  deployment.kubernetes.io/environment: "kind-local"
+  
+# Namespace for Kind deployment (optional)
+namespace: default
+
+# Image transformations for local development
+images:
+  - name: cache-service
+    newTag: latest
+    # Note: For Kind, you'll typically load images using:
+    # kind load docker-image cache-service:latest --name your-cluster-name
+
+# Name prefix for Kind resources
+namePrefix: kind-
+
+# Resource ordering - deploy dependencies first
+sortOptions:
+  order: fifo 

@@ -1,0 +1,86 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: storage-service-kind
+  labels:
+    app: storage-service
+    service: storage-service
+    environment: development
+
+# Base configuration
+bases:
+  - ../kubernetes
+
+# Environment-specific labels
+commonLabels:
+  environment: development
+  deployment-type: kind
+
+# Environment-specific annotations
+commonAnnotations:
+  environment: "development"
+  cluster-type: "kind"
+  deployment.kubernetes.io/revision: "1"
+
+# Namespace for Kind deployment
+namespace: default
+
+# Name suffix for development
+nameSuffix: "-dev"
+
+# Images for development
+images:
+  - name: storage-service
+    newTag: dev-latest
+
+# Replicas for development (reduced for Kind)
+replicas:
+  - name: storage-service
+    count: 2
+
+# Resource patches for Kind (reduced resources)
+patches:
+  - target:
+      kind: Deployment
+      name: storage-service
+    path: deployment-patch.yaml
+
+  - target:
+      kind: Service
+      name: storage-service
+    path: service-patch.yaml
+
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: storage-service-hpa
+    path: hpa-patch.yaml
+
+# Additional resources for Kind environment
+resources:
+  - storage-dependencies.yaml
+
+# ConfigMap generator for Kind-specific config
+configMapGenerator:
+  - name: storage-service-kind-config
+    literals:
+      - ENVIRONMENT=development
+      - CLUSTER_TYPE=kind
+      - LOG_LEVEL=debug
+      - METRICS_DEBUG=true
+      - ENABLE_PROFILING=true
+
+# Secret generator for development (insecure - for development only)
+secretGenerator:
+  - name: storage-service-dev-secrets
+    literals:
+      - dev-mode=true
+      - debug-enabled=true
+
+# Generator options
+generatorOptions:
+  disableNameSuffixHash: false
+  labels:
+    environment: development
+  annotations:
+    generated-by: "kustomize-kind"

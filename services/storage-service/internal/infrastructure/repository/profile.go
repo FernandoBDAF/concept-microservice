@@ -12,8 +12,8 @@ import (
 	"github.com/jmoiron/sqlx"
 	"go.uber.org/zap"
 
-	"microservices/services/profile-storage/internal/logger"
-	"microservices/services/profile-storage/internal/models"
+	"microservices/services/profile-storage/internal/domain/models"
+	"microservices/services/profile-storage/internal/pkg/logger"
 )
 
 // ProfileRepository handles database operations for profiles

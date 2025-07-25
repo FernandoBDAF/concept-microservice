@@ -1,0 +1,197 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: profile-service
+  labels:
+    app: profile-service
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/path: "/metrics"
+spec:
+  selector:
+    app: profile-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+    - name: metrics
+      port: 8081
+      targetPort: 8080
+      protocol: TCP
+  type: ClusterIP
+  sessionAffinity: None
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: profile-service
+  labels:
+    app: profile-service
+automountServiceAccountToken: true
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: profile-service-role
+  labels:
+    app: profile-service-role
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["services", "endpoints"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: profile-service-binding
+  labels:
+    app: profile-service-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: profile-service
+subjects:
+  - kind: ServiceAccount
+    name: profile-service
+    namespace: default
+
+---
+# Horizontal Pod Autoscaler (Based on Performance Testing Results)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: profile-service-hpa
+  labels:
+    app: profile-service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: profile-service
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 25
+          periodSeconds: 60
+
+---
+# Pod Disruption Budget
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: profile-service-pdb
+  labels:
+    app: profile-service
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: profile-service
+
+---
+# Network Policy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: profile-service-netpol
+  labels:
+    app: profile-service
+spec:
+  podSelector:
+    matchLabels:
+      app: profile-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-system
+        - podSelector:
+            matchLabels:
+              app: api-gateway
+      ports:
+        - protocol: TCP
+          port: 8080
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring-system
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # Allow DNS resolution
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow communication with queue-service
+    - to:
+        - podSelector:
+            matchLabels:
+              app: queue-service
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Allow communication with storage-service
+    - to:
+        - podSelector:
+            matchLabels:
+              app: storage-service
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Allow communication with auth-service
+    - to:
+        - podSelector:
+            matchLabels:
+              app: auth-service
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Allow communication with cache-service (HTTP)
+    - to:
+        - podSelector:
+            matchLabels:
+              app: cache-service
+      ports:
+        - protocol: TCP
+          port: 8080

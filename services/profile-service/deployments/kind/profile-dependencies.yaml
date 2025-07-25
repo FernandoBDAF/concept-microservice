@@ -1,0 +1,105 @@
+# Profile Service Development Dependencies
+#
+# This file contains temporary services needed for local profile-service development.
+# These services will be replaced by real microservices in production.
+#
+# Mock cache-service for profile service HTTP cache integration
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cache-service
+  labels:
+    app: cache-service
+    component: cache
+    temporary: "true" # Mark as temporary dependency
+    service-dependency: profile-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cache-service
+  template:
+    metadata:
+      labels:
+        app: cache-service
+    spec:
+      containers:
+        - name: cache-service
+          image: nginx:alpine
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/conf.d
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: cache-service-mock-config
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cache-service-mock-config
+  labels:
+    app: cache-service
+data:
+  default.conf: |
+    server {
+        listen 8080;
+        server_name localhost;
+        
+        # Health check endpoint
+        location /api/v1/health {
+            return 200 '{"status":"ok","service":"cache-service-mock"}';
+            add_header Content-Type application/json;
+        }
+        
+        # Mock cache GET endpoint
+        location ~ ^/api/v1/cache/(.+)$ {
+            return 404 '{"success":false,"error":"key not found"}';
+            add_header Content-Type application/json;
+        }
+        
+        # Mock cache PUT endpoint
+        location ~ ^/api/v1/cache/(.+)$ {
+            if ($request_method = PUT) {
+                return 200 '{"success":true}';
+            }
+            return 405 '{"success":false,"error":"method not allowed"}';
+            add_header Content-Type application/json;
+        }
+        
+        # Mock cache DELETE endpoint
+        location ~ ^/api/v1/cache/(.+)$ {
+            if ($request_method = DELETE) {
+                return 200 '{"success":true}';
+            }
+            return 405 '{"success":false,"error":"method not allowed"}';
+            add_header Content-Type application/json;
+        }
+    }
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cache-service
+  labels:
+    app: cache-service
+spec:
+  selector:
+    app: cache-service
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+  type: ClusterIP

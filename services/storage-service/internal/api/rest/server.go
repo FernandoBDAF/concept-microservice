@@ -31,6 +31,10 @@ func (s *Server) RegisterRoutes(handlers ...interface{}) {
 		switch h := handler.(type) {
 		case *ProfileHandler:
 			h.RegisterRoutes(router)
+		case *AuthHandler:
+			h.RegisterRoutes(router)
+		case *BatchHandler:
+			h.RegisterRoutes(router)
 		case *HealthHandler:
 			h.RegisterRoutes(router)
 		case *MetricsHandler:

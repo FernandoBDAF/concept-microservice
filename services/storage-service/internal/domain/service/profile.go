@@ -11,9 +11,9 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"microservices/services/profile-storage/internal/logger"
-	"microservices/services/profile-storage/internal/models"
-	"microservices/services/profile-storage/internal/repository"
+	"microservices/services/profile-storage/internal/domain/models"
+	"microservices/services/profile-storage/internal/infrastructure/repository"
+	"microservices/services/profile-storage/internal/pkg/logger"
 )
 
 // Service errors
@@ -43,6 +43,37 @@ func NewProfileService(repo *repository.ProfileRepository) *ProfileService {
 		maxRetries:         3,
 		retryBackoff:       100 * time.Millisecond,
 	}
+}
+
+// convertAddressRequests converts AddressRequest slice to Address slice
+func convertAddressRequests(addressReqs []models.AddressRequest) []models.Address {
+	addresses := make([]models.Address, len(addressReqs))
+	for i, req := range addressReqs {
+		addresses[i] = models.Address{
+			ID:         uuid.New(), // Will be overridden if needed
+			Street:     req.Street,
+			City:       req.City,
+			State:      req.State,
+			Country:    req.Country,
+			PostalCode: req.PostalCode,
+			IsPrimary:  req.IsPrimary,
+		}
+	}
+	return addresses
+}
+
+// convertContactRequests converts ContactRequest slice to Contact slice
+func convertContactRequests(contactReqs []models.ContactRequest) []models.Contact {
+	contacts := make([]models.Contact, len(contactReqs))
+	for i, req := range contactReqs {
+		contacts[i] = models.Contact{
+			ID:        uuid.New(), // Will be overridden if needed
+			Type:      req.Type,
+			Value:     req.Value,
+			IsPrimary: req.IsPrimary,
+		}
+	}
+	return contacts
 }
 
 // CreateProfile creates a new profile with validation and business rules
@@ -97,8 +128,8 @@ func (s *ProfileService) CreateProfile(ctx context.Context, req *models.ProfileR
 		LastName:  req.LastName,
 		Email:     req.Email,
 		Phone:     req.Phone,
-		Addresses: req.Addresses,
-		Contacts:  req.Contacts,
+		Addresses: convertAddressRequests(req.Addresses),
+		Contacts:  convertContactRequests(req.Contacts),
 	}
 
 	// Set timestamps
@@ -319,8 +350,8 @@ func (s *ProfileService) UpdateProfile(ctx context.Context, id uuid.UUID, req *m
 	existing.LastName = req.LastName
 	existing.Email = req.Email
 	existing.Phone = req.Phone
-	existing.Addresses = req.Addresses
-	existing.Contacts = req.Contacts
+	existing.Addresses = convertAddressRequests(req.Addresses)
+	existing.Contacts = convertContactRequests(req.Contacts)
 
 	// Generate UUIDs for new addresses and contacts
 	for i := range existing.Addresses {

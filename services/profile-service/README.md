@@ -2,832 +2,286 @@
 
 ## Overview
 
-The Profile Service is a microservice responsible for managing user profiles in the system. It provides a REST API for profile management operations and integrates with various other services to provide a complete profile management solution.
-
-### Purpose
-
-- Manage user profiles (create, read, update, delete)
-- Handle profile-related tasks through a queue-based system
-- Provide profile data to other services in the system
-- Ensure data consistency and reliability
-
-### Main Functionalities
-
-1. Profile Management
-
-   - Create new user profiles
-   - Retrieve profile information
-   - Update profile details
-   - Delete profiles
-   - List all profiles
-
-2. Task Processing
-   - Submit profile-related tasks to a queue
-   - Track task status and progress
-   - Handle task responses
-
-### Service Integration
-
-The Profile Service interacts with several other services:
-
-- Queue Service: For asynchronous task processing
-- Storage Service: For persistent profile data storage
-- Auth Service: For user authentication and authorization
-- Cache Service: For performance optimization
-
-### Setup and Running
-
-1. Prerequisites
-
-   ```bash
-   # Required environment variables
-   export SERVER_HOST=0.0.0.0
-   export SERVER_PORT=8080
-   export QUEUE_URL=amqp://guest:guest@localhost:5672/
-   export QUEUE_NAME=profile_queue
-   export STORAGE_HOST=profile-storage
-   export STORAGE_PORT=8080
-   export AUTH_SERVICE_URL=http://auth-service
-   ```
-
-2. Installation
-
-   ```bash
-   # Clone the repository
-   git clone https://github.com/fernandobarroso/microservices.git
-   cd microservices/services/profile-service
-
-   # Install dependencies
-   go mod download
-   ```
-
-3. Running the Service
-
-   ```bash
-   # Development mode
-   go run cmd/main.go
-
-   # Production build
-   go build -o profile-service ./cmd/main.go
-   ./profile-service
-   ```
-
-4. Docker
-
-   ```bash
-   # Build the image
-   docker build -t profile-service:latest .
-
-   # Run the container
-   docker run -p 8080:8080 profile-service:latest
-   ```
-
-### API Endpoints
-
-1. Profile Management
-
-   ```http
-   GET    /api/v1/profiles          # List all profiles
-   GET    /api/v1/profiles/{id}     # Get profile by ID
-   POST   /api/v1/profiles          # Create new profile
-   PUT    /api/v1/profiles/{id}     # Update profile
-   DELETE /api/v1/profiles/{id}     # Delete profile
-   ```
-
-2. Task Management
-
-   ```http
-   POST   /api/v1/profiles/{id}/tasks  # Submit a new task
-   ```
-
-3. Health and Metrics
-   ```http
-   GET    /health                     # Health check
-   GET    /metrics                    # Prometheus metrics
-   ```
-
-### Configuration
-
-The service can be configured through environment variables or a configuration file. Key configuration options include:
-
-```yaml
-server:
-  host: 0.0.0.0
-  port: 8080
-
-queue:
-  url: amqp://guest:guest@localhost:5672/
-  timeout: 5s
-  retries: 3
-  queue_name: profile_queue
-
-storage:
-  host: profile-storage
-  port: 8080
-  database: profile_service
-  type: memory
-  max_retries: 3
-  retry_delay: 100ms
-
-auth:
-  host: localhost
-  port: 80
-  url: http://auth-service
-
-logging:
-  level: info
-  format: text
-  log_file: app.log
-```
-
-### Monitoring and Logging
-
-The service includes built-in monitoring and logging capabilities:
-
-1. Metrics (Prometheus)
-
-   - Request rates
-   - Error rates
-   - Latency percentiles
-   - Queue operation metrics
-   - Storage operation metrics
-
-2. Logging
-   - Structured logging with Zap
-   - Multiple log levels (DEBUG, INFO, WARN, ERROR)
-   - Request tracing
-   - Error tracking
-
-### Development
-
-1. Running Tests
-
-   ```bash
-   # Run all tests
-   go test ./...
-
-   # Run specific test
-   go test ./internal/domain/services/...
-   ```
-
-2. Code Style
-   ```bash
-   # Run linter
-   golangci-lint run
-   ```
-
-### Deployment
-
-The service can be deployed using Docker or Kubernetes:
-
-1. Docker
-
-   ```bash
-   docker build -t profile-service:latest .
-   docker run -p 8080:8080 profile-service:latest
-   ```
-
-2. Kubernetes
-   ```bash
-   kubectl apply -f k8s/
-   ```
-
-### Security
-
-The service implements several security measures:
-
-- JWT-based authentication
-- Role-based access control
-- Input validation
-- Rate limiting
-- Secure configuration management
+Profile Service serves as the primary entry point and orchestrator for the microservices task processing ecosystem. It handles profile operations and coordinates with multiple worker types through the queue-service.
 
 ## Architecture
 
-### Core Components
+The service integrates with the upgraded queue-service and multi-worker architecture, supporting three task types:
 
-1. **API Layer**
+- **Profile tasks** (`profile.task`) - Profile updates, deletions, data synchronization
+- **Email tasks** (`email.send`) - Welcome emails, notifications, alerts
+- **Image tasks** (`image.process`) - Image resizing, format conversion, optimization
 
-   - REST API endpoints
-   - Request validation
-   - Response formatting
-   - Error handling
+## Deployment Approaches
 
-2. **Service Layer**
+This service supports **two complementary deployment approaches**:
 
-   - Business logic
-   - Data transformation
-   - Integration with shared libraries
-   - Error handling
+### 🔍 **Manual Deployment** (Analysis & Learning)
 
-3. **Integration Layer**
-   - Shared libraries integration
-   - API services communication
-   - Circuit breaking
-   - Retry mechanisms
+**Purpose**: Step-by-step analysis and understanding  
+**Best for**: Learning, troubleshooting, detailed inspection
 
-### Shared Libraries Integration
+```bash
+# Step-by-step manual deployment with analysis
+cd deployments/scripts
+./manual-deploy.sh --analyze
 
-1. **Logging Library**
+# Interactive deployment with prompts
+./manual-deploy.sh --step-by-step
 
-   ```go
-   // Initialize logger
-   logger := logging.NewLogger("profile-service")
-
-   // Usage example
-   logger.Info("Processing request",
-       logging.WithField("profile_id", profileID),
-       logging.WithField("action", "update"))
-   ```
-
-2. **Monitoring Library**
-
-   ```go
-   // Initialize collector
-   monitor := monitoring.NewCollector("profile-service")
-
-   // Usage example
-   monitor.IncRequests("profile_update")
-   defer monitor.ObserveDuration("profile_update")
-   ```
-
-3. **Cache Client Library**
-
-   ```go
-   // Initialize cache client
-   cacheClient := cache.NewAPIClient(cache.Config{
-       Endpoint: "http://cache-api:8080",
-       Timeout:  time.Second * 5,
-   })
-
-   // Usage example
-   profile, err := cacheClient.Get(ctx, "profile:"+profileID)
-   ```
-
-4. **Queue Client Library**
-
-   ```go
-   // Initialize queue client
-   queueClient := queue.NewAPIClient(queue.Config{
-       Endpoint: "http://queue-api:8080",
-       Timeout:  time.Second * 5,
-   })
-
-   // Usage example
-   err = queueClient.Publish(ctx, "profile-updates", &queue.Message{
-       Type: "profile_updated",
-       Data: profileData,
-   })
-   ```
-
-5. **Storage Client Library**
-
-   ```go
-   // Initialize storage client
-   storageClient := storage.NewAPIClient(storage.Config{
-       Endpoint: "http://storage-api:8080",
-       Timeout:  time.Second * 5,
-   })
-
-   // Usage example
-   err = storageClient.Update(ctx, "profiles", profileID, profileData)
-   ```
-
-### Service Integration Library
-
-```go
-// Initialize service integration
-integration := integration.NewServiceIntegration(integration.Config{
-    ServiceName: "profile-service",
-    Discovery:   "kubernetes",
-})
-
-// Register health checks
-integration.RegisterHealthCheck("cache", func() error {
-    return cacheClient.HealthCheck(ctx)
-})
-integration.RegisterHealthCheck("queue", func() error {
-    return queueClient.HealthCheck(ctx)
-})
-integration.RegisterHealthCheck("storage", func() error {
-    return storageClient.HealthCheck(ctx)
-})
-
-// Use circuit breaker
-breaker := integration.NewCircuitBreaker("cache-api", integration.CircuitBreakerConfig{
-    Threshold: 5,
-    Timeout:   time.Second * 30,
-})
-
-// Use retry mechanism
-retry := integration.NewRetry(integration.RetryConfig{
-    MaxAttempts: 3,
-    Backoff:     time.Second * 2,
-})
+# Manual cleanup
+./manual-cleanup.sh --step-by-step
 ```
 
-## Complex Integration Patterns
+**🎯 Smart Environment Detection**: The manual script automatically detects your cluster:
 
-### 1. Distributed Transaction
+- **Kind clusters**: 1 replica, reduced resources, local secrets, debug logging
+- **Production clusters**: 3 replicas, production resources, production secrets
+
+### ⚡ **Kustomize Deployment** (Operations & Automation)
+
+**Purpose**: Regular, consistent operations  
+**Best for**: Daily operations, CI/CD, production deployments
+
+```bash
+# Quick kustomize deployment
+cd deployments/kind
+kubectl apply -k .
+
+# Or using deployment script
+./deploy-to-kind.sh
+```
+
+## When to Use Each Approach
+
+| Scenario                  | Manual | Kustomize | Reason                             |
+| ------------------------- | ------ | --------- | ---------------------------------- |
+| **First deployment**      | ✅     | ❌        | Learn components step-by-step      |
+| **Troubleshooting**       | ✅     | ❌        | Analyze each manifest individually |
+| **Learning/Training**     | ✅     | ❌        | Understand Kubernetes resources    |
+| **Daily development**     | ❌     | ✅        | Speed and consistency              |
+| **CI/CD pipelines**       | ❌     | ✅        | Automation and reliability         |
+| **Production deployment** | ❌     | ✅        | Consistency and safety             |
+| **Problem diagnosis**     | ✅     | ❌        | Step-by-step analysis              |
+
+## Quick Start
+
+### Manual Approach (Recommended for First Time)
+
+```bash
+# 1. Understand each component step-by-step
+cd deployments/scripts
+./manual-deploy.sh --analyze
+
+# 2. View detailed deployment guide
+cat ../STEP_BY_STEP_DEPLOYMENT_GUIDE.md
+
+# 3. Clean up when done
+./manual-cleanup.sh
+```
+
+### Kustomize Approach (Recommended for Regular Use)
+
+```bash
+# 1. Quick deployment
+cd deployments/kind
+kubectl apply -k .
+
+# 2. Check status
+kubectl get pods -l app=profile-service
+
+# 3. View logs
+kubectl logs -l app=profile-service --tail=50 -f
+```
+
+## Multi-Worker Architecture
+
+### Message Format Specification
+
+The service uses queue-service compatible message format:
 
 ```go
-func (s *ProfileService) UpdateProfile(ctx context.Context, profile *Profile) error {
-    // Create transaction context
-    txCtx := integration.NewTransactionContext(ctx)
-    defer txCtx.Cleanup()
-
-    // Begin transaction
-    if err := txCtx.Begin(); err != nil {
-        return err
-    }
-
-    // Update storage
-    if err := storageClient.Update(txCtx, "profiles", profile.ID, profile); err != nil {
-        txCtx.Rollback()
-        return err
-    }
-
-    // Invalidate cache
-    if err := cacheClient.Delete(txCtx, "profile:"+profile.ID); err != nil {
-        txCtx.Rollback()
-        return err
-    }
-
-    // Publish event
-    if err := queueClient.Publish(txCtx, "profile-updates", &queue.Message{
-        Type: "profile_updated",
-        Data: profile,
-    }); err != nil {
-        txCtx.Rollback()
-        return err
-    }
-
-    return txCtx.Commit()
+type QueueMessage struct {
+    ID         string            `json:"id"`
+    Type       string            `json:"type"`
+    Payload    json.RawMessage   `json:"payload"`
+    Timestamp  time.Time         `json:"timestamp"`
+    Metadata   map[string]string `json:"metadata"`
+    RoutingKey string            `json:"routing_key"`
 }
 ```
 
-### 2. Circuit Breaker with Fallback
+### Routing Key Determination
+
+Task types are automatically mapped to appropriate routing keys:
 
 ```go
-func (s *ProfileService) GetProfile(ctx context.Context, profileID string) (*Profile, error) {
-    // Setup circuit breaker with fallback
-    breaker := integration.NewCircuitBreaker("cache-api", integration.CircuitBreakerConfig{
-        Threshold: 5,
-        Timeout:   time.Second * 30,
-        Fallback: func(ctx context.Context) (interface{}, error) {
-            return storageClient.Get(ctx, "profiles", profileID)
-        },
-    })
-
-    // Execute with retry
-    var profile *Profile
-    err := breaker.Execute(ctx, func(ctx context.Context) error {
-        var err error
-        profile, err = cacheClient.Get(ctx, "profile:"+profileID)
-        return err
-    })
-
-    return profile, err
+var RoutingKeyMap = map[string]string{
+    "profile_update":     "profile.task",    // → Profile Worker
+    "email_notification": "email.send",      // → Email Worker
+    "image_processing":   "image.process",   // → Image Worker
 }
 ```
 
-## Configuration
+### API Endpoints
 
-### Base Configuration
+#### Task Submission
 
-```yaml
-service:
-  name: profile-service
-  version: 1.0.0
-  port: 8080
+```bash
+POST /api/v1/profiles/:id/tasks
+Content-Type: application/json
 
-logging:
-  level: info
-  format: json
-  output: stdout
-
-monitoring:
-  enabled: true
-  prometheus:
-    path: /metrics
-    port: 9090
-
-integration:
-  service_discovery: kubernetes
-  circuit_breaker:
-    threshold: 5
-    timeout: 30s
-  retry:
-    max_attempts: 3
-    backoff: 2s
-```
-
-### Service-Specific Configuration
-
-```yaml
-cache:
-  endpoint: http://cache-api:8080
-  timeout: 5s
-  circuit_breaker:
-    threshold: 5
-    timeout: 30s
-
-queue:
-  endpoint: http://queue-api:8080
-  timeout: 5s
-  circuit_breaker:
-    threshold: 5
-    timeout: 30s
-
-storage:
-  endpoint: http://storage-api:8080
-  timeout: 5s
-  circuit_breaker:
-    threshold: 5
-    timeout: 30s
-```
-
-## Error Handling
-
-### Standard Error Patterns
-
-```go
-// Error handling with logging and monitoring
-if err != nil {
-    switch {
-    case errors.Is(err, cache.ErrNotFound):
-        logger.Warn("Cache miss", logging.WithError(err))
-        monitor.IncCacheMisses()
-    case errors.Is(err, queue.ErrQueueFull):
-        logger.Error("Queue full", logging.WithError(err))
-        monitor.IncQueueErrors()
-    case errors.Is(err, storage.ErrConnection):
-        logger.Error("Storage connection error", logging.WithError(err))
-        monitor.IncStorageErrors()
-    default:
-        logger.Error("Unexpected error", logging.WithError(err))
-        monitor.IncErrors()
-    }
-    return nil, err
+{
+  "type": "profile_update",
+  "payload": {
+    "action": "update",
+    "data": {...}
+  }
 }
 ```
 
-## Health Checks
+#### Supported Task Types
 
-### Service Health
+1. **Profile Processing Tasks**:
 
-```go
-// Register health checks
-integration.RegisterHealthCheck("cache", func() error {
-    return cacheClient.HealthCheck(ctx)
-})
-integration.RegisterHealthCheck("queue", func() error {
-    return queueClient.HealthCheck(ctx)
-})
-integration.RegisterHealthCheck("storage", func() error {
-    return storageClient.HealthCheck(ctx)
-})
-```
+   ```bash
+   curl -X POST http://profile-service/api/v1/profiles/123/tasks \
+     -H "Content-Type: application/json" \
+     -d '{"type": "profile_update", "payload": {"action": "update"}}'
+   ```
 
-## Metrics
+2. **Email Notification Tasks**:
 
-### Standard Metrics
+   ```bash
+   curl -X POST http://profile-service/api/v1/profiles/123/tasks \
+     -H "Content-Type: application/json" \
+     -d '{"type": "email_notification", "payload": {"to": "user@example.com", "template": "welcome"}}'
+   ```
 
-```go
-// Request metrics
-monitor.IncRequests("profile_update")
-defer monitor.ObserveDuration("profile_update")
+3. **Image Processing Tasks**:
+   ```bash
+   curl -X POST http://profile-service/api/v1/profiles/123/tasks \
+     -H "Content-Type: application/json" \
+     -d '{"type": "image_processing", "payload": {"image_url": "https://example.com/image.jpg", "operation": "resize"}}'
+   ```
 
-// Cache metrics
-monitor.IncCacheHits()
-monitor.IncCacheMisses()
+## Integration Patterns
 
-// Queue metrics
-monitor.IncQueueMessages("profile-updates")
-monitor.ObserveQueueLatency("profile-updates", latency)
+### Queue-Service Integration
 
-// Storage metrics
-monitor.IncStorageOperations("update")
-monitor.ObserveStorageLatency("update", latency)
-```
+- **Communication Method**: HTTP API (not direct RabbitMQ)
+- **Message Format**: JSON with standardized structure
+- **Routing Strategy**: Automatic routing key determination based on task type
+- **Error Handling**: Circuit breaker pattern with retry logic
+
+### Worker Integration
+
+- **Profile Worker**: Handles `profile.task` routing key
+- **Email Worker**: Handles `email.send` routing key
+- **Image Worker**: Handles `image.process` routing key
 
 ## Development
 
-### Setup
+### Prerequisites
 
-1. Install dependencies:
+- Go 1.21+
+- Kind (for local development)
+- kubectl
+- Docker
 
-   ```bash
-   go mod download
-   ```
+### Local Development Setup
 
-2. Run tests:
+```bash
+# 1. Clone and setup
+git clone <repository>
+cd profile-service
 
-   ```bash
-   go test ./...
-   ```
+# 2. Build Docker image
+docker build -t profile-service:latest .
 
-3. Build service:
-   ```bash
-   go build -o profile-service ./cmd/profile-service
-   ```
+# 3. Deploy to kind cluster
+cd deployments/kind
+./deploy-to-kind.sh
+```
 
 ### Testing
 
-1. Unit tests:
+```bash
+# Run all tests
+go test ./...
 
-   ```bash
-   go test -v ./internal/...
-   ```
+# Run integration tests
+go test ./test/integration/...
 
-2. Integration tests:
-
-   ```bash
-   go test -v ./tests/integration/...
-   ```
-
-3. Load tests:
-   ```bash
-   k6 run ./tests/load/profile-service.js
-   ```
-
-## Deployment
-
-### Kubernetes
-
-1. Apply configurations:
-
-   ```bash
-   kubectl apply -f k8s/
-   ```
-
-2. Verify deployment:
-
-   ```bash
-   kubectl get pods -n microservices
-   ```
-
-3. Check logs:
-   ```bash
-   kubectl logs -n microservices -l app=profile-service
-   ```
-
-### Docker
-
-1. Build image:
-
-   ```bash
-   docker build -t profile-service:latest .
-   ```
-
-2. Run container:
-   ```bash
-   docker run -p 8080:8080 profile-service:latest
-   ```
-
-## Monitoring
-
-### Prometheus Metrics
-
-- Request rates
-- Error rates
-- Latency percentiles
-- Cache hit/miss rates
-- Queue depths
-- Storage operation rates
-
-### Grafana Dashboards
-
-- Service overview
-- Error rates
-- Latency trends
-- Cache performance
-- Queue metrics
-- Storage metrics
-
-## Logging
-
-### Log Levels
-
-- ERROR: Service errors
-- WARN: Cache misses, retries
-- INFO: Request processing
-- DEBUG: Detailed operations
-
-### Log Fields
-
-- service: profile-service
-- trace_id: Request tracing
-- profile_id: Profile identifier
-- action: Operation type
-- duration: Operation time
-- error: Error details
-
-## Security
-
-### Authentication
-
-- JWT token validation
-- OAuth 2.0 integration
-- Session management
-
-### Authorization
-
-- Role-based access control
-- Permission management
-- Resource access control
-
-## Dependencies
-
-### External Services
-
-- Cache API Service
-- Queue API Service
-- Storage API Service
-- Auth Service
-
-### Shared Libraries
-
-- Logging Library
-- Monitoring Library
-- Cache Client Library
-- Queue Client Library
-- Storage Client Library
-- Service Integration Library
-
-## API Documentation
-
-### OpenAPI Specification
-
-```yaml
-openapi: 3.0.0
-info:
-  title: Profile API
-  version: 1.0.0
-paths:
-  /profiles:
-    get:
-      summary: List profiles
-      responses:
-        "200":
-          description: Success
-    post:
-      summary: Create profile
-      responses:
-        "201":
-          description: Created
-  /profiles/{id}:
-    get:
-      summary: Get profile
-      responses:
-        "200":
-          description: Success
-    put:
-      summary: Update profile
-      responses:
-        "200":
-          description: Success
-    delete:
-      summary: Delete profile
-      responses:
-        "204":
-          description: No Content
+# Run performance tests
+go test ./test/performance/...
 ```
 
-## Contributing
+## Monitoring & Observability
 
-1. Fork repository
-2. Create feature branch
-3. Commit changes
-4. Push to branch
-5. Create pull request
+### Metrics
 
-## License
+- Task submission rates by type
+- Routing key distribution
+- Queue service communication latency
+- Error rates and response times
 
-MIT License
+### Health Endpoints
 
-## Implementation Status
+- `GET /health` - Service health check
+- `GET /metrics` - Prometheus metrics
 
-### Current State
+### Logging
 
-1. **API Layer**
+- Structured JSON logging
+- Routing key context in all logs
+- Task type distribution logging
 
-   - [ ] REST API endpoints implementation
-   - [ ] Request validation
-   - [ ] Response formatting
-   - [ ] Error handling
+## Configuration
 
-2. **Service Layer**
+### Environment Variables
 
-   - [ ] Business logic implementation
-   - [ ] Data transformation
-   - [ ] Shared libraries integration
-   - [ ] Error handling
+#### Core Configuration
 
-3. **Integration Layer**
-   - [ ] Shared libraries integration
-   - [ ] API services communication
-   - [ ] Circuit breaking
-   - [ ] Retry mechanisms
+- `SERVER_HOST` - Server bind address (default: "0.0.0.0")
+- `SERVER_PORT` - Server bind port (default: 8080)
+- `LOG_LEVEL` - Logging level (default: "info")
+- `LOG_FORMAT` - Log format (default: "json")
 
-### Implementation Plan
+#### Queue Service Integration
 
-1. **Phase 1: Core Infrastructure**
+- `QUEUE_SERVICE_URL` - Queue service endpoint
+- `QUEUE_SERVICE_TIMEOUT` - Request timeout (default: "30s")
+- `QUEUE_SERVICE_RETRIES` - Retry attempts (default: 3)
 
-   - [ ] Project structure setup
-   - [ ] Configuration management
-   - [ ] Logging integration
-   - [ ] Metrics collection
+#### Task Configuration
 
-2. **Phase 2: API Implementation**
+- `PROFILE_TASK_TIMEOUT` - Profile task timeout (default: "5m")
+- `EMAIL_TASK_TIMEOUT` - Email task timeout (default: "2m")
+- `IMAGE_TASK_TIMEOUT` - Image task timeout (default: "10m")
 
-   - [ ] HTTP server setup
-   - [ ] Endpoint implementation
-   - [ ] Request validation
-   - [ ] Response formatting
+#### Routing Keys
 
-3. **Phase 3: Service Integration**
-   - [ ] Shared libraries integration
-   - [ ] API services communication
-   - [ ] Circuit breaking
-   - [ ] Retry mechanisms
+- `ROUTING_KEY_PROFILE_UPDATE` - Profile task routing key
+- `ROUTING_KEY_EMAIL_NOTIFICATION` - Email task routing key
+- `ROUTING_KEY_IMAGE_PROCESSING` - Image task routing key
 
-## API Endpoints
+## Production Deployment
 
-### 1. Profile Management
+For production deployment, use the production-ready manifests:
 
-```http
-GET /api/v1/profiles
-GET /api/v1/profiles/{id}
-POST /api/v1/profiles
-PUT /api/v1/profiles/{id}
-DELETE /api/v1/profiles/{id}
+```bash
+# Apply production manifests
+kubectl apply -f deployments/kubernetes/
+kubectl apply -f deployments/monitoring/
 ```
 
-### 2. Profile Search
+See `deployments/DEPLOYMENT.md` for comprehensive deployment documentation.
 
-```http
-GET /api/v1/profiles/search
-POST /api/v1/profiles/query
-```
+## Documentation
 
-### 3. Profile Batch Operations
-
-```http
-POST /api/v1/profiles/batch
-PUT /api/v1/profiles/batch
-DELETE /api/v1/profiles/batch
-```
-
-### 4. Health and Metrics
-
-```http
-GET /health
-GET /ready
-GET /metrics
-```
-
-## Error Types
-
-### 1. API Errors
-
-- Validation errors
-- Authentication errors
-- Authorization errors
-- Rate limit errors
-- System errors
-- Timeout errors
-
-### 2. Integration Errors
-
-- Cache errors
-- Queue errors
-- Storage errors
-- Service discovery errors
-- Circuit breaker errors
-
-### Recovery Strategies
-
-### 1. API Recovery
-
-- Request retry
-- Error logging
-- Status updates
-- Alert generation
-- Circuit breaking
-
-### 2. Integration Recovery
-
-- Service retry
-- Fallback mechanisms
-- Error logging
-- Status updates
-- Alert generation
-
-## Cross-References
-
-- [API Service Patterns](../../reference-materials/development/patterns/api-service-patterns.md)
-- [Service Integration Patterns](../../reference-materials/development/patterns/service-integration-patterns.md)
-- [Monitoring Patterns](../../reference-materials/development/patterns/monitoring-patterns.md)
-- [Security Patterns](../../reference-materials/development/patterns/security-patterns.md)
-- [Error Handling Patterns](../../reference-materials/development/patterns/error-handling-patterns.md)
+- [`DEPLOYMENT.md`](deployments/DEPLOYMENT.md) - Complete deployment guide
+- [`STEP_BY_STEP_DEPLOYMENT_GUIDE.md`](deployments/STEP_BY_STEP_DEPLOYMENT_GUIDE.md) - Step-by-step deployment tutorial
+- [`INTERFACE.md`](INTERFACE.md) - API specifications and integration contracts
+- [`CONTEXT.md`](CONTEXT.md) - Technical implementation details and patterns
+- [`TRACKER.md`](TRACKER.md) - Implementation progress tracking

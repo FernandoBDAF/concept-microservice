@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"microservices/services/profile-storage/internal/config"
-	"microservices/services/profile-storage/internal/logger"
-	"microservices/services/profile-storage/internal/metrics"
+	"microservices/services/profile-storage/internal/pkg/logger"
+	"microservices/services/profile-storage/internal/pkg/metrics"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"

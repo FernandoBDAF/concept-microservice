@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: profile-service
+spec:
+  # Scale down for local development
+  replicas: 1
+
+  template:
+    spec:
+      containers:
+        - name: profile-service
+          # Environment variable overrides for local development
+          env:
+            - name: LOG_LEVEL
+              value: "debug"
+            - name: QUEUE_SERVICE_URL
+              value: "http://queue-service:8080"
+            - name: CIRCUIT_BREAKER_ENABLED
+              value: "false"
+            - name: RATE_LIMIT_ENABLED
+              value: "false"
+
+          # Lower resource requirements for local development
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+
+          # Use local secrets instead of production secrets
+          envFrom:
+            - configMapRef:
+                name: profile-service-config
+            - secretRef:
+                name: profile-service-secrets-local
+
+      # Remove production-specific scheduling constraints
+      nodeSelector: {}
+      tolerations: []
+      affinity: {}

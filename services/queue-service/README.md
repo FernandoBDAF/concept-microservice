@@ -1,115 +1,113 @@
 # Queue Service
 
-A microservice that provides reliable message queuing capabilities using RabbitMQ as the message broker. This service is part of a larger microservices architecture and handles asynchronous message processing between services.
+## ⚠️ **CRITICAL UPGRADE IN PROGRESS** ⚠️
 
-## Architecture
+**Current Status**: The queue-service is undergoing a **critical architectural upgrade** to align with RabbitMQ best practices and support multi-worker architecture. See `TRACKER.md` for detailed implementation plan and `QUEUE_SERVICE_ANALYSIS.md` for technical analysis.
 
-The service follows clean architecture principles with the following layers:
+**Integration Status**: 🔴 **CURRENTLY INCOMPATIBLE** with worker-service. Upgrade required for proper integration.
 
-- Domain Layer: Core business logic and models
-- Application Layer: Use cases and service implementations
-- Infrastructure Layer: External adapters (RabbitMQ, HTTP)
+---
 
-### Key Components
+A microservice that provides reliable message queuing capabilities using RabbitMQ as the message broker. This service acts as the central message publisher in a microservices architecture, routing messages to different worker types for asynchronous processing.
 
-- **Message Broker**: RabbitMQ for reliable message delivery
-- **HTTP API**: RESTful endpoints for message operations
-- **Metrics**: Prometheus integration for monitoring
-- **Health Checks**: Endpoint for service health monitoring
-- **Configuration**: Environment-based configuration management
+## Architecture Overview
+
+### **Post-Upgrade Architecture** (Target State)
+
+The service follows clean architecture principles with RabbitMQ best practices integration:
+
+#### **Core Components**
+
+- **Message Publisher**: Publishes messages to RabbitMQ exchanges with routing keys
+- **Multi-Worker Support**: Routes messages to different worker types (profile, email, image)
+- **HTTP API**: RESTful endpoints for message publishing and status tracking
+- **Metrics & Monitoring**: Comprehensive Prometheus integration
+- **Health Checks**: Kubernetes-ready health and readiness probes
+
+#### **RabbitMQ Integration Pattern**
+
+```
+Profile Service → Queue Service HTTP API → RabbitMQ Exchange → Worker Queues
+                                              ↓
+                    ┌─────────────────────────┼─────────────────────────┐
+                    ↓                         ↓                         ↓
+            profile.task                 email.send              image.process
+                    ↓                         ↓                         ↓
+        profile-processing            email-processing         image-processing
+                    ↓                         ↓                         ↓
+           Profile Worker              Email Worker             Image Worker
+```
+
+#### **Exchange and Routing Strategy**
+
+- **Single Exchange Approach**: Uses `tasks-exchange` with routing keys for message distribution
+- **Semantic Routing**: Messages routed based on content type and target worker
+- **Worker Isolation**: Each worker type has dedicated queues and processing logic
+
+```go
+// Routing Key Patterns
+"profile.task"   → profile-processing queue → Profile Worker
+"email.send"     → email-processing queue  → Email Worker
+"image.process"  → image-processing queue  → Image Worker
+```
 
 ## Features
 
-- Message publishing and consumption
-- Multiple message types support:
-  - Profile updates
-  - Cache invalidation
-  - Background jobs
+### **Current Features**
+
+- Message publishing via HTTP API
 - Message status tracking
-- Prometheus metrics
-- Health checks
-- Graceful shutdown
-- RabbitMQ cluster support
-- Message persistence
-- Priority queues
-- Dead letter queues
-- Message TTL (Time-To-Live)
+- Prometheus metrics integration
+- Health check endpoints
+- Graceful shutdown handling
+- Environment-based configuration
 
-## Prerequisites
+### **Post-Upgrade Features** ✨
 
-- Go 1.21+
-- RabbitMQ 3.12+
-- Docker (optional)
+- **Multi-Worker Support**: Route messages to profile, email, and image workers
+- **RabbitMQ Best Practices**: Single exchange with routing keys
+- **Publisher Confirms**: Reliable message delivery with acknowledgments
+- **Dynamic Queue Configuration**: Worker-specific queue properties
+- **Enhanced Monitoring**: Per-worker-type metrics and routing key distribution
+- **Backward Compatibility**: Existing API continues working during transition
 
-## Configuration
+## Message Format
 
-The service can be configured using environment variables:
+### **New Message Format** (Post-Upgrade)
 
-| Variable             | Description                            | Default        |
-| -------------------- | -------------------------------------- | -------------- |
-| SERVICE_PORT         | HTTP server port                       | 8080           |
-| SERVICE_ENV          | Environment (development/production)   | development    |
-| RABBITMQ_NODES       | Comma-separated list of RabbitMQ nodes | localhost:5672 |
-| RABBITMQ_USERNAME    | RabbitMQ username                      | guest          |
-| RABBITMQ_PASSWORD    | RabbitMQ password                      | guest          |
-| RABBITMQ_VHOST       | RabbitMQ virtual host                  | /              |
-| RABBITMQ_MESSAGE_TTL | Message time-to-live duration          | 24h            |
-| LOG_LEVEL            | Logging level                          | info           |
-| LOG_FORMAT           | Log format (json/text)                 | json           |
-| METRICS_ENABLED      | Enable Prometheus metrics              | true           |
-| METRICS_PORT         | Prometheus metrics port                | 9090           |
-
-### Message Persistence
-
-Messages are persisted to disk by default, ensuring they survive RabbitMQ restarts and node failures. This is achieved through:
-
-- Durable queues
-- Persistent message delivery mode
-- Message acknowledgments
-- Dead letter queues for failed messages
-
-### Dead Letter Queues
-
-The service automatically creates dead letter queues (DLQ) for each queue. Failed messages are moved to the DLQ when:
-
-- Message processing fails
-- Message is rejected
-- Message TTL expires
-
-To inspect messages in the DLQ:
-
-```bash
-# List all queues including DLQs
-rabbitmqctl list_queues name messages_ready messages_unacknowledged
-
-# Get messages from a DLQ
-rabbitmqctl get_queue queue_name.dlq
+```json
+{
+  "id": "123e4567-e89b-12d3-a456-426614174000",
+  "type": "profile_update",
+  "routing_key": "profile.task",
+  "payload": {
+    "user_id": "user123",
+    "action": "update",
+    "data": {
+      "name": "John Doe",
+      "email": "john@example.com"
+    }
+  },
+  "metadata": {
+    "correlation_id": "req-456",
+    "source_service": "profile-service",
+    "priority": "normal"
+  },
+  "timestamp": "2024-01-15T10:30:00Z"
+}
 ```
 
-### Message TTL
+### **Supported Routing Keys**
 
-Messages have a configurable time-to-live (TTL). When a message expires:
-
-1. It is automatically moved to the DLQ
-2. The original message is removed from the queue
-3. The message can be inspected in the DLQ
-
-Configure TTL using the `RABBITMQ_MESSAGE_TTL` environment variable:
-
-```bash
-# Set TTL to 1 hour
-export RABBITMQ_MESSAGE_TTL="1h"
-
-# Set TTL to 30 minutes
-export RABBITMQ_MESSAGE_TTL="30m"
-
-# Set TTL to 7 days
-export RABBITMQ_MESSAGE_TTL="168h"
-```
+| Routing Key     | Target Queue       | Worker Type    | Use Case                              |
+| --------------- | ------------------ | -------------- | ------------------------------------- |
+| `profile.task`  | profile-processing | Profile Worker | User profile updates, deletions       |
+| `email.send`    | email-processing   | Email Worker   | Welcome emails, notifications, alerts |
+| `image.process` | image-processing   | Image Worker   | Resize, filter, analyze operations    |
 
 ## API Endpoints
 
-### Publish Message
+### **Message Publishing** (Enhanced)
 
 ```http
 POST /api/v1/queue/messages
@@ -117,304 +115,363 @@ Content-Type: application/json
 
 {
   "type": "profile_update",
+  "routing_key": "profile.task",
   "payload": {
     "user_id": "123",
-    "changes": {
-      "name": "John Doe"
-    }
+    "action": "update",
+    "data": { "name": "John Doe" }
   },
-  "headers": {
-    "correlation_id": "123e4567-e89b-12d3-a456-426614174000",
-    "priority": 1
+  "metadata": {
+    "priority": "high",
+    "source": "profile-service"
   }
 }
 ```
 
-### Get Message Status
+**Response**:
+
+```json
+{
+  "message_id": "123e4567-e89b-12d3-a456-426614174000",
+  "status": "accepted",
+  "routing_key": "profile.task",
+  "queue": "profile-processing"
+}
+```
+
+### **Message Status Tracking**
 
 ```http
 GET /api/v1/queue/status/{messageId}
 ```
 
-### Health Check
+**Response**:
 
-```http
-GET /health
+```json
+{
+  "id": "123e4567-e89b-12d3-a456-426614174000",
+  "status": "delivered",
+  "timestamp": "2024-01-15T10:30:00Z",
+  "routing_key": "profile.task",
+  "queue": "profile-processing"
+}
 ```
 
-### Metrics
+### **Health and Monitoring**
 
 ```http
-GET /metrics
+GET /health          # Health check
+GET /metrics         # Prometheus metrics
 ```
 
-## API Documentation
+## Configuration
 
-### OpenAPI Specification
+### **Environment Variables**
+
+| Variable            | Description               | Default                            | Example                         |
+| ------------------- | ------------------------- | ---------------------------------- | ------------------------------- |
+| `SERVICE_PORT`      | HTTP server port          | 8080                               | 8080                            |
+| `SERVICE_ENV`       | Environment               | development                        | production                      |
+| `RABBITMQ_URL`      | RabbitMQ connection URL   | amqp://guest:guest@localhost:5672/ | amqp://user:pass@rabbitmq:5672/ |
+| `RABBITMQ_EXCHANGE` | Default exchange name     | tasks-exchange                     | tasks-exchange                  |
+| `LOG_LEVEL`         | Logging level             | info                               | debug                           |
+| `METRICS_ENABLED`   | Enable Prometheus metrics | true                               | true                            |
+
+### **Worker-Specific Configuration**
 
 ```yaml
-openapi: 3.0.0
-info:
-  title: Queue Service API
-  version: 1.0.0
-paths:
-  /api/v1/queue/messages:
-    post:
-      summary: Publish a new message
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/QueueMessage"
-      responses:
-        "202":
-          description: Message accepted
-        "400":
-          description: Invalid message format
-        "500":
-          description: Internal server error
-  /api/v1/queue/status/{messageId}:
-    get:
-      summary: Get message status
-      parameters:
-        - name: messageId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Message status
-        "404":
-          description: Message not found
-        "500":
-          description: Internal server error
-components:
-  schemas:
-    QueueMessage:
-      type: object
-      required:
-        - type
-        - payload
-      properties:
-        type:
-          type: string
-          enum: [profile_update, cache_invalidation, background_job]
-        payload:
-          type: object
-        headers:
-          type: object
-          properties:
-            correlation_id:
-              type: string
-              format: uuid
-            priority:
-              type: integer
-              minimum: 0
-              maximum: 9
+# Profile Worker Queue
+PROFILE_QUEUE_NAME: "profile-processing"
+PROFILE_ROUTING_KEY: "profile.task"
+PROFILE_TTL: "24h"
+PROFILE_PREFETCH: "1"
+
+# Email Worker Queue
+EMAIL_QUEUE_NAME: "email-processing"
+EMAIL_ROUTING_KEY: "email.send"
+EMAIL_TTL: "1h"
+EMAIL_PREFETCH: "5"
+
+# Image Worker Queue
+IMAGE_QUEUE_NAME: "image-processing"
+IMAGE_ROUTING_KEY: "image.process"
+IMAGE_TTL: "6h"
+IMAGE_PREFETCH: "1"
 ```
+
+## Integration with Worker Services
+
+### **Profile Worker Integration**
+
+```go
+// Profile Service publishes message
+POST /api/v1/queue/messages
+{
+  "type": "profile_update",
+  "routing_key": "profile.task",
+  "payload": { "user_id": "123", "action": "update" }
+}
+
+// Profile Worker consumes from profile-processing queue
+// Uses common queue package with routing key "profile.task"
+```
+
+### **Email Worker Integration** (Planned)
+
+```go
+// Email messages
+POST /api/v1/queue/messages
+{
+  "type": "email_notification",
+  "routing_key": "email.send",
+  "payload": {
+    "recipient": "user@example.com",
+    "template": "welcome",
+    "data": { "name": "John" }
+  }
+}
+```
+
+### **Image Worker Integration** (Planned)
+
+```go
+// Image processing messages
+POST /api/v1/queue/messages
+{
+  "type": "image_processing",
+  "routing_key": "image.process",
+  "payload": {
+    "image_url": "https://example.com/image.jpg",
+    "processing_type": "resize",
+    "parameters": { "width": 800, "height": 600 }
+  }
+}
+```
+
+## Monitoring and Metrics
+
+### **Enhanced Metrics** (Post-Upgrade)
+
+#### **Message Metrics**
+
+- `queue_messages_published_total{routing_key, worker_type}`
+- `queue_messages_confirmed_total{routing_key}`
+- `queue_messages_failed_total{routing_key, error_type}`
+- `queue_routing_key_distribution{routing_key}`
+
+#### **Performance Metrics**
+
+- `queue_publish_duration_seconds{routing_key}`
+- `queue_confirm_duration_seconds{routing_key}`
+- `queue_connection_status{status}`
+- `queue_channel_status{status}`
+
+#### **Worker-Specific Metrics**
+
+- `queue_worker_message_rate{worker_type}`
+- `queue_worker_queue_depth{worker_type, queue}`
+- `queue_worker_processing_time{worker_type}`
+
+### **Monitoring Dashboard**
+
+Key metrics to monitor:
+
+- **Message Throughput**: Messages per second by routing key
+- **Routing Distribution**: Message distribution across worker types
+- **Publisher Confirms**: Success rate of message delivery
+- **Queue Health**: Depth and processing rates per worker queue
+- **Connection Status**: RabbitMQ connection and channel health
 
 ## Development
 
-1. Clone the repository
-2. Install dependencies:
-   ```bash
-   go mod download
-   ```
-3. Run the service:
-   ```bash
-   go run cmd/main.go
-   ```
+### **Prerequisites**
 
-## Docker
-
-Build the Docker image:
-
-```bash
-docker build -t queue-service .
-```
-
-Run the container:
-
-```bash
-docker run -p 8080:8080 -p 9090:9090 queue-service
-```
-
-## Testing
-
-Run the tests:
-
-```bash
-go test ./...
-```
-
-## Monitoring
-
-The service exposes Prometheus metrics at `/metrics`. Key metrics include:
-
-- Message publish rate
-- Message consumption rate
-- Message processing latency
-- Error rates
-- Queue sizes
-- DLQ sizes
-- Message TTL statistics
-
-## Error Handling
-
-The service implements comprehensive error handling:
-
-- Input validation
-- Message format validation
-- RabbitMQ connection errors
-- Message processing errors
-- Graceful degradation
-- Dead letter queue handling
-- Message TTL management
-
-## Security
-
-- Environment-based configuration
-- No sensitive data in messages
-- Input validation
-- Rate limiting (TODO)
-- Authentication (TODO)
-
-## Deployment Guide
-
-### Prerequisites
-
-- Docker 20.10+
-- Kubernetes 1.21+ (optional)
+- Go 1.21+
 - RabbitMQ 3.12+
+- Docker (for local development)
+- Access to common queue package
 
-### Environment Setup
+### **Local Development Setup**
 
-1. Set required environment variables:
+```bash
+# Clone repository and navigate to queue-service
+cd services/queue-service
+
+# Install dependencies
+go mod download
+
+# Set environment variables
+export RABBITMQ_URL="amqp://user:password@localhost:5672/"
+export LOG_LEVEL="debug"
+export SERVICE_ENV="development"
+
+# Run the service
+go run cmd/main.go
+```
+
+### **Docker Development**
+
+```bash
+# Build image
+docker build -t queue-service:latest .
+
+# Run with Docker Compose (includes RabbitMQ)
+docker-compose up -d
+```
+
+### **Testing Integration**
+
+```bash
+# Test message publishing
+curl -X POST http://localhost:8080/api/v1/queue/messages \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "profile_update",
+    "routing_key": "profile.task",
+    "payload": {"user_id": "123", "action": "update"},
+    "metadata": {"source": "test"}
+  }'
+
+# Check message status
+curl http://localhost:8080/api/v1/queue/status/{message_id}
+
+# Check health
+curl http://localhost:8080/health
+
+# Check metrics
+curl http://localhost:8080/metrics
+```
+
+## Deployment
+
+### **Kubernetes Deployment**
+
+```bash
+# Apply queue-service manifests
+kubectl apply -k k8s/profile-service/base/queue-service/
+
+# Check deployment status
+kubectl get pods -l app=queue-service
+kubectl logs -f deployment/queue-service
+```
+
+### **Environment-Specific Configuration**
+
+```bash
+# Development
+kubectl apply -k k8s/profile-service/overlays/development/queue-service/
+
+# Production (future)
+kubectl apply -k k8s/profile-service/overlays/production/queue-service/
+```
+
+## Migration Guide
+
+### **Upgrading from Current Version**
+
+⚠️ **Important**: The upgrade involves breaking changes to message format and routing strategy.
+
+1. **Pre-Upgrade Checklist**:
+
+   - [ ] Backup current RabbitMQ state
+   - [ ] Verify worker-service compatibility
+   - [ ] Review routing key mappings
+   - [ ] Plan maintenance window
+
+2. **Upgrade Process**:
 
    ```bash
-   export SERVICE_PORT=8080
-   export SERVICE_ENV=production
-   export RABBITMQ_NODES=rabbitmq-1:5672,rabbitmq-2:5672
-   export RABBITMQ_USERNAME=queue_user
-   export RABBITMQ_PASSWORD=secure_password
-   export RABBITMQ_VHOST=/queue
-   export RABBITMQ_MESSAGE_TTL=24h
-   export LOG_LEVEL=info
-   export LOG_FORMAT=json
-   export METRICS_ENABLED=true
-   export METRICS_PORT=9090
+   # 1. Deploy new queue-service version
+   kubectl apply -k k8s/profile-service/base/queue-service/
+
+   # 2. Verify message compatibility
+   # 3. Update client services to use routing keys
+   # 4. Monitor message flow and metrics
    ```
 
-2. Build and run with Docker:
+3. **Post-Upgrade Validation**:
+   - [ ] Messages routing to correct worker queues
+   - [ ] Publisher confirms working
+   - [ ] Metrics collection operational
+   - [ ] Dead letter queues functioning
 
-   ```bash
-   docker build -t queue-service .
-   docker run -p 8080:8080 -p 9090:9090 queue-service
-   ```
+## Troubleshooting
 
-3. Kubernetes deployment (optional):
-   ```bash
-   kubectl apply -f k8s/
-   ```
+### **Common Issues**
 
-### Monitoring Setup
+#### **Message Routing Problems**
 
-1. Configure Prometheus:
+```bash
+# Check exchange and queue bindings
+kubectl exec -it rabbitmq-0 -- rabbitmqctl list_bindings
 
-   ```yaml
-   scrape_configs:
-     - job_name: "queue-service"
-       static_configs:
-         - targets: ["queue-service:9090"]
-   ```
+# Verify routing key configuration
+kubectl logs deployment/queue-service | grep "routing_key"
+```
 
-2. Set up Grafana dashboards:
-   - Message throughput
-   - Error rates
-   - Processing latency
-   - Queue sizes
-   - DLQ sizes
-   - Message TTL statistics
+#### **Worker Integration Issues**
 
-## Troubleshooting Guide
+```bash
+# Check message format compatibility
+kubectl logs deployment/worker-service | grep "unmarshal\|parse"
 
-### Common Issues
+# Verify queue consumption
+kubectl exec -it rabbitmq-0 -- rabbitmqctl list_queues name messages
+```
 
-1. **RabbitMQ Connection Issues**
+#### **Performance Issues**
 
-   - Check RabbitMQ cluster status
-   - Verify connection credentials
-   - Check network connectivity
+```bash
+# Check publisher confirm rates
+curl http://queue-service:8080/metrics | grep confirm
 
-2. **Message Processing Errors**
+# Monitor connection health
+kubectl logs deployment/queue-service | grep "connection\|channel"
+```
 
-   - Check message format
-   - Verify queue configuration
-   - Check consumer status
-   - Inspect DLQ for failed messages
+## Architecture Decision Records
 
-3. **Performance Issues**
+### **ADR-001: Single Exchange with Routing Keys**
 
-   - Monitor message throughput
-   - Check resource usage
-   - Verify queue sizes
-   - Monitor DLQ sizes
+- **Decision**: Use single exchange with routing keys instead of per-queue exchanges
+- **Rationale**: Aligns with RabbitMQ best practices, simplifies management, enables multi-worker support
+- **Trade-offs**: Requires routing key discipline, but provides better scalability
 
-4. **Message TTL Issues**
-   - Verify TTL configuration
-   - Check DLQ for expired messages
-   - Monitor message age metrics
+### **ADR-002: Message Format Standardization**
 
-### Logging
+- **Decision**: Standardize message format with common queue package
+- **Rationale**: Ensures compatibility across all services, reduces integration complexity
+- **Trade-offs**: Breaking change, but necessary for proper service integration
 
-- Application logs: `docker logs queue-service`
-- RabbitMQ logs: `docker logs rabbitmq`
-- Metrics: `curl localhost:9090/metrics`
+### **ADR-003: Publisher Confirms Implementation**
 
-## Security Considerations
+- **Decision**: Implement publisher confirms for reliable delivery
+- **Rationale**: Ensures message delivery guarantees, improves reliability
+- **Trade-offs**: Slight performance impact, but critical for production reliability
 
-### Authentication
+## Related Documentation
 
-- JWT-based authentication
-- Service-to-service mTLS
-- API key authentication (optional)
+- `TRACKER.md` - Detailed implementation plan and task tracking
+- `QUEUE_SERVICE_ANALYSIS.md` - Technical analysis and upgrade rationale
+- `INTERFACE.md` - Service interfaces and integration patterns
+- `CONTEXT.md` - Technical implementation details
+- `MIGRATION.md` - Upgrade procedures and compatibility guide
 
-### Authorization
+## Support and Contributing
 
-- Role-based access control
-- Resource-level permissions
-- Rate limiting
+### **Getting Help**
 
-### Data Security
+- Check `TRACKER.md` for current implementation status
+- Review `QUEUE_SERVICE_ANALYSIS.md` for technical details
+- See integration examples in `k8s/debug/` directories
 
-- Message encryption
-- Secure connections (TLS)
-- Audit logging
-- Message persistence security
+### **Contributing**
 
-### Best Practices
+- Follow clean architecture principles
+- Maintain RabbitMQ best practices alignment
+- Update documentation for any API changes
+- Include integration tests for new features
 
-1. **Configuration**
+---
 
-   - Use secrets management
-   - Encrypt sensitive data
-   - Regular key rotation
-   - Configure appropriate TTL values
-
-2. **Network**
-
-   - Use internal networks
-   - Implement firewalls
-   - Monitor access
-
-3. **Monitoring**
-   - Track security events
-   - Monitor access patterns
-   - Alert on anomalies
-   - Monitor DLQ sizes
-
-## License
-
-MIT
+**Status**: 🔄 **Active Development** - Critical upgrade in progress for multi-worker architecture support.

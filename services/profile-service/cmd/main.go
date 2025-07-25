@@ -13,6 +13,7 @@ import (
 	api "github.com/fernandobarroso/microservices/services/profile-service/internal/api/routes"
 	"github.com/fernandobarroso/microservices/services/profile-service/internal/config"
 	"github.com/fernandobarroso/microservices/services/profile-service/internal/domain/services"
+	"github.com/fernandobarroso/microservices/services/profile-service/internal/infrastructure/cache"
 	"github.com/fernandobarroso/microservices/services/profile-service/internal/infrastructure/session"
 	"github.com/fernandobarroso/microservices/services/profile-service/internal/pkg/logger"
 	"go.uber.org/zap"
@@ -45,12 +46,24 @@ func main() {
 	}
 	defer logger.Sync()
 
+	// Get logger instance
+	zapLogger := logger.Logger
+
 	// Initialize auth service client
 	authClient := services.NewAuthServiceClient(cfg)
 
-	// Initialize session manager
-	logger.LogInfo(ctx, "Initializing Redis session manager")
-	sessionManager, err := session.NewSessionManager(authClient)
+	// Initialize HTTP cache client for cache-service integration
+	logger.LogInfo(ctx, "Initializing HTTP cache client for cache-service integration")
+	cacheClient, err := cache.NewCacheClient(&cfg.Cache, zapLogger)
+	if err != nil {
+		logger.LogError(ctx, "Failed to initialize cache client", err)
+		log.Fatalf("Failed to initialize cache client: %v", err)
+	}
+	defer cacheClient.Close()
+
+	// Initialize session manager with HTTP cache client
+	logger.LogInfo(ctx, "Initializing session manager with cache-service HTTP integration")
+	sessionManager, err := session.NewSessionManager(authClient, cacheClient, zapLogger)
 	if err != nil {
 		logger.LogError(ctx, "Failed to initialize session manager", err)
 		log.Fatalf("Failed to initialize session manager: %v", err)
@@ -60,8 +73,8 @@ func main() {
 	// Initialize storage client
 	storageClient := services.NewStorageClient(cfg)
 
-	// Initialize profile service
-	profileService := services.NewProfileService(cfg, storageClient)
+	// Initialize profile service with cache integration
+	profileService := services.NewProfileService(cfg, storageClient, cacheClient, zapLogger)
 
 	// Initialize router
 	router := api.NewRouter(cfg, authClient, sessionManager, profileService)

@@ -1,0 +1,283 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: profile-service
+  labels:
+    app: profile-service
+    monitoring: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: profile-service
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      honorLabels: true
+      metricRelabelings:
+        - sourceLabels: [__name__]
+          regex: "go_.*"
+          action: drop
+        - sourceLabels: [__name__]
+          regex: "promhttp_.*"
+          action: drop
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: profile-service-alerts
+  labels:
+    app: profile-service
+    monitoring: prometheus
+spec:
+  groups:
+    - name: profile-service.rules
+      interval: 30s
+      rules:
+        # High Error Rate Alert
+        - alert: ProfileServiceHighErrorRate
+          expr: rate(profile_api_requests_total{status=~"5.."}[5m]) > 0.01
+          for: 2m
+          labels:
+            severity: warning
+            service: profile-service
+          annotations:
+            summary: "Profile Service error rate is high"
+            description: "Profile Service error rate is {{ $value | humanizePercentage }} which is above the 1% threshold"
+            runbook_url: "https://docs.company.com/runbooks/profile-service/high-error-rate"
+
+        # Critical Error Rate Alert
+        - alert: ProfileServiceCriticalErrorRate
+          expr: rate(profile_api_requests_total{status=~"5.."}[5m]) > 0.05
+          for: 1m
+          labels:
+            severity: critical
+            service: profile-service
+          annotations:
+            summary: "Profile Service critical error rate"
+            description: "Profile Service error rate is {{ $value | humanizePercentage }} which is critically high"
+            runbook_url: "https://docs.company.com/runbooks/profile-service/critical-error-rate"
+
+        # Queue Service Communication Failure
+        - alert: QueueServiceCommunicationFailed
+          expr: profile_queue_service_requests_total{status="error"} > 0
+          for: 1m
+          labels:
+            severity: critical
+            service: profile-service
+            component: queue-integration
+          annotations:
+            summary: "Profile Service cannot communicate with Queue Service"
+            description: "Profile Service has {{ $value }} failed requests to Queue Service"
+            runbook_url: "https://docs.company.com/runbooks/profile-service/queue-communication-failure"
+
+        # High Response Time Alert
+        - alert: ProfileServiceHighResponseTime
+          expr: histogram_quantile(0.95, rate(profile_api_request_duration_seconds_bucket[5m])) > 0.05
+          for: 3m
+          labels:
+            severity: warning
+            service: profile-service
+          annotations:
+            summary: "Profile Service response time is high"
+            description: "95th percentile response time is {{ $value }}s which exceeds 50ms threshold"
+            runbook_url: "https://docs.company.com/runbooks/profile-service/high-response-time"
+
+        # Task Submission Failure Rate
+        - alert: ProfileServiceTaskSubmissionFailures
+          expr: rate(profile_tasks_submitted_total{status="failed"}[5m]) > 0.02
+          for: 2m
+          labels:
+            severity: warning
+            service: profile-service
+            component: task-submission
+          annotations:
+            summary: "Profile Service task submission failure rate is high"
+            description: "Task submission failure rate is {{ $value | humanizePercentage }}"
+            runbook_url: "https://docs.company.com/runbooks/profile-service/task-submission-failures"
+
+        # Routing Key Distribution Anomaly
+        - alert: ProfileServiceRoutingKeyImbalance
+          expr: |
+            (
+              max(rate(profile_tasks_routing_key_distribution[5m])) - 
+              min(rate(profile_tasks_routing_key_distribution[5m]))
+            ) / max(rate(profile_tasks_routing_key_distribution[5m])) > 0.8
+          for: 5m
+          labels:
+            severity: warning
+            service: profile-service
+            component: routing
+          annotations:
+            summary: "Profile Service routing key distribution is imbalanced"
+            description: "Routing key distribution shows significant imbalance across workers"
+            runbook_url: "https://docs.company.com/runbooks/profile-service/routing-imbalance"
+
+        # Pod Crash Loop
+        - alert: ProfileServicePodCrashLoop
+          expr: rate(kube_pod_container_status_restarts_total{pod=~"profile-service-.*"}[15m]) > 0
+          for: 5m
+          labels:
+            severity: critical
+            service: profile-service
+            component: infrastructure
+          annotations:
+            summary: "Profile Service pods are crash looping"
+            description: "Profile Service pod {{ $labels.pod }} is restarting frequently"
+            runbook_url: "https://docs.company.com/runbooks/profile-service/pod-crash-loop"
+
+        # Memory Usage High
+        - alert: ProfileServiceHighMemoryUsage
+          expr: container_memory_usage_bytes{pod=~"profile-service-.*"} / container_spec_memory_limit_bytes > 0.9
+          for: 5m
+          labels:
+            severity: warning
+            service: profile-service
+            component: resources
+          annotations:
+            summary: "Profile Service memory usage is high"
+            description: "Profile Service pod {{ $labels.pod }} memory usage is {{ $value | humanizePercentage }}"
+            runbook_url: "https://docs.company.com/runbooks/profile-service/high-memory-usage"
+
+        # CPU Usage High
+        - alert: ProfileServiceHighCPUUsage
+          expr: rate(container_cpu_usage_seconds_total{pod=~"profile-service-.*"}[5m]) / container_spec_cpu_quota * container_spec_cpu_period > 0.9
+          for: 5m
+          labels:
+            severity: warning
+            service: profile-service
+            component: resources
+          annotations:
+            summary: "Profile Service CPU usage is high"
+            description: "Profile Service pod {{ $labels.pod }} CPU usage is {{ $value | humanizePercentage }}"
+            runbook_url: "https://docs.company.com/runbooks/profile-service/high-cpu-usage"
+
+        # Service Unavailable
+        - alert: ProfileServiceUnavailable
+          expr: up{job="profile-service"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            service: profile-service
+            component: availability
+          annotations:
+            summary: "Profile Service is unavailable"
+            description: "Profile Service has been unavailable for more than 1 minute"
+            runbook_url: "https://docs.company.com/runbooks/profile-service/service-unavailable"
+
+        # Low Throughput
+        - alert: ProfileServiceLowThroughput
+          expr: rate(profile_api_requests_total[5m]) < 100
+          for: 10m
+          labels:
+            severity: warning
+            service: profile-service
+            component: performance
+          annotations:
+            summary: "Profile Service throughput is unusually low"
+            description: "Profile Service throughput is {{ $value }} requests/second, below expected baseline"
+            runbook_url: "https://docs.company.com/runbooks/profile-service/low-throughput"
+
+---
+# Grafana Dashboard ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: profile-service-dashboard
+  labels:
+    grafana_dashboard: "1"
+    app: profile-service
+data:
+  profile-service-dashboard.json: |
+    {
+      "dashboard": {
+        "id": null,
+        "title": "Profile Service - Multi-Worker Architecture",
+        "tags": ["profile-service", "multi-worker", "microservices"],
+        "timezone": "browser",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Request Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(profile_api_requests_total[5m])",
+                "legendFormat": "{{method}} {{endpoint}}"
+              }
+            ],
+            "yAxes": [
+              {
+                "label": "Requests/sec"
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "title": "Response Time",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, rate(profile_api_request_duration_seconds_bucket[5m]))",
+                "legendFormat": "95th Percentile"
+              },
+              {
+                "expr": "histogram_quantile(0.50, rate(profile_api_request_duration_seconds_bucket[5m]))",
+                "legendFormat": "50th Percentile"
+              }
+            ],
+            "yAxes": [
+              {
+                "label": "Seconds"
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "title": "Task Distribution by Routing Key",
+            "type": "pie",
+            "targets": [
+              {
+                "expr": "sum by (routing_key) (rate(profile_tasks_routing_key_distribution[5m]))",
+                "legendFormat": "{{routing_key}}"
+              }
+            ]
+          },
+          {
+            "id": 4,
+            "title": "Queue Service Communication",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(profile_queue_service_requests_total{status=\"success\"}[5m])",
+                "legendFormat": "Success"
+              },
+              {
+                "expr": "rate(profile_queue_service_requests_total{status=\"error\"}[5m])",
+                "legendFormat": "Errors"
+              }
+            ]
+          },
+          {
+            "id": 5,
+            "title": "Error Rate",
+            "type": "singlestat",
+            "targets": [
+              {
+                "expr": "rate(profile_api_requests_total{status=~\"5..\"}[5m]) / rate(profile_api_requests_total[5m])",
+                "legendFormat": "Error Rate"
+              }
+            ],
+            "thresholds": "0.01,0.05",
+            "colorBackground": true
+          }
+        ],
+        "time": {
+          "from": "now-1h",
+          "to": "now"
+        },
+        "refresh": "30s"
+      }
+    }

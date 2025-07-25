@@ -28,6 +28,27 @@ type QueueConfig struct {
 			ReconnectInterval time.Duration
 			MaxRetries        int
 			MessageTTL        time.Duration
+			ConfirmTimeout    time.Duration
+		}
+		Workers struct {
+			Profile struct {
+				Prefetch      int
+				TTL           time.Duration
+				DeadLetterTTL time.Duration
+				MaxRetries    int
+			}
+			Email struct {
+				Prefetch      int
+				TTL           time.Duration
+				DeadLetterTTL time.Duration
+				MaxRetries    int
+			}
+			Image struct {
+				Prefetch      int
+				TTL           time.Duration
+				DeadLetterTTL time.Duration
+				MaxRetries    int
+			}
 		}
 	}
 	Logging struct {
@@ -54,7 +75,24 @@ func NewConfig() *QueueConfig {
 	config.RabbitMQ.Options.PrefetchCount = 10
 	config.RabbitMQ.Options.ReconnectInterval = 5 * time.Second
 	config.RabbitMQ.Options.MaxRetries = 3
-	config.RabbitMQ.Options.MessageTTL = 24 * time.Hour // Default TTL of 24 hours
+	config.RabbitMQ.Options.MessageTTL = 24 * time.Hour      // Default TTL of 24 hours
+	config.RabbitMQ.Options.ConfirmTimeout = 5 * time.Second // Default confirm timeout
+
+	// Worker-specific defaults matching DefaultRoutingMap
+	config.RabbitMQ.Workers.Profile.Prefetch = 1
+	config.RabbitMQ.Workers.Profile.TTL = 24 * time.Hour
+	config.RabbitMQ.Workers.Profile.DeadLetterTTL = 7 * 24 * time.Hour
+	config.RabbitMQ.Workers.Profile.MaxRetries = 3
+
+	config.RabbitMQ.Workers.Email.Prefetch = 5
+	config.RabbitMQ.Workers.Email.TTL = 1 * time.Hour
+	config.RabbitMQ.Workers.Email.DeadLetterTTL = 24 * time.Hour
+	config.RabbitMQ.Workers.Email.MaxRetries = 5
+
+	config.RabbitMQ.Workers.Image.Prefetch = 1
+	config.RabbitMQ.Workers.Image.TTL = 6 * time.Hour
+	config.RabbitMQ.Workers.Image.DeadLetterTTL = 3 * 24 * time.Hour
+	config.RabbitMQ.Workers.Image.MaxRetries = 2
 
 	// Logging defaults
 	config.Logging.Level = "info"
@@ -110,6 +148,94 @@ func (c *QueueConfig) LoadFromEnv() error {
 		}
 	}
 
+	// Confirm timeout configuration
+	if timeout := os.Getenv("RABBITMQ_CONFIRM_TIMEOUT"); timeout != "" {
+		if t, err := time.ParseDuration(timeout); err == nil {
+			c.RabbitMQ.Options.ConfirmTimeout = t
+		} else {
+			return fmt.Errorf("invalid confirm timeout: %s", timeout)
+		}
+	}
+
+	// Worker-specific configuration
+	// Profile worker configuration
+	if prefetch := os.Getenv("RABBITMQ_PROFILE_PREFETCH"); prefetch != "" {
+		if p, err := strconv.Atoi(prefetch); err == nil {
+			c.RabbitMQ.Workers.Profile.Prefetch = p
+		}
+	}
+	if ttl := os.Getenv("RABBITMQ_PROFILE_TTL"); ttl != "" {
+		if t, err := time.ParseDuration(ttl); err == nil {
+			c.RabbitMQ.Workers.Profile.TTL = t
+		} else {
+			return fmt.Errorf("invalid profile TTL: %s", ttl)
+		}
+	}
+	if dlTtl := os.Getenv("RABBITMQ_PROFILE_DL_TTL"); dlTtl != "" {
+		if t, err := time.ParseDuration(dlTtl); err == nil {
+			c.RabbitMQ.Workers.Profile.DeadLetterTTL = t
+		} else {
+			return fmt.Errorf("invalid profile dead letter TTL: %s", dlTtl)
+		}
+	}
+	if retries := os.Getenv("RABBITMQ_PROFILE_MAX_RETRIES"); retries != "" {
+		if r, err := strconv.Atoi(retries); err == nil {
+			c.RabbitMQ.Workers.Profile.MaxRetries = r
+		}
+	}
+
+	// Email worker configuration
+	if prefetch := os.Getenv("RABBITMQ_EMAIL_PREFETCH"); prefetch != "" {
+		if p, err := strconv.Atoi(prefetch); err == nil {
+			c.RabbitMQ.Workers.Email.Prefetch = p
+		}
+	}
+	if ttl := os.Getenv("RABBITMQ_EMAIL_TTL"); ttl != "" {
+		if t, err := time.ParseDuration(ttl); err == nil {
+			c.RabbitMQ.Workers.Email.TTL = t
+		} else {
+			return fmt.Errorf("invalid email TTL: %s", ttl)
+		}
+	}
+	if dlTtl := os.Getenv("RABBITMQ_EMAIL_DL_TTL"); dlTtl != "" {
+		if t, err := time.ParseDuration(dlTtl); err == nil {
+			c.RabbitMQ.Workers.Email.DeadLetterTTL = t
+		} else {
+			return fmt.Errorf("invalid email dead letter TTL: %s", dlTtl)
+		}
+	}
+	if retries := os.Getenv("RABBITMQ_EMAIL_MAX_RETRIES"); retries != "" {
+		if r, err := strconv.Atoi(retries); err == nil {
+			c.RabbitMQ.Workers.Email.MaxRetries = r
+		}
+	}
+
+	// Image worker configuration
+	if prefetch := os.Getenv("RABBITMQ_IMAGE_PREFETCH"); prefetch != "" {
+		if p, err := strconv.Atoi(prefetch); err == nil {
+			c.RabbitMQ.Workers.Image.Prefetch = p
+		}
+	}
+	if ttl := os.Getenv("RABBITMQ_IMAGE_TTL"); ttl != "" {
+		if t, err := time.ParseDuration(ttl); err == nil {
+			c.RabbitMQ.Workers.Image.TTL = t
+		} else {
+			return fmt.Errorf("invalid image TTL: %s", ttl)
+		}
+	}
+	if dlTtl := os.Getenv("RABBITMQ_IMAGE_DL_TTL"); dlTtl != "" {
+		if t, err := time.ParseDuration(dlTtl); err == nil {
+			c.RabbitMQ.Workers.Image.DeadLetterTTL = t
+		} else {
+			return fmt.Errorf("invalid image dead letter TTL: %s", dlTtl)
+		}
+	}
+	if retries := os.Getenv("RABBITMQ_IMAGE_MAX_RETRIES"); retries != "" {
+		if r, err := strconv.Atoi(retries); err == nil {
+			c.RabbitMQ.Workers.Image.MaxRetries = r
+		}
+	}
+
 	// Logging configuration
 	if level := os.Getenv("LOG_LEVEL"); level != "" {
 		c.Logging.Level = level
@@ -147,6 +273,50 @@ func (c *QueueConfig) Validate() error {
 
 	if c.RabbitMQ.Options.MessageTTL <= 0 {
 		return fmt.Errorf("invalid message TTL: %v", c.RabbitMQ.Options.MessageTTL)
+	}
+
+	if c.RabbitMQ.Options.ConfirmTimeout <= 0 {
+		return fmt.Errorf("invalid confirm timeout: %v", c.RabbitMQ.Options.ConfirmTimeout)
+	}
+
+	// Validate worker-specific configurations
+	if c.RabbitMQ.Workers.Profile.Prefetch <= 0 {
+		return fmt.Errorf("invalid profile prefetch count: %d", c.RabbitMQ.Workers.Profile.Prefetch)
+	}
+	if c.RabbitMQ.Workers.Profile.TTL <= 0 {
+		return fmt.Errorf("invalid profile TTL: %v", c.RabbitMQ.Workers.Profile.TTL)
+	}
+	if c.RabbitMQ.Workers.Profile.DeadLetterTTL <= 0 {
+		return fmt.Errorf("invalid profile dead letter TTL: %v", c.RabbitMQ.Workers.Profile.DeadLetterTTL)
+	}
+	if c.RabbitMQ.Workers.Profile.MaxRetries < 0 {
+		return fmt.Errorf("invalid profile max retries: %d", c.RabbitMQ.Workers.Profile.MaxRetries)
+	}
+
+	if c.RabbitMQ.Workers.Email.Prefetch <= 0 {
+		return fmt.Errorf("invalid email prefetch count: %d", c.RabbitMQ.Workers.Email.Prefetch)
+	}
+	if c.RabbitMQ.Workers.Email.TTL <= 0 {
+		return fmt.Errorf("invalid email TTL: %v", c.RabbitMQ.Workers.Email.TTL)
+	}
+	if c.RabbitMQ.Workers.Email.DeadLetterTTL <= 0 {
+		return fmt.Errorf("invalid email dead letter TTL: %v", c.RabbitMQ.Workers.Email.DeadLetterTTL)
+	}
+	if c.RabbitMQ.Workers.Email.MaxRetries < 0 {
+		return fmt.Errorf("invalid email max retries: %d", c.RabbitMQ.Workers.Email.MaxRetries)
+	}
+
+	if c.RabbitMQ.Workers.Image.Prefetch <= 0 {
+		return fmt.Errorf("invalid image prefetch count: %d", c.RabbitMQ.Workers.Image.Prefetch)
+	}
+	if c.RabbitMQ.Workers.Image.TTL <= 0 {
+		return fmt.Errorf("invalid image TTL: %v", c.RabbitMQ.Workers.Image.TTL)
+	}
+	if c.RabbitMQ.Workers.Image.DeadLetterTTL <= 0 {
+		return fmt.Errorf("invalid image dead letter TTL: %v", c.RabbitMQ.Workers.Image.DeadLetterTTL)
+	}
+	if c.RabbitMQ.Workers.Image.MaxRetries < 0 {
+		return fmt.Errorf("invalid image max retries: %d", c.RabbitMQ.Workers.Image.MaxRetries)
 	}
 
 	return nil

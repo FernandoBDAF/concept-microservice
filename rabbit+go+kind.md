@@ -15,6 +15,9 @@ In this setup, we will deploy a RabbitMQ message broker on a local Kubernetes cl
 
 For a basic single-node RabbitMQ, you can use a Deployment. However, since RabbitMQ is a stateful service (it stores messages and can form clusters), a StatefulSet is recommended for a more robust setup and future scalability. A StatefulSet gives each RabbitMQ pod a stable network identity and can attach persistent storage for message durability. Even if we start with one replica, using a StatefulSet makes it easier to scale to a cluster later. Below is an example Kubernetes manifest for RabbitMQ using a StatefulSet. It runs the official RabbitMQ 3.x management image (which includes the management UI on port 15672) and sets up a headless service for stable DNS, as well as environment variables for default user credentials and clustering (if scaling later). We'll configure one replica for now and enable the management plugin.
 
+// What is a headless service?
+// In which scenerios would it make sense to scale. How would that scale be done? What would be possible challanges?
+
 ```yaml
 apiVersion: v1
 kind: Service
@@ -217,6 +220,8 @@ func main() {
     log.Println("Published 5 messages to each queue")
 }
 ```
+
+// What if we want to scale the publisher of one particular queue?
 
 In this publisher code, we:
 

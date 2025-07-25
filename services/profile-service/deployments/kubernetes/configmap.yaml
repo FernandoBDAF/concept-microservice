@@ -1,0 +1,224 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: profile-service-config
+  labels:
+    app: profile-service
+data:
+  # Multi-Worker Routing Key Configuration
+  ROUTING_KEY_PROFILE_UPDATE: "profile.task"
+  ROUTING_KEY_EMAIL_NOTIFICATION: "email.send"
+  ROUTING_KEY_IMAGE_PROCESSING: "image.process"
+  ROUTING_KEY_DEFAULT_FALLBACK: "profile.task"
+
+  # Task Type Configuration
+  SUPPORTED_TASK_TYPES: "profile_update,email_notification,image_processing"
+
+  # Task Validation Configuration
+  TASK_VALIDATION_ENABLED: "true"
+  TASK_PAYLOAD_VALIDATION_ENABLED: "true"
+
+  # Performance Configuration (Based on Testing Results)
+  # API Response Time Target: < 50ms (Current: ~0.2ms)
+  # Queue Communication Target: < 100ms (Current: 11-125ms)
+  # Error Rate Target: < 1% (Current: 0.02%)
+  # Throughput Target: 1000+ req/sec (Current: 1125+ req/sec)
+
+  API_RESPONSE_TIME_THRESHOLD: "50ms"
+  QUEUE_COMMUNICATION_THRESHOLD: "100ms"
+  ERROR_RATE_THRESHOLD: "0.01"
+  THROUGHPUT_TARGET: "1000"
+
+  # Message Format Configuration
+  MESSAGE_FORMAT_VERSION: "v2.0"
+  MESSAGE_PAYLOAD_TYPE: "json.RawMessage"
+  MESSAGE_TIMESTAMP_FORMAT: "RFC3339"
+  MESSAGE_METADATA_ENABLED: "true"
+
+  # Queue Service Configuration
+  QUEUE_SERVICE_HEALTH_CHECK_INTERVAL: "30s"
+  QUEUE_SERVICE_CONNECTION_POOL_SIZE: "10"
+  QUEUE_SERVICE_KEEP_ALIVE_ENABLED: "true"
+
+  # Multi-Worker Task Processing Configuration
+  TASK_PROCESSING_ENABLED: "true"
+  TASK_ROUTING_ENABLED: "true"
+  TASK_FALLBACK_ENABLED: "true"
+
+  # Profile Worker Configuration
+  PROFILE_WORKER_ENABLED: "true"
+  PROFILE_WORKER_QUEUE: "profile.task.queue"
+  PROFILE_WORKER_ROUTING_KEY: "profile.task"
+  PROFILE_WORKER_TIMEOUT: "5m"
+  PROFILE_WORKER_RETRY_ATTEMPTS: "3"
+
+  # Email Worker Configuration
+  EMAIL_WORKER_ENABLED: "true"
+  EMAIL_WORKER_QUEUE: "email.send.queue"
+  EMAIL_WORKER_ROUTING_KEY: "email.send"
+  EMAIL_WORKER_TIMEOUT: "2m"
+  EMAIL_WORKER_RETRY_ATTEMPTS: "3"
+  EMAIL_TEMPLATES_SUPPORTED: "welcome,profile_updated,password_reset,notification"
+
+  # Image Worker Configuration
+  IMAGE_WORKER_ENABLED: "true"
+  IMAGE_WORKER_QUEUE: "image.process.queue"
+  IMAGE_WORKER_ROUTING_KEY: "image.process"
+  IMAGE_WORKER_TIMEOUT: "10m"
+  IMAGE_WORKER_RETRY_ATTEMPTS: "2"
+  IMAGE_FORMATS_SUPPORTED: "jpeg,jpg,png,webp,gif"
+  IMAGE_MAX_SIZE: "10MB"
+  IMAGE_OPERATIONS_SUPPORTED: "resize,compress,convert,crop"
+
+  # Monitoring Configuration
+  PROMETHEUS_METRICS_ENABLED: "true"
+  PROMETHEUS_METRICS_PORT: "8080"
+  PROMETHEUS_METRICS_PATH: "/metrics"
+
+  # Metrics Collection Configuration
+  METRICS_TASK_DISTRIBUTION_ENABLED: "true"
+  METRICS_ROUTING_KEY_DISTRIBUTION_ENABLED: "true"
+  METRICS_QUEUE_COMMUNICATION_ENABLED: "true"
+  METRICS_API_PERFORMANCE_ENABLED: "true"
+
+  # Structured Logging Configuration
+  LOG_STRUCTURED_ENABLED: "true"
+  LOG_INCLUDE_TRACE_ID: "true"
+  LOG_INCLUDE_CORRELATION_ID: "true"
+  LOG_INCLUDE_ROUTING_KEY: "true"
+  LOG_INCLUDE_TASK_TYPE: "true"
+  LOG_INCLUDE_PERFORMANCE_METRICS: "true"
+
+  # Health Check Configuration
+  HEALTH_CHECK_ENABLED: "true"
+  HEALTH_CHECK_DEPENDENCIES_ENABLED: "true"
+  HEALTH_CHECK_QUEUE_SERVICE_ENABLED: "true"
+  HEALTH_CHECK_STORAGE_SERVICE_ENABLED: "true"
+  HEALTH_CHECK_AUTH_SERVICE_ENABLED: "true"
+  HEALTH_CHECK_CACHE_SERVICE_ENABLED: "true"
+  HEALTH_CHECK_TIMEOUT: "5s"
+
+  # Circuit Breaker Configuration
+  CIRCUIT_BREAKER_QUEUE_SERVICE_ENABLED: "true"
+  CIRCUIT_BREAKER_STORAGE_SERVICE_ENABLED: "true"
+  CIRCUIT_BREAKER_AUTH_SERVICE_ENABLED: "true"
+  CIRCUIT_BREAKER_CACHE_SERVICE_ENABLED: "true"
+
+  # Retry Policy Configuration
+  RETRY_QUEUE_SERVICE_ENABLED: "true"
+  RETRY_QUEUE_SERVICE_MAX_ATTEMPTS: "3"
+  RETRY_QUEUE_SERVICE_BACKOFF: "exponential"
+  RETRY_QUEUE_SERVICE_INITIAL_DELAY: "1s"
+  RETRY_QUEUE_SERVICE_MAX_DELAY: "30s"
+
+  # Rate Limiting Configuration
+  RATE_LIMIT_WINDOW: "1m"
+  RATE_LIMIT_BURST_ALLOWED: "true"
+  RATE_LIMIT_BURST_MULTIPLIER: "2"
+
+  # Security Configuration
+  SECURITY_JWT_VALIDATION_ENABLED: "true"
+  SECURITY_RBAC_ENABLED: "true"
+  SECURITY_INPUT_VALIDATION_ENABLED: "true"
+  SECURITY_OUTPUT_SANITIZATION_ENABLED: "true"
+
+  # API Configuration
+  API_VERSIONING_ENABLED: "true"
+  API_VERSION_CURRENT: "v1"
+  API_BACKWARD_COMPATIBILITY_ENABLED: "true"
+  API_DOCUMENTATION_ENABLED: "true"
+
+  # Message Serialization Configuration
+  MESSAGE_SERIALIZATION_FORMAT: "json"
+  MESSAGE_COMPRESSION_ENABLED: "false"
+  MESSAGE_ENCRYPTION_ENABLED: "false"
+
+  # Task Scheduling Configuration
+  TASK_SCHEDULING_ENABLED: "false"
+  TASK_DELAYED_EXECUTION_ENABLED: "false"
+  TASK_BATCH_PROCESSING_ENABLED: "false"
+
+  # Development and Testing Configuration
+  DEBUG_MODE_ENABLED: "false"
+  TEST_MODE_ENABLED: "false"
+  MOCK_DEPENDENCIES_ENABLED: "false"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: profile-service-routing-config
+  labels:
+    app: profile-service
+    component: routing
+data:
+  routing-config.yaml: |
+    routing:
+      version: "v2.0"
+      default_fallback: "profile.task"
+      
+      # Multi-Worker Routing Rules
+      rules:
+        - task_type: "profile_update"
+          routing_key: "profile.task"
+          queue: "profile.task.queue"
+          worker: "profile-worker"
+          timeout: "5m"
+          retry_attempts: 3
+          priority: "normal"
+          
+        - task_type: "email_notification"
+          routing_key: "email.send"
+          queue: "email.send.queue"
+          worker: "email-worker"
+          timeout: "2m"
+          retry_attempts: 3
+          priority: "high"
+          
+        - task_type: "image_processing"
+          routing_key: "image.process"
+          queue: "image.process.queue"
+          worker: "image-worker"
+          timeout: "10m"
+          retry_attempts: 2
+          priority: "low"
+      
+      # Worker Health Check Configuration
+      health_checks:
+        - worker: "profile-worker"
+          endpoint: "http://profile-worker:8080/health"
+          interval: "30s"
+          timeout: "5s"
+          
+        - worker: "email-worker"
+          endpoint: "http://email-worker:8080/health"
+          interval: "30s"
+          timeout: "5s"
+          
+        - worker: "image-worker"
+          endpoint: "http://image-worker:8080/health"
+          interval: "30s"
+          timeout: "5s"
+      
+      # Load Balancing Configuration
+      load_balancing:
+        algorithm: "round_robin"
+        sticky_sessions: false
+        health_check_enabled: true
+        
+      # Circuit Breaker Configuration per Worker
+      circuit_breakers:
+        - worker: "profile-worker"
+          failure_threshold: 5
+          timeout: "30s"
+          half_open_max_calls: 3
+          
+        - worker: "email-worker"
+          failure_threshold: 3
+          timeout: "30s"
+          half_open_max_calls: 2
+          
+        - worker: "image-worker"
+          failure_threshold: 2
+          timeout: "60s"
+          half_open_max_calls: 1

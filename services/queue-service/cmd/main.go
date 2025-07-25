@@ -13,6 +13,7 @@ import (
 	httpadapter "github.com/FBDAF/microservices/services/queue-service/internal/adapters/http"
 	"github.com/FBDAF/microservices/services/queue-service/internal/adapters/rabbitmq"
 	"github.com/FBDAF/microservices/services/queue-service/internal/config"
+	"github.com/FBDAF/microservices/services/queue-service/internal/domain/model"
 	"github.com/FBDAF/microservices/services/queue-service/internal/domain/service"
 	"github.com/gin-gonic/gin"
 )
@@ -28,6 +29,40 @@ func main() {
 		log.Fatalf("Invalid configuration: %v", err)
 	}
 
+	// Build routing configuration from config and update global routing map
+	routingMap := model.BuildRoutingMapFromConfig(
+		model.WorkerConfig{
+			Prefetch:      cfg.RabbitMQ.Workers.Profile.Prefetch,
+			TTL:           cfg.RabbitMQ.Workers.Profile.TTL,
+			DeadLetterTTL: cfg.RabbitMQ.Workers.Profile.DeadLetterTTL,
+			MaxRetries:    cfg.RabbitMQ.Workers.Profile.MaxRetries,
+		},
+		model.WorkerConfig{
+			Prefetch:      cfg.RabbitMQ.Workers.Email.Prefetch,
+			TTL:           cfg.RabbitMQ.Workers.Email.TTL,
+			DeadLetterTTL: cfg.RabbitMQ.Workers.Email.DeadLetterTTL,
+			MaxRetries:    cfg.RabbitMQ.Workers.Email.MaxRetries,
+		},
+		model.WorkerConfig{
+			Prefetch:      cfg.RabbitMQ.Workers.Image.Prefetch,
+			TTL:           cfg.RabbitMQ.Workers.Image.TTL,
+			DeadLetterTTL: cfg.RabbitMQ.Workers.Image.DeadLetterTTL,
+			MaxRetries:    cfg.RabbitMQ.Workers.Image.MaxRetries,
+		},
+	)
+	model.UpdateRoutingMap(routingMap)
+
+	log.Printf("Configured worker-specific settings:")
+	log.Printf("  Profile: prefetch=%d, TTL=%v, DL_TTL=%v, retries=%d",
+		cfg.RabbitMQ.Workers.Profile.Prefetch, cfg.RabbitMQ.Workers.Profile.TTL,
+		cfg.RabbitMQ.Workers.Profile.DeadLetterTTL, cfg.RabbitMQ.Workers.Profile.MaxRetries)
+	log.Printf("  Email: prefetch=%d, TTL=%v, DL_TTL=%v, retries=%d",
+		cfg.RabbitMQ.Workers.Email.Prefetch, cfg.RabbitMQ.Workers.Email.TTL,
+		cfg.RabbitMQ.Workers.Email.DeadLetterTTL, cfg.RabbitMQ.Workers.Email.MaxRetries)
+	log.Printf("  Image: prefetch=%d, TTL=%v, DL_TTL=%v, retries=%d",
+		cfg.RabbitMQ.Workers.Image.Prefetch, cfg.RabbitMQ.Workers.Image.TTL,
+		cfg.RabbitMQ.Workers.Image.DeadLetterTTL, cfg.RabbitMQ.Workers.Image.MaxRetries)
+
 	// Initialize RabbitMQ
 	rmqConfig := &rabbitmq.Config{
 		Hosts:            make([]string, len(cfg.RabbitMQ.Cluster.Nodes)),
@@ -38,6 +73,7 @@ func main() {
 		ReconnectTimeout: cfg.RabbitMQ.Options.ReconnectInterval,
 		MaxRetries:       cfg.RabbitMQ.Options.MaxRetries,
 		MessageTTL:       cfg.RabbitMQ.Options.MessageTTL,
+		ConfirmTimeout:   cfg.RabbitMQ.Options.ConfirmTimeout,
 	}
 
 	// Convert node configurations to host strings

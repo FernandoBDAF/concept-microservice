@@ -49,12 +49,39 @@ type Contact struct {
 
 // ProfileRequest represents the data needed to create or update a profile
 type ProfileRequest struct {
-	FirstName string    `json:"first_name" validate:"required"`
-	LastName  string    `json:"last_name" validate:"required"`
-	Email     string    `json:"email" validate:"required,email"`
-	Phone     string    `json:"phone,omitempty"`
-	Addresses []Address `json:"addresses,omitempty"`
-	Contacts  []Contact `json:"contacts,omitempty"`
+	FirstName string           `json:"first_name" validate:"required"`
+	LastName  string           `json:"last_name" validate:"required"`
+	Email     string           `json:"email" validate:"required,email"`
+	Phone     string           `json:"phone,omitempty"`
+	Addresses []AddressRequest `json:"addresses,omitempty"`
+	Contacts  []ContactRequest `json:"contacts,omitempty"`
+}
+
+// AddressRequest represents the data needed to create or update an address
+type AddressRequest struct {
+	Street     string `json:"street" validate:"required"`
+	City       string `json:"city" validate:"required"`
+	State      string `json:"state" validate:"required"`
+	Country    string `json:"country" validate:"required"`
+	PostalCode string `json:"postal_code" validate:"required"`
+	IsPrimary  bool   `json:"is_primary"`
+}
+
+// ContactRequest represents the data needed to create or update a contact
+type ContactRequest struct {
+	Type      string `json:"type" validate:"required"`
+	Value     string `json:"value" validate:"required"`
+	IsPrimary bool   `json:"is_primary"`
+}
+
+// StorageTask represents the payload structure for storage operations
+type StorageTask struct {
+	Operation   string                 `json:"operation"`
+	ProfileID   *uuid.UUID             `json:"profile_id,omitempty"`
+	Data        map[string]interface{} `json:"data,omitempty"`
+	Options     map[string]interface{} `json:"options,omitempty"`
+	Timestamp   time.Time              `json:"timestamp"`
+	RequestedBy string                 `json:"requested_by,omitempty"`
 }
 
 // Validation errors
@@ -91,14 +118,14 @@ func (p *ProfileRequest) Validate() error {
 
 	// Validate addresses
 	for i, addr := range p.Addresses {
-		if err := validateAddress(&addr); err != nil {
+		if err := validateAddressRequest(&addr); err != nil {
 			return fmt.Errorf("address %d: %w", i+1, err)
 		}
 	}
 
 	// Validate contacts
 	for i, contact := range p.Contacts {
-		if err := validateContact(&contact); err != nil {
+		if err := validateContactRequest(&contact); err != nil {
 			return fmt.Errorf("contact %d: %w", i+1, err)
 		}
 	}
@@ -138,6 +165,35 @@ func isValidPhone(phone string) bool {
 
 	// Check if we have a reasonable number of digits
 	return len(digits) >= 10 && len(digits) <= 15
+}
+
+func validateAddressRequest(addr *AddressRequest) error {
+	if strings.TrimSpace(addr.Street) == "" {
+		return fmt.Errorf("%w: street is required", ErrInvalidAddress)
+	}
+	if strings.TrimSpace(addr.City) == "" {
+		return fmt.Errorf("%w: city is required", ErrInvalidAddress)
+	}
+	if strings.TrimSpace(addr.State) == "" {
+		return fmt.Errorf("%w: state is required", ErrInvalidAddress)
+	}
+	if strings.TrimSpace(addr.Country) == "" {
+		return fmt.Errorf("%w: country is required", ErrInvalidAddress)
+	}
+	if strings.TrimSpace(addr.PostalCode) == "" {
+		return fmt.Errorf("%w: postal code is required", ErrInvalidAddress)
+	}
+	return nil
+}
+
+func validateContactRequest(contact *ContactRequest) error {
+	if strings.TrimSpace(contact.Type) == "" {
+		return fmt.Errorf("%w: type is required", ErrInvalidContact)
+	}
+	if strings.TrimSpace(contact.Value) == "" {
+		return fmt.Errorf("%w: value is required", ErrInvalidContact)
+	}
+	return nil
 }
 
 func validateAddress(addr *Address) error {

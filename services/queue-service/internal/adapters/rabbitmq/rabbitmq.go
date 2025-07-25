@@ -1,19 +1,27 @@
 package rabbitmq
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/FBDAF/microservices/services/queue-service/internal/domain/model"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-// RabbitMQ represents a RabbitMQ connection and channel
+// RabbitMQ represents a RabbitMQ connection and channel following best practices
 type RabbitMQ struct {
-	conn    *amqp.Connection
-	channel *amqp.Channel
-	config  *Config
+	conn           *amqp.Connection
+	channel        *amqp.Channel
+	config         *Config
+	confirms       chan amqp.Confirmation
+	confirmTracker map[uint64]chan bool
+	trackerMu      sync.RWMutex
+	connected      bool
+	mu             sync.RWMutex
 }
 
 // Config holds the RabbitMQ configuration
@@ -26,25 +34,19 @@ type Config struct {
 	ReconnectTimeout time.Duration
 	MaxRetries       int
 	MessageTTL       time.Duration
+	ConfirmTimeout   time.Duration
 }
 
-// convertHeaders converts map[string]string to amqp.Table
-func convertHeaders(headers map[string]string) amqp.Table {
-	if headers == nil {
-		return nil
-	}
-
-	table := make(amqp.Table)
-	for k, v := range headers {
-		table[k] = v
-	}
-	return table
-}
-
-// New creates a new RabbitMQ instance
+// New creates a new RabbitMQ instance with best practices
 func New(config *Config) (*RabbitMQ, error) {
+	// Set default confirm timeout if not specified
+	if config.ConfirmTimeout == 0 {
+		config.ConfirmTimeout = 5 * time.Second
+	}
+
 	rmq := &RabbitMQ{
-		config: config,
+		config:         config,
+		confirmTracker: make(map[uint64]chan bool),
 	}
 
 	if err := rmq.connect(); err != nil {
@@ -54,8 +56,11 @@ func New(config *Config) (*RabbitMQ, error) {
 	return rmq, nil
 }
 
-// connect establishes a connection to RabbitMQ
+// connect establishes a connection to RabbitMQ following best practices
 func (r *RabbitMQ) connect() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	var err error
 	var conn *amqp.Connection
 
@@ -83,328 +88,338 @@ func (r *RabbitMQ) connect() error {
 
 	r.conn = conn
 
-	// Create channel
+	// Create single channel for publishing (best practice)
 	log.Printf("Creating RabbitMQ channel")
 	ch, err := r.conn.Channel()
 	if err != nil {
 		return fmt.Errorf("failed to open channel: %w", err)
 	}
-	log.Printf("Successfully created RabbitMQ channel")
 
-	// Set prefetch count
-	if err := ch.Qos(
-		r.config.PrefetchCount, // prefetch count
-		0,                      // prefetch size
-		false,                  // global
-	); err != nil {
+	// Enable publisher confirms for reliability
+	if err := ch.Confirm(false); err != nil {
+		return fmt.Errorf("failed to enable publisher confirms: %w", err)
+	}
+	log.Printf("Publisher confirms enabled")
+
+	// Set QoS
+	if err := ch.Qos(r.config.PrefetchCount, 0, false); err != nil {
 		return fmt.Errorf("failed to set QoS: %w", err)
 	}
 
 	r.channel = ch
+	r.connected = true
 
-	// Monitor connection state
-	go func() {
-		notifyClose := r.conn.NotifyClose(make(chan *amqp.Error))
-		for {
-			select {
-			case err := <-notifyClose:
-				if err != nil {
-					log.Printf("RabbitMQ connection closed: %v", err)
-					// Connection closed, try to reconnect
-					for {
-						log.Printf("Attempting to reconnect to RabbitMQ")
-						if err := r.connect(); err == nil {
-							log.Printf("Successfully reconnected to RabbitMQ")
-							break
-						}
-						log.Printf("Failed to reconnect to RabbitMQ: %v", err)
-						time.Sleep(r.config.ReconnectTimeout)
-					}
+	// Setup publisher confirm handling
+	r.confirms = make(chan amqp.Confirmation, 100)
+	ch.NotifyPublish(r.confirms)
+
+	// Start confirm handler
+	go r.handleConfirms()
+
+	// Simple connection monitoring (no complex goroutines)
+	go r.monitorConnection()
+
+	log.Printf("Successfully connected to RabbitMQ with publisher confirms")
+	return nil
+}
+
+// handleConfirms processes publisher confirmations
+func (r *RabbitMQ) handleConfirms() {
+	for confirm := range r.confirms {
+		r.trackerMu.RLock()
+		if ch, exists := r.confirmTracker[confirm.DeliveryTag]; exists {
+			ch <- confirm.Ack
+			close(ch)
+			delete(r.confirmTracker, confirm.DeliveryTag)
+		}
+		r.trackerMu.RUnlock()
+	}
+}
+
+// monitorConnection monitors connection state with simple reconnection
+func (r *RabbitMQ) monitorConnection() {
+	closed := r.conn.NotifyClose(make(chan *amqp.Error))
+
+	for err := range closed {
+		if err != nil {
+			log.Printf("RabbitMQ connection closed: %v", err)
+			r.mu.Lock()
+			r.connected = false
+			r.mu.Unlock()
+
+			// Simple reconnection logic
+			for {
+				log.Printf("Attempting to reconnect to RabbitMQ")
+				if err := r.connect(); err == nil {
+					log.Printf("Successfully reconnected to RabbitMQ")
+					break
 				}
+				log.Printf("Failed to reconnect, retrying in %v", r.config.ReconnectTimeout)
+				time.Sleep(r.config.ReconnectTimeout)
 			}
 		}
-	}()
-
-	// Monitor channel state
-	go func() {
-		notifyClose := r.channel.NotifyClose(make(chan *amqp.Error))
-		for {
-			select {
-			case err := <-notifyClose:
-				if err != nil {
-					log.Printf("RabbitMQ channel closed: %v", err)
-					// Channel closed, try to recreate
-					for {
-						log.Printf("Attempting to recreate RabbitMQ channel")
-						if err := r.connect(); err == nil {
-							log.Printf("Successfully recreated RabbitMQ channel")
-							break
-						}
-						log.Printf("Failed to recreate RabbitMQ channel: %v", err)
-						time.Sleep(r.config.ReconnectTimeout)
-					}
-				}
-			}
-		}
-	}()
-
-	return nil
+	}
 }
 
-// ensureChannelOpen ensures the channel is open and reconnects if necessary
-func (r *RabbitMQ) ensureChannelOpen() error {
-	if r.channel == nil {
-		if err := r.connect(); err != nil {
-			return fmt.Errorf("failed to reconnect: %w", err)
+// ensureTopology sets up exchanges and queues for routing key with worker-specific configuration
+func (r *RabbitMQ) ensureTopology(routingKey string) error {
+	config, exists := model.DefaultRoutingMap[routingKey]
+	if !exists {
+		// Use default configuration for unknown routing keys
+		config = model.RoutingConfig{
+			Exchange:      "tasks-exchange",
+			Queue:         "default-processing",
+			TTL:           24 * time.Hour,
+			Prefetch:      1,
+			Durable:       true,
+			AutoDelete:    false,
+			Exclusive:     false,
+			NoWait:        false,
+			DeadLetterTTL: 7 * 24 * time.Hour,
+			MaxRetries:    3,
+			Description:   "Default configuration for unknown routing keys",
 		}
 	}
 
-	// Check if channel is closed
-	select {
-	case <-r.channel.NotifyClose(make(chan *amqp.Error)):
-		// Channel is closed, try to reconnect
-		if err := r.connect(); err != nil {
-			return fmt.Errorf("failed to reconnect: %w", err)
-		}
-	default:
-		// Channel is open
-	}
-
-	return nil
-}
-
-// setupDeadLetterQueue sets up the dead letter queue and exchange
-func (r *RabbitMQ) setupDeadLetterQueue(queueName string) error {
-	// Declare dead letter exchange
+	// Declare main exchange with worker-specific properties
 	err := r.channel.ExchangeDeclare(
-		queueName+".dlx", // name
-		"direct",         // type
-		true,             // durable
-		false,            // auto-deleted
-		false,            // internal
-		false,            // no-wait
-		nil,              // arguments
+		config.Exchange,   // name
+		"direct",          // type
+		config.Durable,    // durable
+		config.AutoDelete, // auto-deleted
+		false,             // internal
+		config.NoWait,     // no-wait
+		nil,               // arguments
 	)
 	if err != nil {
-		return fmt.Errorf("failed to declare dead letter exchange: %w", err)
+		return fmt.Errorf("failed to declare exchange %s: %w", config.Exchange, err)
 	}
 
-	// Declare dead letter queue
+	// Setup dead letter exchange with same durability as main exchange
+	dlxName := config.Exchange + ".dlx"
+	err = r.channel.ExchangeDeclare(
+		dlxName,           // name
+		"direct",          // type
+		config.Durable,    // durable
+		config.AutoDelete, // auto-deleted
+		false,             // internal
+		config.NoWait,     // no-wait
+		nil,               // arguments
+	)
+	if err != nil {
+		return fmt.Errorf("failed to declare dead letter exchange %s: %w", dlxName, err)
+	}
+
+	// Declare main queue with worker-specific configuration and dead letter exchange
+	queueArgs := amqp.Table{
+		"x-dead-letter-exchange":    dlxName,
+		"x-dead-letter-routing-key": routingKey,
+		"x-message-ttl":             int32(config.TTL.Milliseconds()),
+		"x-max-retries":             config.MaxRetries,
+	}
+
 	_, err = r.channel.QueueDeclare(
-		queueName+".dlq", // name
-		true,             // durable
-		false,            // delete when unused
-		false,            // exclusive
-		false,            // no-wait
-		amqp.Table{
-			"x-message-ttl": int32(r.config.MessageTTL.Milliseconds()),
-		}, // arguments
+		config.Queue,      // name
+		config.Durable,    // durable
+		config.AutoDelete, // delete when unused
+		config.Exclusive,  // exclusive
+		config.NoWait,     // no-wait
+		queueArgs,         // arguments
 	)
 	if err != nil {
-		return fmt.Errorf("failed to declare dead letter queue: %w", err)
+		return fmt.Errorf("failed to declare queue %s: %w", config.Queue, err)
 	}
 
-	// Bind dead letter queue to exchange
+	// Bind main queue to exchange with routing key
 	err = r.channel.QueueBind(
-		queueName+".dlq", // queue name
-		queueName,        // routing key
-		queueName+".dlx", // exchange
-		false,            // no-wait
-		nil,              // arguments
+		config.Queue,    // queue name
+		routingKey,      // routing key
+		config.Exchange, // exchange
+		config.NoWait,   // no-wait
+		nil,             // arguments
 	)
 	if err != nil {
-		return fmt.Errorf("failed to bind dead letter queue: %w", err)
+		return fmt.Errorf("failed to bind queue %s to exchange %s: %w", config.Queue, config.Exchange, err)
 	}
+
+	// Declare dead letter queue with worker-specific TTL
+	dlqName := config.Queue + ".dlq"
+	dlqArgs := amqp.Table{
+		"x-message-ttl": int32(config.DeadLetterTTL.Milliseconds()),
+	}
+
+	_, err = r.channel.QueueDeclare(
+		dlqName,           // name
+		config.Durable,    // durable
+		config.AutoDelete, // delete when unused
+		config.Exclusive,  // exclusive
+		config.NoWait,     // no-wait
+		dlqArgs,           // arguments
+	)
+	if err != nil {
+		return fmt.Errorf("failed to declare dead letter queue %s: %w", dlqName, err)
+	}
+
+	// Bind dead letter queue to dead letter exchange
+	err = r.channel.QueueBind(
+		dlqName,       // queue name
+		routingKey,    // routing key
+		dlxName,       // exchange
+		config.NoWait, // no-wait
+		nil,           // arguments
+	)
+	if err != nil {
+		return fmt.Errorf("failed to bind dead letter queue %s: %w", dlqName, err)
+	}
+
+	log.Printf("Successfully configured topology for routing key %s: exchange=%s, queue=%s, TTL=%v, prefetch=%d",
+		routingKey, config.Exchange, config.Queue, config.TTL, config.Prefetch)
 
 	return nil
 }
 
-// ensureQueueSetup ensures the queue and exchange are set up
-func (r *RabbitMQ) ensureQueueSetup(queueName string) error {
-	// Ensure channel is open
-	if err := r.ensureChannelOpen(); err != nil {
-		return fmt.Errorf("failed to ensure channel is open: %w", err)
+// PublishWithRoutingKey publishes a message with routing key support
+func (r *RabbitMQ) PublishWithRoutingKey(routingKey string, msg *model.Message) error {
+	r.mu.RLock()
+	if !r.connected {
+		r.mu.RUnlock()
+		return fmt.Errorf("not connected to RabbitMQ")
+	}
+	r.mu.RUnlock()
+
+	// Ensure topology is set up for this routing key
+	if err := r.ensureTopology(routingKey); err != nil {
+		return fmt.Errorf("failed to ensure topology: %w", err)
 	}
 
-	// Set up dead letter queue
-	if err := r.setupDeadLetterQueue(queueName); err != nil {
-		return fmt.Errorf("failed to set up dead letter queue: %w", err)
+	// Get exchange name for routing key
+	config := model.DefaultRoutingMap[routingKey]
+	if config.Exchange == "" {
+		config.Exchange = "tasks-exchange" // default
 	}
 
-	// Declare main exchange
-	err := r.channel.ExchangeDeclare(
-		queueName+".exchange", // name
-		"direct",              // type
-		true,                  // durable
-		false,                 // auto-deleted
-		false,                 // internal
-		false,                 // no-wait
-		nil,                   // arguments
-	)
+	// Marshal message to JSON
+	body, err := json.Marshal(msg)
 	if err != nil {
-		return fmt.Errorf("failed to declare exchange: %w", err)
-	}
-
-	// Declare queue with dead letter exchange
-	_, err = r.channel.QueueDeclare(
-		queueName, // name
-		true,      // durable
-		false,     // delete when unused
-		false,     // exclusive
-		false,     // no-wait
-		amqp.Table{
-			"x-dead-letter-exchange":    queueName + ".dlx",
-			"x-dead-letter-routing-key": queueName,
-			"x-message-ttl":             int32(r.config.MessageTTL.Milliseconds()),
-		}, // arguments
-	)
-	if err != nil {
-		return fmt.Errorf("failed to declare queue: %w", err)
-	}
-
-	// Bind queue to exchange
-	err = r.channel.QueueBind(
-		queueName,             // queue name
-		queueName,             // routing key
-		queueName+".exchange", // exchange
-		false,                 // no-wait
-		nil,                   // arguments
-	)
-	if err != nil {
-		return fmt.Errorf("failed to bind queue to exchange: %w", err)
-	}
-
-	return nil
-}
-
-// Publish publishes a message to a queue
-func (r *RabbitMQ) Publish(queueName string, msg *model.Message) error {
-	log.Printf("Starting to publish message to queue: %s", queueName)
-
-	// Ensure queue and exchange are set up
-	if err := r.ensureQueueSetup(queueName); err != nil {
-		log.Printf("Failed to ensure queue setup: %v", err)
-		return fmt.Errorf("failed to ensure queue setup: %w", err)
-	}
-	log.Printf("Queue setup ensured for: %s", queueName)
-
-	// Ensure channel is open
-	if err := r.ensureChannelOpen(); err != nil {
-		log.Printf("Failed to ensure channel is open: %v", err)
-		return fmt.Errorf("failed to ensure channel is open: %w", err)
-	}
-	log.Printf("Channel is open and ready")
-
-	// Convert message to bytes
-	body, err := msg.MarshalJSON()
-	if err != nil {
-		log.Printf("Failed to marshal message: %v", err)
 		return fmt.Errorf("failed to marshal message: %w", err)
 	}
-	log.Printf("Message marshaled successfully, size: %d bytes", len(body))
 
-	// Convert headers to amqp.Table
-	headers := convertHeaders(msg.Headers)
-	log.Printf("Message headers: %v", headers)
+	// Convert metadata to AMQP table
+	headers := make(amqp.Table)
+	for k, v := range msg.Metadata {
+		headers[k] = v
+	}
 
-	// Convert expiration to milliseconds string
-	expiration := fmt.Sprintf("%d", r.config.MessageTTL.Milliseconds())
-	log.Printf("Message expiration: %s", expiration)
+	// Get next delivery tag for confirmation tracking
+	r.trackerMu.Lock()
+	deliveryTag := r.channel.GetNextPublishSeqNo()
+	confirmCh := make(chan bool, 1)
+	r.confirmTracker[deliveryTag] = confirmCh
+	r.trackerMu.Unlock()
 
 	// Publish message
-	exchangeName := queueName + ".exchange"
-	log.Printf("Attempting to publish message to exchange: %s with routing key: %s", exchangeName, queueName)
-
-	// Verify exchange exists
-	err = r.channel.ExchangeDeclarePassive(
-		exchangeName, // name
-		"direct",     // type
-		true,         // durable
-		false,        // auto-deleted
-		false,        // internal
-		false,        // no-wait
-		nil,          // arguments
-	)
-	if err != nil {
-		log.Printf("Exchange %s does not exist or is not accessible: %v", exchangeName, err)
-		return fmt.Errorf("exchange %s does not exist or is not accessible: %w", exchangeName, err)
-	}
-	log.Printf("Exchange %s exists and is accessible", exchangeName)
-
 	err = r.channel.Publish(
-		exchangeName, // exchange
-		queueName,    // routing key
-		true,         // mandatory - make sure message is routable
-		false,        // immediate
+		config.Exchange, // exchange
+		routingKey,      // routing key
+		true,            // mandatory
+		false,           // immediate
 		amqp.Publishing{
 			Headers:         headers,
 			ContentType:     "application/json",
 			ContentEncoding: "utf-8",
 			Body:            body,
-			DeliveryMode:    amqp.Persistent, // Make message persistent
+			DeliveryMode:    amqp.Persistent,
 			Priority:        uint8(msg.Priority),
 			Timestamp:       msg.Timestamp,
 			MessageId:       msg.ID,
 			CorrelationId:   msg.CorrelationID,
-			Expiration:      expiration,
 		},
 	)
 	if err != nil {
-		log.Printf("Failed to publish message: %v", err)
+		// Cleanup confirm tracker on publish error
+		r.trackerMu.Lock()
+		delete(r.confirmTracker, deliveryTag)
+		r.trackerMu.Unlock()
 		return fmt.Errorf("failed to publish message: %w", err)
 	}
 
-	// Check for returned messages (when mandatory=true)
-	returns := r.channel.NotifyReturn(make(chan amqp.Return))
-	select {
-	case ret := <-returns:
-		log.Printf("Message was returned: %v", ret)
-		return fmt.Errorf("message was returned: %v", ret)
-	default:
-		log.Printf("Message published successfully")
-	}
+	// Wait for publisher confirm with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), r.config.ConfirmTimeout)
+	defer cancel()
 
-	return nil
+	select {
+	case ack := <-confirmCh:
+		if !ack {
+			return fmt.Errorf("message was not acknowledged by broker")
+		}
+		log.Printf("Message published successfully with routing key: %s", routingKey)
+		return nil
+	case <-ctx.Done():
+		// Cleanup confirm tracker on timeout
+		r.trackerMu.Lock()
+		delete(r.confirmTracker, deliveryTag)
+		r.trackerMu.Unlock()
+		return fmt.Errorf("publisher confirm timeout after %v", r.config.ConfirmTimeout)
+	}
 }
 
-// Consume starts consuming messages from a queue
-func (r *RabbitMQ) Consume(queueName string, handler func(*model.Message) error) error {
-	// Ensure queue and exchange are set up
-	if err := r.ensureQueueSetup(queueName); err != nil {
-		return fmt.Errorf("failed to ensure queue setup: %w", err)
+// Publish publishes a message (backward compatibility)
+func (r *RabbitMQ) Publish(queueName string, msg *model.Message) error {
+	// Map queue name to routing key for backward compatibility
+	routingKey := "profile.task" // default routing key
+
+	// Try to infer routing key from message type or queue name
+	switch msg.Type {
+	case "profile_update", "profile_task":
+		routingKey = "profile.task"
+	case "email_send", "email_task":
+		routingKey = "email.send"
+	case "image_process", "image_task":
+		routingKey = "image.process"
 	}
 
-	// Start consuming
+	return r.PublishWithRoutingKey(routingKey, msg)
+}
+
+// Consume starts consuming messages from a queue (simplified)
+func (r *RabbitMQ) Consume(queueName string, handler func(*model.Message) error) error {
+	// For backward compatibility, use default routing key
+	routingKey := "profile.task"
+
+	if err := r.ensureTopology(routingKey); err != nil {
+		return fmt.Errorf("failed to ensure topology: %w", err)
+	}
+
+	config := model.DefaultRoutingMap[routingKey]
+
 	msgs, err := r.channel.Consume(
-		queueName, // queue
-		"",        // consumer
-		false,     // auto-ack
-		false,     // exclusive
-		false,     // no-local
-		false,     // no-wait
-		nil,       // args
+		config.Queue, // queue
+		"",           // consumer
+		false,        // auto-ack
+		false,        // exclusive
+		false,        // no-local
+		false,        // no-wait
+		nil,          // args
 	)
 	if err != nil {
 		return fmt.Errorf("failed to start consuming: %w", err)
 	}
 
-	// Process messages
 	go func() {
 		for d := range msgs {
 			msg := &model.Message{}
-			if err := msg.UnmarshalJSON(d.Body); err != nil {
-				// Log error and reject message to dead letter queue
+			if err := json.Unmarshal(d.Body, msg); err != nil {
+				log.Printf("Failed to unmarshal message: %v", err)
 				d.Reject(false)
 				continue
 			}
 
 			if err := handler(msg); err != nil {
-				// Log error and reject message to dead letter queue
+				log.Printf("Failed to handle message: %v", err)
 				d.Reject(false)
 				continue
 			}
 
-			// Acknowledge message
 			d.Ack(false)
 		}
 	}()
@@ -414,9 +429,18 @@ func (r *RabbitMQ) Consume(queueName string, handler func(*model.Message) error)
 
 // Close closes the RabbitMQ connection
 func (r *RabbitMQ) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.connected = false
+
+	if r.confirms != nil {
+		close(r.confirms)
+	}
+
 	if r.channel != nil {
 		if err := r.channel.Close(); err != nil {
-			return fmt.Errorf("failed to close channel: %w", err)
+			log.Printf("Failed to close channel: %v", err)
 		}
 	}
 
