@@ -51,7 +51,8 @@ services:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: password
     ports:
-      - "27017:27017"
+      # host 27018: local dev machines commonly run their own mongod on 27017
+      - "27018:27017"
     volumes:
       - mongodata:/data/db
     healthcheck:

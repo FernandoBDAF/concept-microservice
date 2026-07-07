@@ -11,9 +11,11 @@ RUN go mod download
 
 COPY . .
 
-ARG TARGETOS=linux
-ARG TARGETARCH=amd64
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+# BuildKit populates TARGETOS/TARGETARCH on cross-platform builds; empty
+# GOARCH falls back to the build host's native architecture.
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
     go build -trimpath -ldflags="-s -w" -o /bin/api-service ./cmd/server
 
 FROM alpine:3.19

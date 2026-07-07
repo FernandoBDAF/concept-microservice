@@ -71,10 +71,14 @@ on BOTH publisher and consumer; unknown-key fallback renamed to `default-tasks`.
 
 ## Known leftovers for your review
 
-1. **No live end-to-end run**: `docker compose config` validates and every
-   project builds/tests locally, but `make up` (image builds + full stack boot)
-   was not executed within the time budget. Expect the first boot to be the
-   real test of the Dockerfiles.
+1. ~~No live end-to-end run~~ **DONE**: all 7 images built, full stack booted
+   (11 containers, all healthy), and a live E2E smoke passed — user registered
+   & logged in on auth-service; authenticated profile create/list through
+   api-service (token validated over the live contract; 401 without token);
+   email + profile tasks published and consumed by their workers; graphrag
+   consuming `document-processing`; broker showed exactly the four canonical
+   exchanges + `.dlx` twins. Stack torn down with `down -v` (pristine volumes).
+   Not smoke-tested live: document upload → graphrag processing path.
 2. **k8s manifests are stale relative to compose**: they still omit the new
    8081 metrics port (api-service) and use per-component RabbitMQ env vars
    (workers fall back correctly, but `RABBITMQ_URL` is preferred now).
