@@ -1,0 +1,235 @@
+name: microservices
+
+services:
+  # ── Infrastructure ────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/compose/init-postgres.sh:/docker-entrypoint-initdb.d/00-init.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  mongodb:
+    image: mongo:7
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodata:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand({ping: 1}).ok' | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # One-shot: create the documents bucket (api-service also ensures it at startup)
+  minio-init:
+    image: minio/mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "mc alias set local http://minio:9000 minioadmin minioadmin
+      && (mc mb --ignore-existing local/documents-raw || true)"
+    restart: "no"
+
+  # ── One-shot database migrations ──────────────────────────────────────────
+  api-migrate:
+    image: postgres:15-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: postgres
+    volumes:
+      - ./api-service/migrations:/migrations:ro
+    entrypoint: >
+      sh -c 'for f in $$(ls /migrations/*.up.sql | sort); do
+      echo "applying $$f";
+      psql -h postgres -U postgres -d api_db -v ON_ERROR_STOP=1 -f "$$f" || exit 1;
+      done'
+    restart: "no"
+
+  auth-migrate:
+    image: postgres:15-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: auth_password
+    volumes:
+      - ./auth-service/migrations:/migrations:ro
+    entrypoint: >
+      sh -c 'for f in $$(ls /migrations/*.sql | sort); do
+      echo "applying $$f";
+      psql -h postgres -U auth_user -d auth_db -v ON_ERROR_STOP=1 -f "$$f" || exit 1;
+      done'
+    restart: "no"
+
+  # ── Application services ──────────────────────────────────────────────────
+  auth-service:
+    build: ./auth-service
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      DATABASE_NAME: auth_db
+      DATABASE_USER: auth_user
+      DATABASE_PASSWORD: auth_password
+      JWT_SECRET: ${JWT_SECRET:-local-dev-jwt-secret-change-me-32chars!!}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      auth-migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  api-service:
+    build: ./api-service
+    environment:
+      API_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/api_db?sslmode=disable
+      API_REDIS_HOST: redis
+      API_REDIS_PORT: "6379"
+      API_RABBITMQ_HOSTS: rabbitmq:5672
+      API_RABBITMQ_PASSWORD: guest
+      API_AUTH_URL: http://auth-service:3000
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_USE_SSL: "false"
+      MINIO_BUCKET_NAME: documents-raw
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      api-migrate:
+        condition: service_completed_successfully
+      auth-service:
+        condition: service_started
+    restart: unless-stopped
+
+  graphrag-service:
+    build: ./graph-worker/graphrag-service
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      MONGODB_URI: mongodb://admin:password@mongodb:27017
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      HEALTH_PORT: "8080"
+    ports:
+      - "8082:8080"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
+  email-worker:
+    build:
+      context: ./graph-worker/operational-workers
+      dockerfile: Dockerfile.email
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  image-worker:
+    build:
+      context: ./graph-worker/operational-workers
+      dockerfile: Dockerfile.image
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  profile-worker:
+    build:
+      context: ./graph-worker/operational-workers
+      dockerfile: Dockerfile.profile
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  mongodata:
+  miniodata:
+  rabbitmqdata:
