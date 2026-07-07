@@ -32,15 +32,15 @@ type RoutingConfig struct {
 
 var DefaultRoutingMap = map[string]RoutingConfig{
 	"profile.task": {
-		Exchange:      "tasks-exchange",
+		Exchange:      "profile-tasks",
 		Queue:         "profile-processing",
-		TTL:           24 * time.Hour,
-		Prefetch:      1,
+		TTL:           1 * time.Hour,
+		Prefetch:      2,
 		Durable:       true,
 		AutoDelete:    false,
 		Exclusive:     false,
 		NoWait:        false,
-		DeadLetterTTL: 7 * 24 * time.Hour,
+		DeadLetterTTL: 24 * time.Hour,
 		MaxRetries:    3,
 		Description:   "Profile processing tasks with standard TTL and moderate prefetch",
 	},

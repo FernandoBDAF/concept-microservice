@@ -25,12 +25,12 @@ was built; treat code + README.md + CONTRACTS.md as authoritative over this doc.
 - ✅ `document.process` routing key for GraphRAG
 - ✅ Document retrieval and status endpoints
 
-### 1.2 Known cross-service discrepancy (not fixed here, see README/final report)
-- ⚠️ `profile.task` publishes to exchange `tasks-exchange` (TTL 24h), matching
-  `graph-worker/operational-workers/cmd/profile-worker` as actually implemented,
-  NOT `profile-tasks` (TTL 1h) as CONTRACTS.md / ROUTING_KEYS.md state. Changing
-  api-service alone would break delivery to profile-worker; needs an orchestrator-level
-  decision (rename both sides, or update the docs to match reality).
+### 1.2 Cross-service discrepancy — RESOLVED 2026-07
+- ✅ `profile.task` historically published to legacy exchange `tasks-exchange`
+  (TTL 24h) while the docs said `profile-tasks` (TTL 1h). Reconciled during the
+  2026-07 refactor: publisher (`DefaultRoutingMap`) and profile-worker now both
+  use `profile-tasks` / TTL 1h / DLQ TTL 24h / 3 retries, matching
+  CONTRACTS.md and ROUTING_KEYS.md.
 
 ---
 

@@ -35,20 +35,14 @@ Each worker exposes `GET /health` and `GET /ready` on `HEALTH_PORT`
 |---|---|---|---|---|---|---|
 | email-worker | `email-tasks` | `email-processing` | `email.send` | 5 | 1h | `email-tasks.dlx` / `email-processing.dlq` |
 | image-worker | `image-tasks` | `image-processing` | `image.process` | 1 | 6h | `image-tasks.dlx` / `image-processing.dlq` |
-| profile-worker | `tasks-exchange` * | `profile-processing` | `profile.task` | 2 | 24h * | `tasks-exchange.dlx` / `profile-processing.dlq` |
+| profile-worker | `profile-tasks` | `profile-processing` | `profile.task` | 2 | 1h | `profile-tasks.dlx` / `profile-processing.dlq` |
 
-\* **Known contract/code drift, not a bug in this module.** CONTRACTS.md
-and `shared/contracts/ROUTING_KEYS.md` say the profile exchange is
-`profile-tasks` with a 1h TTL. api-service's actual publisher
-(`api-service/internal/domain/task/model.go`, `DefaultRoutingMap["profile.task"]`)
-declares and publishes to exchange `tasks-exchange` with a 24h TTL / 7d
-DLQ TTL / 3 max retries instead. RabbitMQ requires the consumer's
-queue-declare arguments to be identical to the publisher's, and a queue
-only receives what's published to the exchange it's bound to — so
-`profile-worker` matches the **publisher's real behavior** (see
-`cmd/profile-worker/main.go`). Orchestrator action needed: either rename
-the exchange in api-service to `profile-tasks` (and fix its TTL) or update
-CONTRACTS.md / ROUTING_KEYS.md to document `tasks-exchange` / 24h.
+Declare arguments (TTLs, retries) must stay byte-identical to the
+api-service publisher (`api-service/internal/domain/task/model.go`,
+`DefaultRoutingMap`) or RabbitMQ rejects the redeclare with
+`PRECONDITION_FAILED`. A historical drift where `profile.task` used the
+legacy `tasks-exchange` name was reconciled to `profile-tasks` on both
+sides during the 2026-07 refactor.
 
 Exchanges are `direct` and durable. Every worker declares its own topology
 idempotently on startup (main exchange, `<exchange>.dlx`, main queue with

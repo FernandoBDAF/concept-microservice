@@ -131,7 +131,7 @@ func (c *Client) ensureTopology(routingKey string) error {
 	config, exists := task.DefaultRoutingMap[routingKey]
 	if !exists {
 		config = task.RoutingConfig{
-			Exchange:      "tasks-exchange",
+			Exchange:      "default-tasks",
 			Queue:         "default-processing",
 			TTL:           24 * time.Hour,
 			Prefetch:      1,
@@ -241,7 +241,7 @@ func (c *Client) PublishWithRoutingKey(routingKey string, body []byte, headers a
 
 	config := task.DefaultRoutingMap[routingKey]
 	if config.Exchange == "" {
-		config.Exchange = "tasks-exchange"
+		config.Exchange = "default-tasks"
 	}
 
 	c.trackerMu.Lock()

@@ -53,13 +53,8 @@ async def main() -> None:
         image_exchange = await channel.declare_exchange(
             "image-tasks", aio_pika.ExchangeType.DIRECT, durable=True
         )
-        # NOTE: profile.task is published (by api-service) to "tasks-exchange",
-        # NOT "profile-tasks" as an earlier draft of the contract docs implied.
-        # See api-service/internal/domain/task/model.go DefaultRoutingMap and
-        # cmd/profile-worker/main.go for the full explanation. This script
-        # targets the exchange the profile-worker actually binds to.
         profile_exchange = await channel.declare_exchange(
-            "tasks-exchange", aio_pika.ExchangeType.DIRECT, durable=True
+            "profile-tasks", aio_pika.ExchangeType.DIRECT, durable=True
         )
 
         # graph-worker/shared/contracts/MESSAGE_FORMAT.md "Email Payload"
