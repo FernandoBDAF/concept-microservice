@@ -14,11 +14,23 @@ from src.worker.base_worker import BaseWorker
 
 
 def setup_logging(level: str) -> None:
-    logging.basicConfig(
-        level=getattr(logging, level.upper(), logging.INFO),
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[logging.StreamHandler()],
+    """Configure structured JSON logging (per CONTRACTS.md section 5)."""
+    try:
+        from pythonjsonlogger.json import JsonFormatter  # python-json-logger >=3
+    except ImportError:
+        from pythonjsonlogger.jsonlogger import JsonFormatter  # python-json-logger 2.x
+
+    handler = logging.StreamHandler()
+    handler.setFormatter(
+        JsonFormatter(
+            "%(asctime)s %(name)s %(levelname)s %(message)s",
+            rename_fields={"asctime": "timestamp", "levelname": "level", "name": "logger"},
+        )
     )
+
+    root = logging.getLogger()
+    root.setLevel(getattr(logging, level.upper(), logging.INFO))
+    root.handlers = [handler]
 
 
 async def main() -> None:

@@ -3,15 +3,29 @@ import asyncio
 import logging
 import os
 import tempfile
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from minio import Minio
 
-from src.domain.ingestion.pipeline import IngestionPipeline, IngestionPipelineConfig
-from src.domain.graphrag.pipeline import GraphRAGPipeline
-from src.core.config.graphrag import GraphRAGPipelineConfig
-
 logger = logging.getLogger(__name__)
+
+
+def _import_graphrag_pipelines():
+    """Lazily import the heavy GraphRAG/ingestion pipeline stack.
+
+    These modules transitively pull in requirements-graphrag.txt (openai,
+    pymongo, numpy, pandas, langchain, scikit-learn, ...), which is NOT part
+    of the core requirements.txt install. Importing them only here (at call
+    time, inside a try/except) means the rest of the service -- cmd/main.py,
+    the RabbitMQ consumer, health/metrics server -- imports and runs cleanly
+    with just the core dependencies installed. The real pipeline activates
+    automatically once requirements-graphrag.txt is installed.
+    """
+    from src.domain.ingestion.pipeline import IngestionPipeline, IngestionPipelineConfig
+    from src.domain.graphrag.pipeline import GraphRAGPipeline
+    from src.core.config.graphrag import GraphRAGPipelineConfig
+
+    return IngestionPipeline, IngestionPipelineConfig, GraphRAGPipeline, GraphRAGPipelineConfig
 
 
 class DocumentProcessor:
@@ -56,8 +70,33 @@ class DocumentProcessor:
         local_path = await self._download_document(storage_bucket, storage_path)
 
         try:
-            ingest_config = self._build_ingest_config(local_path, payload)
-            graphrag_config = self._build_graphrag_config(user_id, document_id)
+            try:
+                (
+                    IngestionPipeline,
+                    IngestionPipelineConfig,
+                    GraphRAGPipeline,
+                    GraphRAGPipelineConfig,
+                ) = _import_graphrag_pipelines()
+            except Exception as exc:  # heavy deps not installed, or a bug in that stack
+                logger.warning(
+                    "GraphRAG pipeline unavailable; storing stub result",
+                    extra={"document_id": document_id, "reason": repr(exc)},
+                )
+                return self._stub_result(document_id, f"pipeline import failed: {exc}")
+
+            if not self.config.get("openai", {}).get("api_key"):
+                logger.warning(
+                    "OPENAI_API_KEY not configured; storing stub result",
+                    extra={"document_id": document_id},
+                )
+                return self._stub_result(document_id, "OPENAI_API_KEY not configured")
+
+            ingest_config = self._build_ingest_config(
+                local_path, payload, IngestionPipelineConfig
+            )
+            graphrag_config = self._build_graphrag_config(
+                user_id, document_id, GraphRAGPipelineConfig
+            )
 
             logger.info("Starting ingestion", extra={"document_id": document_id})
             ingest_pipeline = IngestionPipeline(ingest_config)
@@ -82,6 +121,15 @@ class DocumentProcessor:
             if os.path.exists(local_path):
                 os.remove(local_path)
 
+    @staticmethod
+    def _stub_result(document_id: str, reason: str) -> Dict[str, Any]:
+        """Minimal result used while the heavy GraphRAG pipeline is inactive.
+
+        Lets the worker satisfy consume -> validate -> store minimal result
+        -> ack end-to-end using only core dependencies.
+        """
+        return {"status": "stubbed", "document_id": document_id, "detail": reason}
+
     async def _download_document(self, bucket: str, path: str) -> str:
         loop = asyncio.get_running_loop()
 
@@ -93,7 +141,9 @@ class DocumentProcessor:
 
         return await loop.run_in_executor(None, download)
 
-    def _build_ingest_config(self, local_path: str, payload: dict) -> IngestionPipelineConfig:
+    def _build_ingest_config(self, local_path: str, payload: dict, config_cls: Any) -> Any:
+        """Build an `IngestionPipelineConfig` (passed in, since it is only
+        imported lazily -- see `_import_graphrag_pipelines`)."""
         db_name = self.config["mongodb"]["database"]
         args = argparse.Namespace(
             db_name=db_name,
@@ -108,9 +158,13 @@ class DocumentProcessor:
         )
         env = dict(os.environ)
         env.setdefault("DB_NAME", db_name)
-        return IngestionPipelineConfig.from_args_env(args, env, db_name)
+        return config_cls.from_args_env(args, env, db_name)
 
-    def _build_graphrag_config(self, user_id: str, document_id: str) -> GraphRAGPipelineConfig:
+    def _build_graphrag_config(
+        self, user_id: Optional[str], document_id: str, config_cls: Any
+    ) -> Any:
+        """Build a `GraphRAGPipelineConfig` (passed in, since it is only
+        imported lazily -- see `_import_graphrag_pipelines`)."""
         db_name = self.config["mongodb"]["database"]
         args = argparse.Namespace(
             db_name=db_name,
@@ -122,4 +176,4 @@ class DocumentProcessor:
         )
         env = dict(os.environ)
         env.setdefault("DB_NAME", db_name)
-        return GraphRAGPipelineConfig.from_args_env(args, env, db_name)
+        return config_cls.from_args_env(args, env, db_name)

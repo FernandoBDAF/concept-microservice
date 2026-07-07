@@ -1,11 +1,18 @@
-# GraphRAG dependencies
--r requirements-graphrag.txt
+# Core (light) dependencies for the RabbitMQ consumer + health/metrics server.
+#
+# Deliberately does NOT pull in requirements-graphrag.txt: the service must be
+# able to `pip install -r requirements.txt` and run the consumer loop (consume
+# -> validate -> stub/process -> ack) with only these packages installed. The
+# heavy GraphRAG/LLM pipeline (src/domain/graphrag, src/domain/ingestion, ...)
+# is imported lazily at call time (see src/worker/processor.py) and only
+# activates once requirements-graphrag.txt is installed *and* OPENAI_API_KEY
+# is configured. Install requirements-graphrag.txt separately (or via the
+# Dockerfile's INSTALL_GRAPHRAG build arg) to enable it.
 
-# Worker dependencies
-aio-pika>=9.4.0
-prometheus-client>=0.20.0
-flask>=3.0.0
-minio>=7.2.0
-python-json-logger>=2.0.0
-pydantic>=2.0.0
-pydantic-settings>=2.0.0
+aio-pika>=9.4.0,<10.0.0              # async RabbitMQ client
+prometheus-client>=0.20.0,<1.0.0     # /metrics
+flask>=3.0.0,<4.0.0                  # /health, /ready
+minio>=7.2.0,<8.0.0                  # document download from MinIO
+python-json-logger>=2.0.0,<4.0.0     # structured JSON logs
+pydantic>=2.7.0,<3.0.0
+pydantic-settings>=2.2.0,<3.0.0

@@ -2,8 +2,14 @@
 
 **Project:** graphrag-service  
 **Language:** Python  
-**Status:** 📋 Architecture planned  
-**Session Focus:** Create Python worker for document processing and knowledge graph construction
+**Status:** ✅ Core worker implemented and verified (compileall + entrypoint import + offline
+smoke test, core deps only) as of 2026-07-07. ⚠️ GraphRAG/ingestion pipeline itself
+(`src/domain/graphrag`, `src/domain/ingestion`) is present but lazily-loaded and
+**not yet run end-to-end** (no live MongoDB/OpenAI in the verification environment) --
+see `README.md` for current status, env vars, and known gaps.  
+**Session Focus:** This document is the original Day 1-6 build plan, kept for historical
+reference. The plan below (directory layout, phases, file checklist) mostly matches what
+exists on disk; where the two differ, the actual code and `README.md` are authoritative.
 
 ---
 

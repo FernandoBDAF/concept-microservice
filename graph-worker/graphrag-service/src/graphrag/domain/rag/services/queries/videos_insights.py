@@ -1,1 +1,0 @@
-# add a retriever of all playlist and channel names used to retrieve data and generate the database
