@@ -1,0 +1,368 @@
+{
+  "info": {
+    "_postman_id": "stages-api-collection",
+    "name": "Stages API",
+    "description": "API for GraphRAG Pipeline Stage Configuration and Execution\n\nThis collection provides endpoints for:\n- Stage discovery and configuration schema\n- Pipeline configuration validation\n- Pipeline execution and monitoring",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "pipeline_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "description": "Health check and server status",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Check API server health and get active pipeline count"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Stages",
+      "description": "Endpoints for stage discovery and configuration",
+      "item": [
+        {
+          "name": "List All Stages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stages",
+              "host": ["{{baseUrl}}"],
+              "path": ["stages"]
+            },
+            "description": "List all available stages grouped by pipeline (ingestion, graphrag)"
+          },
+          "response": []
+        },
+        {
+          "name": "List Ingestion Pipeline Stages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stages/ingestion",
+              "host": ["{{baseUrl}}"],
+              "path": ["stages", "ingestion"]
+            },
+            "description": "List stages for the Ingestion pipeline"
+          },
+          "response": []
+        },
+        {
+          "name": "List GraphRAG Pipeline Stages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stages/graphrag",
+              "host": ["{{baseUrl}}"],
+              "path": ["stages", "graphrag"]
+            },
+            "description": "List stages for the GraphRAG pipeline"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Stage Config Schema",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stages/graph_extraction/config",
+              "host": ["{{baseUrl}}"],
+              "path": ["stages", "graph_extraction", "config"]
+            },
+            "description": "Get configuration schema for a specific stage including field types, defaults, and UI hints"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Stage Defaults",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stages/graph_extraction/defaults",
+              "host": ["{{baseUrl}}"],
+              "path": ["stages", "graph_extraction", "defaults"]
+            },
+            "description": "Get default configuration values for a stage"
+          },
+          "response": []
+        },
+        {
+          "name": "Validate Stage Config",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"max\": 10,\n  \"model_name\": \"gpt-4o-mini\",\n  \"temperature\": 0.1,\n  \"concurrency\": 50\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/stages/graph_extraction/validate",
+              "host": ["{{baseUrl}}"],
+              "path": ["stages", "graph_extraction", "validate"]
+            },
+            "description": "Validate configuration for a single stage"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Pipelines",
+      "description": "Endpoints for pipeline validation and execution",
+      "item": [
+        {
+          "name": "Validate Pipeline Config",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pipeline\": \"graphrag\",\n  \"stages\": [\"graph_extraction\", \"entity_resolution\"],\n  \"config\": {\n    \"graph_extraction\": {\n      \"max\": 10,\n      \"model_name\": \"gpt-4o-mini\",\n      \"concurrency\": 50\n    },\n    \"entity_resolution\": {\n      \"similarity_threshold\": 0.85\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/pipelines/validate",
+              "host": ["{{baseUrl}}"],
+              "path": ["pipelines", "validate"]
+            },
+            "description": "Validate pipeline configuration including stage dependencies"
+          },
+          "response": []
+        },
+        {
+          "name": "Validate Pipeline (With Dependency Warning)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pipeline\": \"graphrag\",\n  \"stages\": [\"community_detection\"],\n  \"config\": {}\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/pipelines/validate",
+              "host": ["{{baseUrl}}"],
+              "path": ["pipelines", "validate"]
+            },
+            "description": "Validate pipeline with missing dependencies - should return warnings about auto-included stages"
+          },
+          "response": []
+        },
+        {
+          "name": "Execute Pipeline",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.pipeline_id) {",
+                  "    pm.collectionVariables.set('pipeline_id', jsonData.pipeline_id);",
+                  "    console.log('Saved pipeline_id:', jsonData.pipeline_id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pipeline\": \"graphrag\",\n  \"stages\": [\"graph_extraction\"],\n  \"config\": {\n    \"graph_extraction\": {\n      \"max\": 5,\n      \"model_name\": \"gpt-4o-mini\",\n      \"concurrency\": 10\n    }\n  },\n  \"metadata\": {\n    \"experiment_id\": \"test_001\",\n    \"description\": \"Test pipeline execution\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/pipelines/execute",
+              "host": ["{{baseUrl}}"],
+              "path": ["pipelines", "execute"]
+            },
+            "description": "Execute a pipeline in the background. Returns pipeline_id for status tracking."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Pipeline Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pipelines/{{pipeline_id}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["pipelines", "{{pipeline_id}}", "status"]
+            },
+            "description": "Get current status of a running or completed pipeline"
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel Pipeline",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pipelines/{{pipeline_id}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["pipelines", "{{pipeline_id}}", "cancel"]
+            },
+            "description": "Cancel a running pipeline"
+          },
+          "response": []
+        },
+        {
+          "name": "List Active Pipelines",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pipelines/active",
+              "host": ["{{baseUrl}}"],
+              "path": ["pipelines", "active"]
+            },
+            "description": "List all currently running pipelines"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Pipeline History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pipelines/history",
+              "host": ["{{baseUrl}}"],
+              "path": ["pipelines", "history"]
+            },
+            "description": "Get recent pipeline execution history"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Examples",
+      "description": "Example requests for common use cases",
+      "item": [
+        {
+          "name": "Full GraphRAG Pipeline",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pipeline\": \"graphrag\",\n  \"stages\": [\n    \"graph_extraction\",\n    \"entity_resolution\",\n    \"graph_construction\",\n    \"community_detection\"\n  ],\n  \"config\": {\n    \"graph_extraction\": {\n      \"max\": 100,\n      \"model_name\": \"gpt-4o-mini\",\n      \"temperature\": 0.1,\n      \"concurrency\": 50,\n      \"max_entities_per_chunk\": 20,\n      \"max_relationships_per_chunk\": 30\n    },\n    \"entity_resolution\": {\n      \"similarity_threshold\": 0.85,\n      \"use_fuzzy_matching\": true,\n      \"use_embedding_similarity\": true\n    },\n    \"graph_construction\": {\n      \"calculate_centrality\": true,\n      \"calculate_degree\": true\n    },\n    \"community_detection\": {\n      \"algorithm\": \"louvain\",\n      \"resolution_parameter\": 1.0,\n      \"max_cluster_size\": 50\n    }\n  },\n  \"metadata\": {\n    \"experiment_id\": \"full_graphrag_run\",\n    \"description\": \"Complete GraphRAG pipeline execution\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/pipelines/execute",
+              "host": ["{{baseUrl}}"],
+              "path": ["pipelines", "execute"]
+            },
+            "description": "Execute full GraphRAG pipeline with all stages and custom configuration"
+          },
+          "response": []
+        },
+        {
+          "name": "Ingestion Pipeline - Clean and Chunk",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pipeline\": \"ingestion\",\n  \"stages\": [\"clean\", \"chunk\"],\n  \"config\": {\n    \"clean\": {\n      \"concurrency\": 15,\n      \"verbose\": true\n    },\n    \"chunk\": {\n      \"token_size\": 1200,\n      \"overlap_pct\": 0.2\n    }\n  },\n  \"metadata\": {\n    \"description\": \"Clean and chunk video transcripts\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/pipelines/execute",
+              "host": ["{{baseUrl}}"],
+              "path": ["pipelines", "execute"]
+            },
+            "description": "Run ingestion pipeline stages for cleaning and chunking"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Entity Resolution Config",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stages/entity_resolution/config",
+              "host": ["{{baseUrl}}"],
+              "path": ["stages", "entity_resolution", "config"]
+            },
+            "description": "Get configuration schema for entity resolution stage"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Community Detection Config",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stages/community_detection/config",
+              "host": ["{{baseUrl}}"],
+              "path": ["stages", "community_detection", "config"]
+            },
+            "description": "Get configuration schema for community detection stage"
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
+

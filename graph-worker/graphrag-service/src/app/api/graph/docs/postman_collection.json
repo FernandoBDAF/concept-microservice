@@ -1,0 +1,399 @@
+{
+  "info": {
+    "name": "Graph Data API",
+    "description": "API endpoints for querying GraphRAG knowledge graph data",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8081/api"
+    },
+    {
+      "key": "db_name",
+      "value": "2025-12"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Entities",
+      "item": [
+        {
+          "name": "Search Entities",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/entities/search?db_name={{db_name}}&q=algorithm&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["entities", "search"],
+              "query": [
+                {"key": "db_name", "value": "{{db_name}}"},
+                {"key": "q", "value": "algorithm"},
+                {"key": "limit", "value": "50"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Search Entities by Type",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/entities/search?db_name={{db_name}}&type=CONCEPT&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["entities", "search"],
+              "query": [
+                {"key": "db_name", "value": "{{db_name}}"},
+                {"key": "type", "value": "CONCEPT"},
+                {"key": "limit", "value": "50"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Entity Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/entities/ent_example?db_name={{db_name}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["entities", "ent_example"],
+              "query": [
+                {"key": "db_name", "value": "{{db_name}}"}
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Communities",
+      "item": [
+        {
+          "name": "Search Communities",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/communities/search?db_name={{db_name}}&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["communities", "search"],
+              "query": [
+                {"key": "db_name", "value": "{{db_name}}"},
+                {"key": "limit", "value": "50"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Search Communities by Level",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/communities/search?db_name={{db_name}}&level=1&sort_by=entity_count",
+              "host": ["{{baseUrl}}"],
+              "path": ["communities", "search"],
+              "query": [
+                {"key": "db_name", "value": "{{db_name}}"},
+                {"key": "level", "value": "1"},
+                {"key": "sort_by", "value": "entity_count"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Community Levels",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/communities/levels?db_name={{db_name}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["communities", "levels"],
+              "query": [
+                {"key": "db_name", "value": "{{db_name}}"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Community Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/communities/comm_example?db_name={{db_name}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["communities", "comm_example"],
+              "query": [
+                {"key": "db_name", "value": "{{db_name}}"}
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Relationships",
+      "item": [
+        {
+          "name": "Search Relationships",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/relationships/search?db_name={{db_name}}&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["relationships", "search"],
+              "query": [
+                {"key": "db_name", "value": "{{db_name}}"},
+                {"key": "limit", "value": "50"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Search Relationships by Predicate",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/relationships/search?db_name={{db_name}}&predicate=RELATES_TO",
+              "host": ["{{baseUrl}}"],
+              "path": ["relationships", "search"],
+              "query": [
+                {"key": "db_name", "value": "{{db_name}}"},
+                {"key": "predicate", "value": "RELATES_TO"}
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Ego Network",
+      "item": [
+        {
+          "name": "Get Ego Network",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ego/network/ent_example?db_name={{db_name}}&max_hops=2&max_nodes=100",
+              "host": ["{{baseUrl}}"],
+              "path": ["ego", "network", "ent_example"],
+              "query": [
+                {"key": "db_name", "value": "{{db_name}}"},
+                {"key": "max_hops", "value": "2"},
+                {"key": "max_nodes", "value": "100"}
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Export",
+      "item": [
+        {
+          "name": "Export JSON",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/export/json?db_name={{db_name}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["export", "json"],
+              "query": [
+                {"key": "db_name", "value": "{{db_name}}"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Export CSV",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/export/csv?db_name={{db_name}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["export", "csv"],
+              "query": [
+                {"key": "db_name", "value": "{{db_name}}"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Export GraphML",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/export/graphml?db_name={{db_name}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["export", "graphml"],
+              "query": [
+                {"key": "db_name", "value": "{{db_name}}"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Export GEXF",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/export/gexf?db_name={{db_name}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["export", "gexf"],
+              "query": [
+                {"key": "db_name", "value": "{{db_name}}"}
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Statistics",
+      "item": [
+        {
+          "name": "Get Graph Statistics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/statistics?db_name={{db_name}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["statistics"],
+              "query": [
+                {"key": "db_name", "value": "{{db_name}}"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Statistics Over Time",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/statistics/time?db_name={{db_name}}&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["statistics", "time"],
+              "query": [
+                {"key": "db_name", "value": "{{db_name}}"},
+                {"key": "limit", "value": "50"}
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Metrics",
+      "item": [
+        {
+          "name": "Get Prometheus Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/metrics",
+              "host": ["{{baseUrl}}"],
+              "path": ["metrics"]
+            }
+          }
+        },
+        {
+          "name": "Get Quality Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/metrics/quality?db_name={{db_name}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["metrics", "quality"],
+              "query": [
+                {"key": "db_name", "value": "{{db_name}}"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Quality Metrics for Stage",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/metrics/quality?db_name={{db_name}}&stage=extraction",
+              "host": ["{{baseUrl}}"],
+              "path": ["metrics", "quality"],
+              "query": [
+                {"key": "db_name", "value": "{{db_name}}"},
+                {"key": "stage", "value": "extraction"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Performance Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/metrics/performance?db_name={{db_name}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["metrics", "performance"],
+              "query": [
+                {"key": "db_name", "value": "{{db_name}}"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Performance Trends",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/metrics/performance/trends?db_name={{db_name}}&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["metrics", "performance", "trends"],
+              "query": [
+                {"key": "db_name", "value": "{{db_name}}"},
+                {"key": "limit", "value": "50"}
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
+
