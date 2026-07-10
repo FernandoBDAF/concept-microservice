@@ -1,6 +1,8 @@
-# Full Refactor & Sync Plan — worktree `full-refactor-sync`
+# Full Refactor & Sync Plan — 2026-07 (historical record)
 
-**Date:** 2026-07-07 · **Executed autonomously** (pre-approved, ~1h budget)
+**Date:** 2026-07-07 · **Executed autonomously** (pre-approved, ~1h budget) ·
+**Merged into `main`** 2026-07-10 by cherry-picking the refactor commits onto
+`4ac1166` ("commit done after many months") + `bfb7735` (GraphRAG removal).
 
 ## Why
 
@@ -10,19 +12,13 @@ with no root orchestration, stale dependencies, and unverified builds. Goal:
 make every active project build, test, and run together again — refactored in
 parallel, synchronized through pinned contracts.
 
-## Branch layout (how to review & sync back)
+## How it landed on main
 
-```
-1efec36  main (old k8s/services architecture)
-b423745  baseline: exact snapshot of your uncommitted working tree
-   ...   refactor commits, one per area  ← REVIEW THESE
-```
-
-- **Review my changes only:** `git diff b423745..worktree-full-refactor-sync`
-- **Adopt the result:** `git checkout main && git reset --hard worktree-full-refactor-sync`
-  (your previous state stays recoverable at `b423745`; `legacy_project/` is
-  gitignored and untouched on disk)
-- Or cherry-pick per-area commits selectively.
+Work happened on a worktree branch with a snapshot baseline; the user later
+committed that same working-tree state directly to main (`4ac1166`), so the
+refactor commits were cherry-picked on top (they applied cleanly — the two
+bases were identical except `__pycache__` artifacts). Review the refactor as
+the commit range starting at "root: add full-stack orchestration…".
 
 ## Scope & ownership (parallel agents, strict directory ownership)
 

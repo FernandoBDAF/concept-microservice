@@ -122,10 +122,14 @@ Envelope and payload schemas: [graph-worker/shared/contracts](graph-worker/share
 
 Local development uses the root docker-compose. Kubernetes manifests live per
 service (`api-service/deployments/kubernetes/`, etc.); the target cluster
-architecture is described in [deployment/CLUSTER_VISION.md](deployment/CLUSTER_VISION.md).
+architecture is described in
+[documentation/deployment/CLUSTER_VISION.md](documentation/deployment/CLUSTER_VISION.md),
+and the roadmap to a full kind-based cluster lab is
+[documentation/PRD.md](documentation/PRD.md) (v2 milestone).
 
 ---
 
 **Architecture:** consolidated service (v2, refactored 2026-07) ·
 **Contracts:** [CONTRACTS.md](CONTRACTS.md) ·
-**Refactor notes:** [REFACTOR_PLAN.md](REFACTOR_PLAN.md)
+**Docs:** [documentation/](documentation/) ·
+**PRD:** [documentation/PRD.md](documentation/PRD.md)

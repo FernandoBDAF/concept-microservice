@@ -1,51 +1,31 @@
-# Deployment Documentation
+# Deployment
 
-Kubernetes deployment and operations guides for the Profile Service.
+## Local development (current, authoritative)
 
-## Contents
+Use the root [`docker-compose.yml`](../../docker-compose.yml) via the root
+Makefile (`make up` / `make infra` / `make down`). It runs all infrastructure,
+applies both databases' migrations, creates the MinIO bucket, and starts every
+service (plus Prometheus/Grafana) with the env vars pinned in
+[CONTRACTS.md](../../CONTRACTS.md).
 
-- [Kubernetes Setup](kubernetes.md) - Cluster setup and configuration
-- [Configuration](configuration.md) - Environment variables and secrets
-- [Monitoring](monitoring.md) - Prometheus, Grafana setup
-- [Scaling](scaling.md) - HPA and resource management
+## Kubernetes (target, see PRD v2)
 
-## Quick Deploy
+Restoring the kind-based cluster lab is the PRD's v2 milestone — the original
+lab (kind configs, ingress-nginx, metrics-server, network policies, per-service
+manifests, k6 jobs) lives in git history at `1efec36` (`k8s/`) and in
+`legacy_project/k8s/`.
 
-```bash
-# Build and push image
-cd api-service
-make docker-build
-make docker-push
+Current per-service manifests (deployable pieces, not yet a full cluster):
 
-# Deploy to Kubernetes
-kubectl apply -f deployments/kubernetes/
-```
+- `api-service/deployments/kubernetes/`
+- `graph-worker/graphrag-service/deployments/kubernetes/`
+- `graph-worker/operational-workers/deployments/kubernetes/{email,image,profile}-worker/`
 
-## Kubernetes Resources
+## Design documents
 
-```
-api-service/deployments/kubernetes/
-├── deployment.yaml          # Service deployment
-├── service.yaml             # ClusterIP service
-└── configmap.yaml           # Configuration
-```
+- [CLUSTER_VISION.md](CLUSTER_VISION.md) — target cluster topology, data flows, validation checklist
+- [DEPLOYMENT_IMPLEMENTATION_PLAN.md](DEPLOYMENT_IMPLEMENTATION_PLAN.md) — phased deployment plan
 
-## Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `API_POSTGRES_DSN` | PostgreSQL connection string | Required |
-| `API_REDIS_HOST` | Redis hostname | `localhost` |
-| `API_REDIS_PORT` | Redis port | `6379` |
-| `API_RABBITMQ_URL` | RabbitMQ connection URL | Required |
-| `API_AUTH_URL` | Auth service URL | Required |
-
-## Legacy Deployment Guides
-
-Detailed deployment guides are preserved in legacy documentation:
-
-- [Kubernetes Tools](../../legacy_project/reference-materials/development/tools/kubernetes/)
-- [Helm Guide](../../legacy_project/reference-materials/development/tools/kubernetes/helm.md)
-- [Kustomize Guide](../../legacy_project/reference-materials/development/tools/kubernetes/kustomize.md)
-
-> Note: These guides may reference old multi-service architecture. Adapt for single api-service deployment.
+> Both predate the 2026-07 refactor; where they disagree with the root compose
+> file or CONTRACTS.md, the latter win. See also the
+> [PRD](../PRD.md) for the current roadmap and open questions.

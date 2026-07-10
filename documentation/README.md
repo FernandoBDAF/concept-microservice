@@ -3,14 +3,25 @@
 Active documentation for the microservices platform. Cross-service contracts
 live at the repo root in [CONTRACTS.md](../CONTRACTS.md).
 
+## Start here
+
+- **[PRD.md](PRD.md)** — project vision, roadmap (v1–v5), and open questions
+- **[review/CONCEPTUAL_REVIEW.md](review/CONCEPTUAL_REVIEW.md)** — architecture-level issues & tensions
+- **[review/INFERRED_INTENT.md](review/INFERRED_INTENT.md)** — reconstructed goals across the project's three eras
+- **[refactor/2026-07-full-refactor.md](refactor/2026-07-full-refactor.md)** — what the 2026-07 refactor did and verified
+
 ## Structure
 
 ```
 documentation/
+├── PRD.md                  Product vision, roadmap, open questions
+├── review/                 Conceptual review + inferred intent
+├── refactor/               Refactor records (2026-07)
 ├── architecture/           System architecture and design decisions
 ├── development/            Development guides and best practices
 │   ├── best-practices/     Coding standards and patterns
 │   └── tools/              Tool-specific documentation
+├── deployment/             Local (compose) + Kubernetes deployment docs
 ├── performance/            Performance optimization and testing
 ├── planning/               Historical planning documents (pre-refactor)
 ├── templates/              Documentation templates
