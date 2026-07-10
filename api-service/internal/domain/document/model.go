@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime"
 	"path/filepath"
 	"strings"
 	"time"
@@ -131,6 +132,11 @@ func ValidateFileType(filename string) error {
 }
 
 func ValidateMimeType(mimeType string) error {
+	// Detectors report parameterized types ("text/plain; charset=utf-8");
+	// the allow-list holds bare media types.
+	if base, _, err := mime.ParseMediaType(mimeType); err == nil {
+		mimeType = base
+	}
 	if !AllowedMimeTypes[mimeType] {
 		return fmt.Errorf("%w: %s", ErrInvalidMimeType, mimeType)
 	}

@@ -19,7 +19,7 @@ type MinIOClient interface {
 }
 
 type TaskPublisher interface {
-	PublishDocumentTask(ctx context.Context, documentID, profileID, userID uuid.UUID, storagePath, bucket string) (string, error)
+	PublishDocumentTask(ctx context.Context, documentID, profileID, userID uuid.UUID, storagePath, bucket, fileType string) (string, error)
 }
 
 type Service struct {
@@ -90,7 +90,7 @@ func (s *Service) Upload(ctx context.Context, userID, profileID uuid.UUID, filen
 		return nil, "", fmt.Errorf("failed to create document record: %w", err)
 	}
 
-	taskID, err := s.publisher.PublishDocumentTask(ctx, doc.ID, doc.ProfileID, doc.UserID, doc.StoragePath, doc.StorageBucket)
+	taskID, err := s.publisher.PublishDocumentTask(ctx, doc.ID, doc.ProfileID, doc.UserID, doc.StoragePath, doc.StorageBucket, doc.FileType)
 	if err != nil {
 		s.logger.Warn("Failed to publish document task, document will need manual processing",
 			zap.Error(err),

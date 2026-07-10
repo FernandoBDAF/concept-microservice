@@ -26,12 +26,14 @@ CREATE TABLE IF NOT EXISTS documents (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_documents_profile_id ON documents(profile_id);
-CREATE INDEX idx_documents_user_id ON documents(user_id);
-CREATE INDEX idx_documents_status ON documents(status);
-CREATE INDEX idx_documents_created_at ON documents(created_at DESC);
-CREATE INDEX idx_documents_profile_status ON documents(profile_id, status);
+CREATE INDEX IF NOT EXISTS idx_documents_profile_id ON documents(profile_id);
+CREATE INDEX IF NOT EXISTS idx_documents_user_id ON documents(user_id);
+CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status);
+CREATE INDEX IF NOT EXISTS idx_documents_created_at ON documents(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_documents_profile_status ON documents(profile_id, status);
 
+-- Idempotent: compose may re-run the api-migrate one-shot on any `up`.
+DROP TRIGGER IF EXISTS update_documents_updated_at ON documents;
 CREATE TRIGGER update_documents_updated_at
     BEFORE UPDATE ON documents
     FOR EACH ROW
