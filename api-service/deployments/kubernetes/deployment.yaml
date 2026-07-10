@@ -18,6 +18,9 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
+              name: http
+            - containerPort: 8081
+              name: metrics
           envFrom:
             - configMapRef:
                 name: api-service-config

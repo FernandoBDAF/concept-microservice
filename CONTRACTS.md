@@ -19,8 +19,10 @@ Canonical detail lives in:
 | MinIO | `minio` | 9000 / 9001 | 9000 / 9001 | minioadmin/minioadmin |
 | auth-service | `auth-service` | 3000 (`PORT=3000`) | 3000 | Node/Express |
 | api-service | `api-service` | 8080 (metrics 8081) | 8080 / 8081 | Go/Gin |
-| graphrag-service | `graphrag-service` | 8080 health (`HEALTH_PORT`) | 8082 | Python consumer |
-| email/image/profile workers | n/a | none required | none | Go consumers |
+| graphrag-service | `graphrag-service` | 8080 health, 8081 metrics | 8082 | Python consumer |
+| email/image/profile workers | `<name>-worker` | 8080 health+metrics | none | Go consumers |
+| Prometheus | `prometheus` | 9090 | 9090 | scrapes everything below |
+| Grafana | `grafana` | 3000 | 3001 | admin/admin, Lab Overview dashboard |
 
 Local-dev credentials (compose only, never production):
 - Postgres superuser: `postgres`/`postgres`. `auth_db` owned by `auth_user`/`auth_password`.
@@ -92,8 +94,11 @@ Keep existing extra vars but document them.
 
 - api-service: `GET /health` (liveness), `GET /ready` (checks PG+Redis+RabbitMQ), `GET /metrics` (Prometheus, port 8081).
 - auth-service: `GET /health`, `GET /ready` (checks PG), `GET /metrics`.
-- graphrag-service: `GET /health` on `HEALTH_PORT`.
-- workers: structured logs; metrics optional (keep if present, don't add).
+- graphrag-service: `GET /health` on `HEALTH_PORT` (8080); Prometheus metrics on `METRICS_PORT` (8081).
+- workers: `GET /health`, `GET /ready`, `GET /metrics` on `HEALTH_PORT` (8080); structured logs.
+- RabbitMQ: `rabbitmq_prometheus` plugin on 15692, per-object queue metrics enabled.
+- Prometheus scrapes all of the above per `scripts/compose/prometheus.yml`; Grafana
+  (host port 3001) auto-provisions the "Lab Overview" dashboard.
 - All services: JSON structured logging, graceful shutdown on SIGTERM/SIGINT (finish in-flight, close connections).
 
 ## 6. Rules for refactoring agents

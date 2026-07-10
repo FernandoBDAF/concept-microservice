@@ -36,8 +36,11 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+      - "15692:15692"
     volumes:
       - rabbitmqdata:/var/lib/rabbitmq
+      - ./scripts/compose/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+      - ./scripts/compose/rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/20-lab.conf:ro
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
@@ -229,8 +232,43 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # ── Observability ─────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=3d
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./scripts/compose/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - promdata:/prometheus
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      # host 3001: auth-service owns 3000
+      - "3001:3000"
+    volumes:
+      - ./scripts/compose/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./scripts/compose/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
 volumes:
   pgdata:
   mongodata:
   miniodata:
   rabbitmqdata:
+  promdata:
+  grafanadata:

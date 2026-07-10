@@ -1,7 +1,14 @@
 # Root orchestration for the microservices monorepo.
 # `make help` lists targets. Per-service Makefiles live in each service dir.
 
-.PHONY: help up infra down nuke ps logs verify verify-api verify-workers verify-auth verify-graphrag
+K6_IMAGE   := grafana/k6:0.54.0
+K6_RUN     := docker run --rm -i --network microservices_default \
+	-e API_URL=http://api-service:8080 -e AUTH_URL=http://auth-service:3000
+SIM_VUS      ?= 10
+SIM_DURATION ?= 2m
+
+.PHONY: help up infra down nuke ps logs verify verify-api verify-workers verify-auth verify-graphrag \
+	monitoring queues sim-smoke sim-load sim-burst sim-poison sim-outage
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -38,3 +45,29 @@ verify-auth: ## Typecheck, build, test auth-service (TypeScript)
 
 verify-graphrag: ## Compile-check graphrag-service (Python)
 	python3 -m compileall -q graph-worker/graphrag-service/src graph-worker/graphrag-service/cmd
+
+# ── Monitoring & simulations (PRD v1) ────────────────────────────────────────
+
+monitoring: ## Print monitoring UI URLs
+	@echo "Grafana     http://localhost:3001   (admin/admin, dashboard: Lab Overview)"
+	@echo "Prometheus  http://localhost:9090   (Status → Targets to check scrapes)"
+	@echo "RabbitMQ    http://localhost:15672  (guest/guest)"
+
+queues: ## Show RabbitMQ queue depths and consumers
+	docker compose exec -T rabbitmq rabbitmqctl list_queues name messages messages_ready consumers
+
+sim-smoke: ## k6: 1 VU / 15s sanity pass through auth+API+queues
+	$(K6_RUN) -e SIM_VUS=1 -e SIM_DURATION=15s $(K6_IMAGE) run - < scripts/simulate/api-load.js
+
+sim-load: ## k6: steady load (SIM_VUS=10 SIM_DURATION=2m overridable)
+	$(K6_RUN) -e SIM_VUS=$(SIM_VUS) -e SIM_DURATION=$(SIM_DURATION) $(K6_IMAGE) run - < scripts/simulate/api-load.js
+
+sim-burst: ## k6: short burst (50 VUs / 30s)
+	$(K6_RUN) -e SIM_VUS=50 -e SIM_DURATION=30s $(K6_IMAGE) run - < scripts/simulate/api-load.js
+
+sim-poison: ## Publish malformed messages to every exchange; watch DLQs
+	python3 scripts/simulate/publish.py poison --count 3
+	@sleep 3 && $(MAKE) --no-print-directory queues
+
+sim-outage: ## Stop a worker, build backlog, restart, watch drain (WORKER=email N=100)
+	bash scripts/simulate/worker-outage.sh $(or $(WORKER),email) $(or $(N),100)

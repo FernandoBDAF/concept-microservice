@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // HTTPServer provides health check endpoints for workers
@@ -20,7 +21,10 @@ type HTTPServer struct {
 
 // NewHTTPServer creates a new HTTP server instance
 func NewHTTPServer(port string) *HTTPServer {
-	router := gin.Default()
+	// gin.New instead of gin.Default: Prometheus hits /metrics every scrape
+	// interval, and access-logging that would drown the worker's real logs.
+	router := gin.New()
+	router.Use(gin.Recovery())
 	s := &HTTPServer{
 		router: router,
 		ready:  false,
@@ -43,6 +47,7 @@ func NewHTTPServer(port string) *HTTPServer {
 func (s *HTTPServer) registerRoutes() {
 	s.router.GET("/health", s.healthCheck)
 	s.router.GET("/ready", s.readinessCheck)
+	s.router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 }
 
 // healthCheck handles the health check endpoint

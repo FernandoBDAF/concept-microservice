@@ -44,7 +44,9 @@ and asynchronous workers behind RabbitMQ.
 | [graph-worker/graphrag-service](graph-worker/graphrag-service/) | Python 3.12 · aio-pika · MongoDB | 8082→8080 (health) | `document.process` consumer, knowledge graph |
 
 Infrastructure: PostgreSQL 15 (`api_db` + `auth_db`), Redis 7, RabbitMQ 3.12
-(management UI :15672), MongoDB 7, MinIO (console :9001).
+(management UI :15672, Prometheus :15692), MongoDB 7 (host port 27018), MinIO
+(console :9001). Observability: **Prometheus :9090** and **Grafana :3001**
+(admin/admin) with a provisioned *Lab Overview* dashboard.
 
 ## Quick start
 
@@ -67,6 +69,25 @@ Node 22+, Python 3.12+):
 ```bash
 make verify
 ```
+
+## Monitoring & simulations
+
+The point of this lab is practicing operations: generate load or failures with
+one command, watch the system react in Grafana. With the stack up:
+
+```bash
+make monitoring     # print the UI URLs (Grafana 3001, Prometheus 9090, RabbitMQ 15672)
+make queues         # RabbitMQ queue depths / consumers at a glance
+
+make sim-smoke      # k6: 1 VU sanity pass (auth → API → queues → workers)
+make sim-load       # k6: steady load     (override: SIM_VUS=20 SIM_DURATION=5m)
+make sim-burst      # k6: 50-VU burst
+make sim-poison     # malformed messages to every exchange → watch DLQ panel
+make sim-outage     # stop a worker, flood its queue, restart, watch it drain
+                    #   (override: WORKER=image N=200)
+```
+
+The scenario catalog grows in [documentation/PRD.md](documentation/PRD.md) (v4).
 
 ## API surface (api-service, `/api/v1`, Bearer JWT required)
 
@@ -102,20 +123,20 @@ Envelope and payload schemas: [graph-worker/shared/contracts](graph-worker/share
 ## Repository layout
 
 ```
-├── docker-compose.yml        # full local stack (single source of truth)
-├── Makefile                  # up/down/logs/verify
+├── docker-compose.yml        # full local stack incl. Prometheus + Grafana
+├── Makefile                  # up/down/logs/verify + monitoring & sim-* drills
 ├── CONTRACTS.md              # pinned cross-service integration surface
-├── scripts/compose/          # postgres init (creates api_db, auth_db)
+├── scripts/
+│   ├── compose/              # postgres init, prometheus config, grafana provisioning
+│   └── simulate/             # k6 load script, queue publisher, outage drill
 ├── api-service/              # Go API (cmd, internal, migrations, k8s manifests)
 ├── auth-service/             # TypeScript auth (src, migrations)
 ├── graph-worker/
 │   ├── operational-workers/  # Go consumers (email/image/profile)
 │   ├── graphrag-service/     # Python document consumer
 │   └── shared/contracts/     # routing keys + message format (canonical)
-├── deployment/               # cluster-level deployment docs
-├── documentation/            # guides, templates, performance docs
-│   └── planning/             # historical planning documents
-└── legacy_project/           # archived pre-consolidation code (gitignored)
+├── documentation/            # PRD, reviews, deployment, guides, planning archive
+└── legacy_project/           # archived pre-consolidation code (era-1 k8s lab)
 ```
 
 ## Deployment
