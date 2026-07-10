@@ -25,6 +25,7 @@ export const config = {
   security: {
     rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS,
     rateLimitMaxRequests: env.RATE_LIMIT_MAX_REQUESTS,
+    tokenValidationRateLimitMax: env.TOKEN_VALIDATION_RATE_LIMIT_MAX,
     accountLockoutAttempts: env.ACCOUNT_LOCKOUT_ATTEMPTS,
     accountLockoutDurationMs: env.ACCOUNT_LOCKOUT_DURATION_MS,
     passwordMinLength: env.PASSWORD_MIN_LENGTH,

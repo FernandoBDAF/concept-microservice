@@ -28,6 +28,9 @@ const envSchema = z.object({
   JWT_REFRESH_TOKEN_EXPIRY: z.string().default("7d"),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(900000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(100),
+  // /v1/auth/token/validate is called by api-service once per authenticated
+  // request, so its budget is service-to-service traffic, not user logins.
+  TOKEN_VALIDATION_RATE_LIMIT_MAX: z.coerce.number().default(1000),
   ACCOUNT_LOCKOUT_ATTEMPTS: z.coerce.number().default(5),
   ACCOUNT_LOCKOUT_DURATION_MS: z.coerce.number().default(1800000),
   PASSWORD_MIN_LENGTH: z.coerce.number().default(8),

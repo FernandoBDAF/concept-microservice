@@ -54,6 +54,18 @@ would let any service mint tokens — worse). **Direction:** RS256 + JWKS
 endpoint, local verification in api-service, keep introspection as an optional
 strict mode. Open questions in PRD §OQ-auth.
 
+*Empirically confirmed during v1 verification:* `/token/validate` carried a
+**hardcoded** rate limit of 100/minute (`tokenValidationRateLimit`). A 1-VU k6
+smoke run exhausted it (metrics showed exactly 100×200 then 429s), and a 50-VU
+burst failed 96.7% of API requests: api-service's circuit breaker converted
+the 429s — a capacity signal — into an open breaker, 401-ing the entire API.
+Three design smells in one incident: per-request introspection puts login-path
+throttling on the hot path of every API call; a service-to-service budget was
+hardcoded rather than configured; and the breaker counts throttling as
+failure, amplifying backpressure into outage. v1 makes the limit configurable
+(`TOKEN_VALIDATION_RATE_LIMIT_MAX`, lab-sized in compose); the real fixes are
+OQ-A1 (local JWT verification) and OQ-A4 (rate-limit architecture).
+
 ## 3. `x-max-retries` is fiction — there is no retry mechanism
 
 Queues are declared with an `x-max-retries` argument. RabbitMQ has no such

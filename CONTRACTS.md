@@ -81,7 +81,9 @@ api-service (viper, prefix `API_`): `API_POSTGRES_DSN`, `API_REDIS_HOST`,
 
 auth-service (zod env schema — names FROZEN): `NODE_ENV`, `PORT`,
 `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`,
-`DATABASE_PASSWORD`, `JWT_SECRET` (min 32 chars), `LOG_LEVEL`, `LOG_PRETTY`.
+`DATABASE_PASSWORD`, `JWT_SECRET` (min 32 chars), `LOG_LEVEL`, `LOG_PRETTY`,
+`RATE_LIMIT_MAX_REQUESTS`, `TOKEN_VALIDATION_RATE_LIMIT_MAX` (validate is
+service-to-service traffic — compose sets lab-sized values).
 
 operational-workers: `RABBITMQ_URL` (amqp://guest:guest@rabbitmq:5672/),
 plus per-worker vars they already define (keep names, document in README).

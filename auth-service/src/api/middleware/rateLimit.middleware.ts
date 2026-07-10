@@ -48,7 +48,7 @@ export const authRateLimit = rateLimit({
 
 export const tokenValidationRateLimit = rateLimit({
   windowMs: 60 * 1000,
-  max: 100,
+  max: config.security.tokenValidationRateLimitMax,
   message: {
     status: "error",
     message: "Too many token validation requests from this IP.",
