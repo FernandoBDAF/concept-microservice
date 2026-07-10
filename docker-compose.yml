@@ -140,9 +140,10 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       # api-service introspects the token once per authenticated request, so
       # validate-endpoint throttling becomes a full API outage via the breaker
-      # (see documentation/review/CONCEPTUAL_REVIEW.md §2). Lab-sized limits:
-      RATE_LIMIT_MAX_REQUESTS: "100000"
-      TOKEN_VALIDATION_RATE_LIMIT_MAX: "100000"
+      # (see documentation/review/CONCEPTUAL_REVIEW.md §2). Lab-sized limits;
+      # .env-overridable so EXPERIMENTS.md EXP-08 can reproduce the incident.
+      RATE_LIMIT_MAX_REQUESTS: ${RATE_LIMIT_MAX_REQUESTS:-100000}
+      TOKEN_VALIDATION_RATE_LIMIT_MAX: ${TOKEN_VALIDATION_RATE_LIMIT_MAX:-100000}
     ports:
       - "3000:3000"
     depends_on:

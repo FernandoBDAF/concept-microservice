@@ -81,12 +81,16 @@ def envelope(routing_key: str, payload: dict) -> dict:
     }
 
 
-def publish(exchange: str, routing_key: str, body: str) -> bool:
+def publish(exchange: str, routing_key: str, body: str, expiration_ms: int = 0) -> bool:
+    properties = {"content_type": "application/json"}
+    if expiration_ms > 0:
+        # AMQP per-message TTL; the value is a string of milliseconds.
+        properties["expiration"] = str(expiration_ms)
     req = urllib.request.Request(
         f"{MGMT}/api/exchanges/%2F/{exchange}/publish",
         data=json.dumps(
             {
-                "properties": {"content_type": "application/json"},
+                "properties": properties,
                 "routing_key": routing_key,
                 "payload": body,
                 "payload_encoding": "string",
@@ -104,6 +108,12 @@ def main() -> int:
     parser.add_argument("mode", choices=["flood", "poison"])
     parser.add_argument("--routing-key", choices=sorted(ROUTES), default="email.send")
     parser.add_argument("--count", type=int, default=10)
+    parser.add_argument(
+        "--expiration-ms",
+        type=int,
+        default=0,
+        help="flood only: per-message TTL in ms (EXPERIMENTS.md EXP-10)",
+    )
     args = parser.parse_args()
 
     sent = unrouted = 0
@@ -111,11 +121,12 @@ def main() -> int:
         exchange, factory = ROUTES[args.routing_key]
         for i in range(args.count):
             body = json.dumps(envelope(args.routing_key, factory(i)))
-            if publish(exchange, args.routing_key, body):
+            if publish(exchange, args.routing_key, body, args.expiration_ms):
                 sent += 1
             else:
                 unrouted += 1
-        print(f"flood: {sent} routed, {unrouted} unrouted -> {exchange}/{args.routing_key}")
+        ttl_note = f" (TTL {args.expiration_ms}ms)" if args.expiration_ms else ""
+        print(f"flood: {sent} routed, {unrouted} unrouted -> {exchange}/{args.routing_key}{ttl_note}")
     else:
         # Two poison flavors per routing key:
         #  1. not JSON at all            -> consumers nack straight to the DLQ

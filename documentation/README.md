@@ -5,7 +5,8 @@ live at the repo root in [CONTRACTS.md](../CONTRACTS.md).
 
 ## Start here
 
-- **[PRD.md](PRD.md)** — project vision, roadmap (v1–v5), and open questions
+- **[PRD.md](PRD.md)** — project vision, roadmap (v1–v8), and open questions
+- **[../EXPERIMENTS.md](../EXPERIMENTS.md)** — the guided experiment catalog; write-ups go to [experiments/](experiments/)
 - **[review/CONCEPTUAL_REVIEW.md](review/CONCEPTUAL_REVIEW.md)** — architecture-level issues & tensions
 - **[review/INFERRED_INTENT.md](review/INFERRED_INTENT.md)** — reconstructed goals across the project's three eras
 - **[refactor/2026-07-full-refactor.md](refactor/2026-07-full-refactor.md)** — what the 2026-07 refactor did and verified

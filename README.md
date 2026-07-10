@@ -70,10 +70,17 @@ Node 22+, Python 3.12+):
 make verify
 ```
 
-## Monitoring & simulations
+## Experiments, monitoring & simulations
 
 The point of this lab is practicing operations: generate load or failures with
-one command, watch the system react in Grafana. With the stack up:
+one command, watch the system react in Grafana. **Start with
+[EXPERIMENTS.md](EXPERIMENTS.md)** — a guided catalog (baseline, load, burst,
+poison, outages, scale-out, incident reproduction, TTL expiry, document E2E)
+that tells you what to run, what to watch, and what to expect; running it top
+to bottom validates the whole implementation. Write findings to
+[documentation/experiments/](documentation/experiments/).
+
+The underlying levers, with the stack up:
 
 ```bash
 make monitoring     # print the UI URLs (Grafana 3001, Prometheus 9090, RabbitMQ 15672)
@@ -125,6 +132,7 @@ Envelope and payload schemas: [graph-worker/shared/contracts](graph-worker/share
 ```
 ├── docker-compose.yml        # full local stack incl. Prometheus + Grafana
 ├── Makefile                  # up/down/logs/verify + monitoring & sim-* drills
+├── EXPERIMENTS.md            # guided experiment catalog (run this!)
 ├── CONTRACTS.md              # pinned cross-service integration surface
 ├── scripts/
 │   ├── compose/              # postgres init, prometheus config, grafana provisioning

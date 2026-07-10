@@ -206,3 +206,9 @@ setup (`make init-secrets`), SOPS/sealed-secrets for k8s, `.env` gitignored
   docker-push", monitoring guides for stacks that didn't exist). The refactor
   moved these to `documentation/planning/`; keep the rule "top-level docs
   describe only what runs."
+- **Document status is write-only** (found by EXP-11): documents are created
+  `pending` and nothing can ever advance them — graphrag has no path back to
+  `api_db`. The status/`processing_started_at`/`error_message` columns and
+  the status endpoint imply a lifecycle that doesn't exist. Needs a results
+  channel (worker→API callback, a status queue, or shared-DB decision) —
+  pairs with the outbox question (OQ-M3).

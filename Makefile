@@ -8,7 +8,7 @@ SIM_VUS      ?= 10
 SIM_DURATION ?= 2m
 
 .PHONY: help up infra down nuke ps logs verify verify-api verify-workers verify-auth verify-graphrag \
-	monitoring queues sim-smoke sim-load sim-burst sim-poison sim-outage
+	monitoring queues sim-smoke sim-load sim-burst sim-poison sim-outage scale demo-document
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -71,3 +71,9 @@ sim-poison: ## Publish malformed messages to every exchange; watch DLQs
 
 sim-outage: ## Stop a worker, build backlog, restart, watch drain (WORKER=email N=100)
 	bash scripts/simulate/worker-outage.sh $(or $(WORKER),email) $(or $(N),100)
+
+scale: ## Scale a service (S=email-worker N=3) — EXPERIMENTS.md EXP-07
+	docker compose up -d --scale $(S)=$(N) $(S)
+
+demo-document: ## Document pipeline E2E: upload → MinIO → graphrag (EXP-11)
+	bash scripts/simulate/document-upload.sh
