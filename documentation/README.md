@@ -5,7 +5,9 @@ live at the repo root in [CONTRACTS.md](../CONTRACTS.md).
 
 ## Start here
 
-- **[PRD.md](PRD.md)** — project vision, roadmap (v1–v8), and open questions
+- **[phases/](phases/)** — the development methodology: one implementation brief per milestone (start any working session here)
+- **[decisions/](decisions/)** — ADR-001..010: every architectural/tooling decision with its why (2026-07-10 Q&A)
+- **[PRD.md](PRD.md)** — project vision, resequenced roadmap (v1–v8), success metrics
 - **[../EXPERIMENTS.md](../EXPERIMENTS.md)** — the guided experiment catalog; write-ups go to [experiments/](experiments/)
 - **[review/CONCEPTUAL_REVIEW.md](review/CONCEPTUAL_REVIEW.md)** — architecture-level issues & tensions
 - **[review/INFERRED_INTENT.md](review/INFERRED_INTENT.md)** — reconstructed goals across the project's three eras
@@ -15,7 +17,9 @@ live at the repo root in [CONTRACTS.md](../CONTRACTS.md).
 
 ```
 documentation/
-├── PRD.md                  Product vision, roadmap, open questions
+├── PRD.md                  Product vision, roadmap, success metrics
+├── phases/                 One implementation brief per milestone (v1–v8)
+├── decisions/              ADRs — decisions with their why
 ├── review/                 Conceptual review + inferred intent
 ├── refactor/               Refactor records (2026-07)
 ├── architecture/           System architecture and design decisions
