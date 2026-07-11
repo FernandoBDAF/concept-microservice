@@ -1,0 +1,8 @@
+# kind-local: the daily single-node overlay (ADR-002.1). Currently a pure
+# passthrough — kind-specific values (localhost:5001 images, standard
+# storage class defaults) already suit the base. The aws overlay (v5) is
+# where the two diverge.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base

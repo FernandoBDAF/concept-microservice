@@ -1,0 +1,110 @@
+# graphrag-service — env mirrors compose (CONTRACTS.md §4); stub mode without
+# LLM deps/keys is the expected lab behavior (EXP-11).
+apiVersion: v1
+kind: Service
+metadata:
+  name: graphrag-service
+  namespace: lab-core
+  labels:
+    app: graphrag-service
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+    - name: metrics
+      port: 8081
+      targetPort: metrics
+  selector:
+    app: graphrag-service
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: graphrag-service
+  namespace: lab-core
+  labels:
+    app: graphrag-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: graphrag-service
+  template:
+    metadata:
+      labels:
+        app: graphrag-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8081"
+    spec:
+      # no runAsUser override: the image defines its own non-root `app` user
+      # and pip --user deps live in its home — forcing another UID breaks
+      # Python's user-site lookup (found live: ModuleNotFoundError).
+      # runAsNonRoot still enforces the property we actually care about.
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: graphrag-service
+          image: localhost:5001/graphrag-service:dev
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: metrics
+              containerPort: 8081
+          env:
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: RABBITMQ_PASSWORD
+            - name: RABBITMQ_URL
+              value: amqp://guest:$(RABBITMQ_PASSWORD)@rabbitmq.lab-infra:5672/
+            - name: MONGO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mongodb-credentials
+                  key: MONGO_ROOT_PASSWORD
+            - name: MONGODB_URI
+              value: mongodb://admin:$(MONGO_ROOT_PASSWORD)@mongodb.lab-infra:27017
+            - name: MINIO_ENDPOINT
+              value: minio.lab-infra:9000
+            - name: MINIO_ACCESS_KEY
+              value: minioadmin
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: MINIO_ROOT_PASSWORD
+            - name: HEALTH_PORT
+              value: "8080"
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi

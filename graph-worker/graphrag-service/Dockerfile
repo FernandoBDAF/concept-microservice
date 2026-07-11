@@ -21,8 +21,8 @@ RUN pip install --user --no-cache-dir -r requirements.txt \
 
 FROM python:3.12-slim
 
-RUN groupadd --system app \
-    && useradd --system --gid app --create-home --home-dir /home/app app
+RUN groupadd --system --gid 10001 app \
+    && useradd --system --uid 10001 --gid app --create-home --home-dir /home/app app
 
 WORKDIR /app
 
@@ -36,7 +36,7 @@ ENV HOME=/home/app \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-USER app
+USER 10001:10001
 
 EXPOSE 8080 8081
 

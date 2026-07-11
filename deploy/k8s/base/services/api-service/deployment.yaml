@@ -1,0 +1,133 @@
+# api-service — env mirrors compose exactly (CONTRACTS.md §4); hostnames move
+# to lab-infra FQDNs and passwords come from Secrets ($(VAR) expansion for the
+# DSN). 2 replicas + PDB: this is the deployment EXP-21 drains against.
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-service
+  namespace: lab-core
+  labels:
+    app: api-service
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+    - name: metrics
+      port: 8081
+      targetPort: metrics
+  selector:
+    app: api-service
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-service
+  namespace: lab-core
+  labels:
+    app: api-service
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: api-service
+  template:
+    metadata:
+      labels:
+        app: api-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8081"
+    spec:
+      # runAsNonRoot only — each image defines its own non-root user; forcing
+      # a UID broke graphrag's pip --user layout (see that manifest's note)
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: api-service
+          image: localhost:5001/api-service:dev
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: metrics
+              containerPort: 8081
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_PASSWORD
+            - name: API_POSTGRES_DSN
+              value: postgres://postgres:$(POSTGRES_PASSWORD)@postgres.lab-infra:5432/api_db?sslmode=disable
+            - name: API_REDIS_HOST
+              value: redis.lab-infra
+            - name: API_REDIS_PORT
+              value: "6379"
+            - name: API_RABBITMQ_HOSTS
+              value: rabbitmq.lab-infra:5672
+            - name: API_RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: RABBITMQ_PASSWORD
+            - name: API_AUTH_URL
+              value: http://auth-service:3000
+            - name: MINIO_ENDPOINT
+              value: minio.lab-infra:9000
+            - name: MINIO_ACCESS_KEY
+              value: minioadmin
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: MINIO_ROOT_PASSWORD
+            - name: MINIO_USE_SSL
+              value: "false"
+            - name: MINIO_BUCKET_NAME
+              value: documents-raw
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 150m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api-service
+  namespace: lab-core
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: api-service

@@ -16,14 +16,22 @@ Examples:
 import argparse
 import base64
 import json
+import os
 import sys
 import time
 import urllib.request
 import uuid
 from datetime import datetime, timezone
 
-MGMT = "http://localhost:15672"
-AUTH = base64.b64encode(b"guest:guest").decode()
+# Overridable for cluster mode (EXP-20): port-forward the rabbitmq Service,
+# then set RABBITMQ_MGMT_PASSWORD from .lab-secrets.env.
+MGMT = os.environ.get("RABBITMQ_MGMT_URL", "http://localhost:15672")
+AUTH = base64.b64encode(
+    "{}:{}".format(
+        os.environ.get("RABBITMQ_MGMT_USER", "guest"),
+        os.environ.get("RABBITMQ_MGMT_PASSWORD", "guest"),
+    ).encode()
+).decode()
 
 # routing key -> (exchange, valid payload factory)  — per shared/contracts/
 ROUTES = {

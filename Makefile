@@ -7,8 +7,14 @@ K6_RUN     := docker run --rm -i --network microservices_default \
 SIM_VUS      ?= 10
 SIM_DURATION ?= 2m
 
+REGISTRY   := localhost:5001
+TAG        ?= dev
+PROFILE    ?= single
+
 .PHONY: help up infra down nuke ps logs verify verify-api verify-workers verify-auth verify-graphrag \
-	monitoring queues sim-smoke sim-load sim-burst sim-poison sim-outage scale demo-document
+	monitoring queues sim-smoke sim-load sim-burst sim-poison sim-outage scale demo-document \
+	images init-secrets cluster-up cluster-down cluster-status cluster-logs cluster-queues \
+	cluster-scale cluster-sim-smoke cluster-sim-load cluster-sim-burst drift-check
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -77,3 +83,58 @@ scale: ## Scale a service (S=email-worker N=3) — EXPERIMENTS.md EXP-07
 
 demo-document: ## Document pipeline E2E: upload → MinIO → graphrag (EXP-11)
 	bash scripts/simulate/document-upload.sh
+
+# ── Cluster lab (PRD v2, ADR-002) ─────────────────────────────────────────────
+
+K6_CLUSTER_RUN := docker run --rm -i \
+	--add-host api.lab.local:host-gateway --add-host auth.lab.local:host-gateway \
+	-e API_URL=https://api.lab.local -e AUTH_URL=https://auth.lab.local \
+	-e K6_INSECURE_SKIP_TLS_VERIFY=true
+
+images: ## Build + push all service images to the local registry (TAG=dev)
+	docker build -t $(REGISTRY)/api-service:$(TAG) api-service
+	docker build -t $(REGISTRY)/auth-service:$(TAG) auth-service
+	docker build -t $(REGISTRY)/graphrag-service:$(TAG) graph-worker/graphrag-service
+	docker build -t $(REGISTRY)/email-worker:$(TAG) -f graph-worker/operational-workers/Dockerfile.email graph-worker/operational-workers
+	docker build -t $(REGISTRY)/image-worker:$(TAG) -f graph-worker/operational-workers/Dockerfile.image graph-worker/operational-workers
+	docker build -t $(REGISTRY)/profile-worker:$(TAG) -f graph-worker/operational-workers/Dockerfile.profile graph-worker/operational-workers
+	for i in api-service auth-service graphrag-service email-worker image-worker profile-worker; do \
+		docker push $(REGISTRY)/$$i:$(TAG) || exit 1; done
+
+init-secrets: ## Generate lab credentials -> k8s Secrets (ADR-009.3; FORCE=1 rotates)
+	bash scripts/cluster/init-secrets.sh
+
+cluster-up: ## kind cluster + registry + full stack (PROFILE=single|multinode)
+	PROFILE=$(PROFILE) bash scripts/cluster/up.sh
+
+cluster-down: ## Delete the kind cluster (registry survives; REGISTRY=0 removes it too)
+	kind delete cluster --name lab
+	@if [ "$(REGISTRY)" = "0" ]; then docker rm -f kind-registry; fi
+
+cluster-status: ## Nodes, pods, jobs, ingresses, certificates
+	@kubectl get nodes -o wide 2>/dev/null | awk '{print "  "$$1"\t"$$2"\t"$$5}' || echo "  no cluster"
+	@kubectl get pods -n lab-infra -o wide 2>/dev/null
+	@kubectl get pods -n lab-core -o wide 2>/dev/null
+	@kubectl get jobs -n lab-infra 2>/dev/null
+	@kubectl get ingress,certificate -n lab-core 2>/dev/null
+
+cluster-logs: ## Tail a service's logs (S=api-service)
+	kubectl -n lab-core logs deploy/$(S) -f
+
+cluster-queues: ## RabbitMQ queue depths in the cluster (parity with `make queues`)
+	kubectl -n lab-infra exec rabbitmq-0 -- rabbitmqctl list_queues name messages messages_ready consumers
+
+cluster-scale: ## Scale a service in the cluster (S=email-worker N=3) — EXP-07 parity
+	kubectl -n lab-core scale deploy/$(S) --replicas=$(N)
+
+cluster-sim-smoke: ## k6 smoke against the cluster ingress (EXP-20)
+	$(K6_CLUSTER_RUN) -e SIM_VUS=1 -e SIM_DURATION=15s $(K6_IMAGE) run - < scripts/simulate/api-load.js
+
+cluster-sim-load: ## k6 steady load against the cluster ingress
+	$(K6_CLUSTER_RUN) -e SIM_VUS=$(SIM_VUS) -e SIM_DURATION=$(SIM_DURATION) $(K6_IMAGE) run - < scripts/simulate/api-load.js
+
+cluster-sim-burst: ## k6 burst against the cluster ingress
+	$(K6_CLUSTER_RUN) -e SIM_VUS=50 -e SIM_DURATION=30s $(K6_IMAGE) run - < scripts/simulate/api-load.js
+
+drift-check: ## Compose ⇄ kustomize drift check (ADR-002.4)
+	python3 scripts/check-kustomize-drift.py

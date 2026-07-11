@@ -1,0 +1,27 @@
+# kind profile: single node — the daily driver (ADR-002.2).
+# Node image: kind's bundled default (guaranteed compatible with the
+# installed kind binary). Registry wiring: scripts/cluster/up.sh writes
+# /etc/containerd/certs.d/localhost:5001 on every node (ADR-002.3).
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: lab
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      # ingress-nginx (vendored kind flavor) binds hostPorts 80/443 here
+      - containerPort: 80
+        hostPort: 80
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 443
+        protocol: TCP
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      config_path = "/etc/containerd/certs.d"

@@ -1,0 +1,98 @@
+# One-shot migrations — mirror compose's api-migrate/auth-migrate exactly
+# (same images, same psql loop). SQL is single-sourced from
+# api-service/migrations and auth-service/migrations via configMapGenerator
+# (LoadRestrictionsNone). Jobs are immutable: scripts/cluster/up.sh deletes
+# completed ones before re-applying so migration changes re-run.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: api-migrate
+  namespace: lab-infra
+  labels:
+    app: api-migrate
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      labels:
+        app: api-migrate
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: postgres:15-alpine
+          command:
+            - sh
+            - -c
+            - >
+              for f in $(ls /migrations/*.up.sql | sort); do
+              echo "applying $f";
+              psql -h postgres.lab-infra -U postgres -d api_db -v ON_ERROR_STOP=1 -f "$f" || exit 1;
+              done
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_PASSWORD
+          volumeMounts:
+            - name: migrations
+              mountPath: /migrations
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+      volumes:
+        - name: migrations
+          configMap:
+            name: api-migrations
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: auth-migrate
+  namespace: lab-infra
+  labels:
+    app: auth-migrate
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      labels:
+        app: auth-migrate
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: postgres:15-alpine
+          command:
+            - sh
+            - -c
+            - >
+              for f in $(ls /migrations/*.sql | sort); do
+              echo "applying $f";
+              psql -h postgres.lab-infra -U auth_user -d auth_db -v ON_ERROR_STOP=1 -f "$f" || exit 1;
+              done
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: AUTH_DB_PASSWORD
+          volumeMounts:
+            - name: migrations
+              mountPath: /migrations
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+      volumes:
+        - name: migrations
+          configMap:
+            name: auth-migrations

@@ -152,12 +152,22 @@ Envelope and payload schemas: [graph-worker/shared/contracts](graph-worker/share
 
 ## Deployment
 
-Local development uses the root docker-compose. Kubernetes manifests live per
-service (`api-service/deployments/kubernetes/`, etc.); the target cluster
-architecture is described in
-[documentation/deployment/CLUSTER_VISION.md](documentation/deployment/CLUSTER_VISION.md),
-and the roadmap to a full kind-based cluster lab is
-[documentation/PRD.md](documentation/PRD.md) (v2 milestone).
+Local development uses the root docker-compose (the behavioral reference).
+The same stack runs on Kubernetes via the kind cluster lab (PRD v2):
+
+```
+make cluster-up                 # kind + local registry + ingress/TLS + full stack
+make cluster-status             # nodes, pods, jobs, certificates
+make cluster-sim-smoke          # k6 through https://api.lab.local
+make cluster-queues             # rabbitmqctl inside the cluster
+make cluster-down               # delete the cluster (registry cache survives)
+make cluster-up PROFILE=multinode   # 1 control-plane + 3 workers (node drills)
+```
+
+Manifests: [deploy/k8s/](deploy/k8s/README.md) (kustomize base + overlays,
+zero-trust network policies, cert-manager lab CA, localhost:5001 registry).
+`make drift-check` keeps compose and kustomize declaring the same surface.
+Cluster experiments: EXPERIMENTS.md EXP-20..23.
 
 ---
 

@@ -1,0 +1,57 @@
+# Hostname choice (phase brief §6): api.lab.local / auth.lab.local via
+# /etc/hosts (offline-reliable). No-sudo alternatives: curl --resolve, or
+# *.localtest.me hostnames — documented in deploy/k8s/README.md.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: api-service
+  namespace: lab-core
+  annotations:
+    cert-manager.io/cluster-issuer: lab-ca
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [api.lab.local]
+      secretName: api-lab-local-tls
+  rules:
+    - host: api.lab.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api-service
+                port:
+                  name: http
+---
+# Per-IP rate limit at the edge (ADR-009.5): ~20 req/s + nginx's 5x burst
+# bucket per client IP on every auth route. The in-app limiter stays for
+# compose mode; token-validate traffic is pod-to-pod and never crosses this.
+# limit-req-status-code is set to 429 via the controller ConfigMap patch in
+# scripts/cluster/up.sh.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: auth-service
+  namespace: lab-core
+  annotations:
+    cert-manager.io/cluster-issuer: lab-ca
+    nginx.ingress.kubernetes.io/limit-rps: "20"
+    nginx.ingress.kubernetes.io/limit-connections: "20"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [auth.lab.local]
+      secretName: auth-lab-local-tls
+  rules:
+    - host: auth.lab.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: auth-service
+                port:
+                  name: http

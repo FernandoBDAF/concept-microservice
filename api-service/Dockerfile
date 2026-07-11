@@ -21,11 +21,11 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
 FROM alpine:3.19
 
 RUN apk add --no-cache ca-certificates && \
-    addgroup -S app && adduser -S -G app -H app
+    addgroup -S -g 10001 app && adduser -S -G app -H -u 10001 app
 
 COPY --from=build /bin/api-service /usr/local/bin/api-service
 
-USER app
+USER 10001:10001
 WORKDIR /
 
 EXPOSE 8080 8081

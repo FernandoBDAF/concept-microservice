@@ -1,0 +1,21 @@
+# Whole-lab base (ADR-002.1). Builds need LoadRestrictionsNone because the
+# rabbitmq conf and migration SQL are single-sourced from their compose/
+# service homes — see deploy/k8s/README.md.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespaces
+  - infra/postgres
+  - infra/redis
+  - infra/rabbitmq
+  - infra/mongodb
+  - infra/minio
+  - migrations
+  - services/api-service
+  - services/auth-service
+  - services/graphrag-service
+  - services/email-worker
+  - services/image-worker
+  - services/profile-worker
+  - ingress
+  - netpols

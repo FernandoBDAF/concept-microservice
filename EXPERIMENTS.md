@@ -334,6 +334,132 @@ the design.
 
 ---
 
+## Cluster experiments (v2 — the kind lab)
+
+These run against `make cluster-up` instead of compose. Command mapping and
+port-forward recipes: [deploy/k8s/README.md](deploy/k8s/README.md). The
+compose Grafana panels don't see the cluster until v3 — watch via
+`make cluster-queues`, `kubectl get`, and k6 output instead.
+
+---
+
+## EXP-20 · Catalog parity on kind
+
+**Goal:** the v1 experiment catalog holds on the cluster — same behaviors,
+kubectl levers instead of compose ones.
+**Validates:** the entire v2 port: manifests, secrets, registry images,
+ingress+TLS path, migrations, netpol allows (by everything working).
+
+**Steps**
+1. `make cluster-up` (single profile), then `make cluster-sim-smoke` —
+   EXP-02 through the TLS ingress.
+2. `make cluster-sim-burst` while watching `make cluster-queues` — EXP-04's
+   climb-and-drain.
+3. Worker outage (EXP-06): `kubectl -n lab-core scale deploy/email-worker
+   --replicas=0`, flood 100 via the port-forwarded mgmt API (README recipe),
+   confirm consumers=0 + backlog, scale back to 1, watch the drain.
+4. Scale-out (EXP-07): `make cluster-scale S=email-worker N=3`, repeat the
+   flood, compare drain slope; note the k8s Service now load-balances scrapes
+   (the EXP-07 undercount argument resolves in v3 with pod-level discovery).
+5. Poison (EXP-05): publish.py poison via port-forward; DLQ counts +6/+6/+6
+   and +3; `make cluster-logs S=email-worker` shows both error flavors.
+6. Broker outage (EXP-09): scale statefulset/rabbitmq to 0 with a persistent
+   backlog waiting; probe degradation (CRUD 200 via ingress, task submit
+   5xx, api pods NotReady w/ `/ready` rabbitmq down); scale back; backlog
+   survives and drains.
+7. Document E2E (EXP-11): README's demo-document variant against
+   https://api.lab.local.
+
+**Expect:** every referenced experiment's original Expect holds (calibration
+numbers may shift with the extra ingress/CNI hops — record deltas); TLS is
+lab-CA-issued end-to-end; nothing needs `docker compose` at any point.
+
+---
+
+## EXP-21 · Node kill & rescheduling (multinode)
+
+**Goal:** lose a node under load; watch Kubernetes reschedule and the system
+recover. The era-1 k6-analysis quality bar applies to the write-up.
+**Validates:** multinode profile, PDBs, infra pinning (stores survive on the
+infrastructure node), stateless service rescheduling, load continuity.
+
+**Steps**
+1. `make cluster-down && make cluster-up PROFILE=multinode`
+2. `make cluster-sim-load SIM_DURATION=5m` in one terminal.
+3. Find where api-service replicas run (`kubectl -n lab-core get pods -o
+   wide`); pick the application node hosting one of them.
+4. Drain it: `kubectl drain <node> --ignore-daemonsets
+   --delete-emptydir-data` — watch the PDB hold (one api replica keeps
+   serving) and pods reschedule to the surviving application node.
+5. Then the blunt version: `docker rm -f <other-app-node-container>` (node
+   *kill*, no grace) — watch NotReady detection (~40s), pod eviction after
+   the 5m default toleration or force-delete, k6 error blip vs the drain's
+   zero blip.
+6. Recover: `docker start` the node container / uncordon the drained one.
+
+**Expect:** the graceful drain loses no requests (PDB + 2 api replicas);
+the hard kill shows the detection→eviction latency honestly (write the
+numbers down); stores never move off the infrastructure node; k6 finishes
+with failure rate matching the kill window only.
+
+---
+
+## EXP-22 · Image path: change → push → rolling restart → rollback
+
+**Goal:** the registry workflow end-to-end: a code change reaches the
+cluster through localhost:5001, and rollback works by tag.
+**Validates:** ADR-002.3 — real push/pull semantics, imagePullPolicy:
+Always, tag-addressable rollback.
+
+**Steps**
+1. Baseline: note `kubectl -n lab-core get deploy api-service -o
+   jsonpath='{.spec.template.spec.containers[0].image}'` and hit
+   /health via the ingress.
+2. Make a visible change (e.g. bump the /health payload's version string or
+   a log line), `make images TAG=exp22`.
+3. `kubectl -n lab-core set image deploy/api-service
+   api-service=localhost:5001/api-service:exp22` — watch the rolling update
+   (maxUnavailable 0: old pods serve until new ones are Ready).
+4. Confirm the change is live through the ingress.
+5. Rollback: `kubectl -n lab-core rollout undo deploy/api-service`, confirm
+   the old behavior returns; `kubectl rollout history` shows both revisions.
+
+**Expect:** zero failed requests during both rollouts (probe-gated);
+the registry catalog (`curl localhost:5001/v2/_catalog`) lists all six
+images; rollback is one command and sticks.
+
+---
+
+## EXP-23 · Zero-trust proof
+
+**Goal:** the network policies actually deny what the diagram says they
+deny — negative testing, not vibes.
+**Validates:** default-deny + explicit allows (phase brief §7); that
+kind ≥ v0.23 (kube-network-policies in kindnet) enforces NetworkPolicy.
+
+**Steps**
+1. Scratch pod: `kubectl -n lab-core run scratch --rm -it
+   --image=busybox:1.36 --restart=Never -- sh`
+2. Denied paths (each should time out, not connect):
+   `nc -zv -w 3 postgres.lab-infra 5432` (scratch pod matches no allow),
+   same for `redis.lab-infra 6379`, `rabbitmq.lab-infra 5672`.
+3. Denied even for real workloads: `kubectl -n lab-core exec
+   deploy/email-worker -- sh -c 'nc -zv -w 3 postgres.lab-infra 5432'` —
+   workers may talk to rabbitmq only.
+4. Allowed paths work: from the scratch pod DNS resolves (allow-dns), and
+   `kubectl -n lab-core exec deploy/api-service -- wget -qO- -T 3
+   http://auth-service:3000/health` returns 200.
+5. Remove-and-restore: `kubectl -n lab-infra delete networkpolicy
+   default-deny-all postgres` → step 3's denied path now **connects**;
+   re-apply the overlay (`kustomize build … | kubectl apply -f -`) → denied
+   again.
+
+**Expect:** every deny is a timeout, every allow succeeds, and the
+remove/restore flip proves the policies (not coincidence) are doing the
+denying. Cleanup: ensure the overlay is re-applied.
+
+---
+
 ## Adding an experiment
 
 Copy this skeleton; keep Watch concrete (panel names, PromQL, commands) and

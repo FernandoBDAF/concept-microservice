@@ -1,0 +1,213 @@
+# Zero-trust for lab-infra: stores accept only their real consumers.
+# The migration/bucket-init Jobs run in lab-infra and get their own allows.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: lab-infra
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: lab-infra
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres
+  namespace: lab-infra
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-core
+          podSelector:
+            matchLabels:
+              app: api-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-core
+          podSelector:
+            matchLabels:
+              app: auth-service
+        - podSelector:
+            matchLabels:
+              app: api-migrate
+        - podSelector:
+            matchLabels:
+              app: auth-migrate
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis
+  namespace: lab-infra
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-core
+          podSelector:
+            matchLabels:
+              app: api-service
+      ports:
+        - protocol: TCP
+          port: 6379
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rabbitmq
+  namespace: lab-infra
+spec:
+  podSelector:
+    matchLabels:
+      app: rabbitmq
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-core
+          podSelector:
+            matchLabels:
+              app: api-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-core
+          podSelector:
+            matchLabels:
+              lab.local/role: worker
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-core
+          podSelector:
+            matchLabels:
+              app: graphrag-service
+      ports:
+        - protocol: TCP
+          port: 5672
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mongodb
+  namespace: lab-infra
+spec:
+  podSelector:
+    matchLabels:
+      app: mongodb
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-core
+          podSelector:
+            matchLabels:
+              app: graphrag-service
+      ports:
+        - protocol: TCP
+          port: 27017
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: minio
+  namespace: lab-infra
+spec:
+  podSelector:
+    matchLabels:
+      app: minio
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-core
+          podSelector:
+            matchLabels:
+              app: api-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-core
+          podSelector:
+            matchLabels:
+              app: graphrag-service
+        - podSelector:
+            matchLabels:
+              app: minio-bucket-init
+      ports:
+        - protocol: TCP
+          port: 9000
+---
+# The one-shot Jobs need egress to their stores.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: migrate-jobs-egress
+  namespace: lab-infra
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [api-migrate, auth-migrate]
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: bucket-init-egress
+  namespace: lab-infra
+spec:
+  podSelector:
+    matchLabels:
+      app: minio-bucket-init
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: minio
+      ports:
+        - protocol: TCP
+          port: 9000
