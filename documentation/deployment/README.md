@@ -8,18 +8,17 @@ applies both databases' migrations, creates the MinIO bucket, and starts every
 service (plus Prometheus/Grafana) with the env vars pinned in
 [CONTRACTS.md](../../CONTRACTS.md).
 
-## Kubernetes (target, see PRD v2)
+## Kubernetes (shipped, PRD v2)
 
-Restoring the kind-based cluster lab is the PRD's v2 milestone — the original
-lab (kind configs, ingress-nginx, metrics-server, network policies, per-service
-manifests, k6 jobs) lives in git history at `1efec36` (`k8s/`) and in
-`legacy_project/k8s/`.
+`make cluster-up` runs the entire stack on kind — kustomize tree, local
+registry, ingress+TLS, zero-trust network policies. Manifests and operations:
+[deploy/k8s/README.md](../../deploy/k8s/README.md); cluster experiments:
+EXPERIMENTS.md EXP-20..23.
 
-Current per-service manifests (deployable pieces, not yet a full cluster):
-
-- `api-service/deployments/kubernetes/`
-- `graph-worker/graphrag-service/deployments/kubernetes/`
-- `graph-worker/operational-workers/deployments/kubernetes/{email,image,profile}-worker/`
+The era-1 lab this restored (kind configs, ingress-nginx, metrics-server,
+network policies, per-service manifests, k6 jobs) lives on branch
+`archive/era-1` (`legacy_project/k8s/`) and in git history at `1efec36`
+(`k8s/`) — ADR-010.4.
 
 ## Design documents
 

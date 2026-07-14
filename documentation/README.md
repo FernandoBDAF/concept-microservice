@@ -108,8 +108,9 @@ documentation/
 
 ## Migration from Legacy
 
-Content from `legacy_project/reference-materials/` is being migrated here.
-See [LEGACY_CONTENT_MIGRATION_STUDY.md](../legacy_project/reference-materials/LEGACY_CONTENT_MIGRATION_STUDY.md) for the complete migration plan.
+Content from era-1's `reference-materials/` was migrated here; the source
+tree (and `reference-materials/LEGACY_CONTENT_MIGRATION_STUDY.md`) lives on
+branch `archive/era-1` (ADR-010.4).
 
 ### Completed Migrations
 

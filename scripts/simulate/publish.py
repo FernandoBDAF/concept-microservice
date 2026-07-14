@@ -16,14 +16,22 @@ Examples:
 import argparse
 import base64
 import json
+import os
 import sys
 import time
 import urllib.request
 import uuid
 from datetime import datetime, timezone
 
-MGMT = "http://localhost:15672"
-AUTH = base64.b64encode(b"guest:guest").decode()
+# Overridable for cluster mode (EXP-20): port-forward the rabbitmq Service,
+# then set RABBITMQ_MGMT_PASSWORD from .lab-secrets.env.
+MGMT = os.environ.get("RABBITMQ_MGMT_URL", "http://localhost:15672")
+AUTH = base64.b64encode(
+    "{}:{}".format(
+        os.environ.get("RABBITMQ_MGMT_USER", "guest"),
+        os.environ.get("RABBITMQ_MGMT_PASSWORD", "guest"),
+    ).encode()
+).decode()
 
 # routing key -> (exchange, valid payload factory)  — per shared/contracts/
 ROUTES = {
@@ -82,7 +90,9 @@ def envelope(routing_key: str, payload: dict) -> dict:
 
 
 def publish(exchange: str, routing_key: str, body: str, expiration_ms: int = 0) -> bool:
-    properties = {"content_type": "application/json"}
+    # delivery_mode 2 = persistent: without it the broker drops these messages
+    # on restart even from durable queues (caught live by EXP-09's exit run).
+    properties = {"content_type": "application/json", "delivery_mode": 2}
     if expiration_ms > 0:
         # AMQP per-message TTL; the value is a string of milliseconds.
         properties["expiration"] = str(expiration_ms)

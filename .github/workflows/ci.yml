@@ -1,0 +1,60 @@
+# CI phase 1 (ADR-010.2): verify + image builds + compose⇄kustomize drift
+# check on every push. Phase 2 (scored smoke experiments) lands after v4;
+# phase 3 (OIDC→ECR→EKS) inside v5.
+name: ci
+
+# push is filtered to main so PR commits run once (via pull_request), not twice
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: |
+            api-service/go.sum
+            graph-worker/operational-workers/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: auth-service/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: cd auth-service && npm ci
+      - run: make verify
+
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # build-only (no push): proves every Dockerfile still assembles;
+      # the local registry push path is exercised by `make images` locally
+      - run: docker build -t ci/api-service api-service
+      - run: docker build -t ci/auth-service auth-service
+      - run: docker build -t ci/graphrag-service graph-worker/graphrag-service
+      - run: docker build -t ci/email-worker -f graph-worker/operational-workers/Dockerfile.email graph-worker/operational-workers
+      - run: docker build -t ci/image-worker -f graph-worker/operational-workers/Dockerfile.image graph-worker/operational-workers
+      - run: docker build -t ci/profile-worker -f graph-worker/operational-workers/Dockerfile.profile graph-worker/operational-workers
+
+  drift-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - name: install kustomize
+        run: |
+          curl -sfLo /tmp/kustomize.tgz \
+            https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.5.0/kustomize_v5.5.0_linux_amd64.tar.gz
+          tar -xzf /tmp/kustomize.tgz -C /usr/local/bin kustomize
+      - run: python3 scripts/check-kustomize-drift.py

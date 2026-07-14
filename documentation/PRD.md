@@ -44,17 +44,23 @@ experiments), **platform builder** (evolves the lab — this *is* the
 practice), **system owner** (brings real systems to rehearse their production
 deployments), **future project owner** (extracts hardened pieces).
 
-## 4. Current state (v1.1 shipped)
+## 4. Current state (v2 shipped)
 
 - Consolidated architecture runs end-to-end via root `docker-compose.yml` +
   `Makefile` (13 containers incl. Prometheus/Grafana); `make verify` green;
   contracts pinned and live-verified.
-- **[EXPERIMENTS.md](../EXPERIMENTS.md):** 12 guided drills with calibrated
-  expectations; running the catalog validates the implementation (the method
-  already caught real defects — see phases/v1.1). Owner's full catalog run is
-  the outstanding v1.1 exit.
-- Kubernetes: per-service manifests only; the era-1 kind lab restoration is
-  v2.
+- **[EXPERIMENTS.md](../EXPERIMENTS.md):** 16 guided drills (12 compose +
+  EXP-20..23 cluster) with calibrated expectations; the catalog is the
+  regression suite and keeps catching real defects (v1.1 exit run: 2;
+  v2 exit runs: 3 more + 2 design findings). Tags `lab-v1.1`, `lab-v2.0`.
+- **Cluster lab (v2):** `make cluster-up` runs the entire stack on kind —
+  kustomize base/overlays ([deploy/k8s/](../deploy/k8s/README.md)), local
+  registry :5001, ingress-nginx + cert-manager lab CA
+  (api/auth.lab.local), zero-trust network policies, migration Jobs,
+  single/multinode profiles, `make drift-check` (ADR-002.4) and CI phase 1
+  (ADR-010.2). Observability stays compose-side until v3 (`lab-obs`
+  reserved).
+- era-1 mined and archived: `legacy_project/` → branch `archive/era-1`.
 
 ## 5. The experiments framework
 
@@ -116,8 +122,8 @@ experiments, acceptance. Experiment IDs: EXP-<phase>x.
 | Phase | One line | Exit |
 |---|---|---|
 | ✅ v1 — Foundation | Consolidated stack runs, verified, monitored, simulated | shipped |
-| ✅ v1.1 — Guided experiments | EXPERIMENTS.md catalog + enablers | owner catalog run → `lab-v1.1` |
-| v2 — Cluster lab | Entire stack on kind (kustomize, registry, netpols, ingress+TLS); CI phase 1; legacy mined→archived | EXP-20..23 → `lab-v2.0` |
+| ✅ v1.1 — Guided experiments | EXPERIMENTS.md catalog + enablers | `lab-v1.1` (2026-07-10) |
+| ✅ v2 — Cluster lab | Entire stack on kind (kustomize, registry, netpols, ingress+TLS); CI phase 1; legacy mined→archived | `lab-v2.0` (2026-07-10) |
 | v3 — Observability | kube-prometheus-stack, Tempo traces end-to-end, OpenSearch logs, ntfy alerts, SLO baselines; **+ thin status page + hello-guest/contract** | EXP-30..34 → `lab-v3.0` |
 | v4 — Hardening & assertions | definitions.json topology, retry queues, idempotency, outbox+results (status lifecycle!), JWKS, sessions, roles; experiments → YAML+scored; Chaos Mesh; Go loadgen; CI phase 2 | EXP-40..45 → `lab-v4.0` |
 | v5 — AWS track | Terraform+EKS sessions: RDS+S3 managed, Route53/ACM, budget+reaper guardrails, OIDC pipeline; idle ≈ $0 | EXP-50..55 → `lab-v5.0` |
@@ -156,8 +162,11 @@ listed under "Parked / rejected" in §8 and inside the relevant ADRs.
 
 ## 11. v1.1 acceptance (current release)
 
-- [ ] **Owner-run validation:** EXPERIMENTS.md top to bottom; every Expect
-      holds or the deviation is written up. Then tag `lab-v1.1`.
+- [x] **Validation run (2026-07-10):** EXPERIMENTS.md top to bottom; all 12
+      pass — EXP-01/EXP-09 after mid-run fixes (RabbitMQ healthcheck,
+      publish.py persistence), EXP-12 discovery documented. See
+      [experiments/2026-07-10-v1.1-catalog-run.md](experiments/2026-07-10-v1.1-catalog-run.md).
+      Tagged `lab-v1.1`.
 - [x] Catalog + enablers shipped and live-verified during development.
 - [x] PRD reflects AWS track, Mission Control, host contract, guest systems.
 - [x] Methodology in place: phases/ briefs + decisions/ ADRs (2026-07-10).

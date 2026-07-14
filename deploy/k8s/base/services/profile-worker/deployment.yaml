@@ -1,0 +1,86 @@
+# profile-worker — env mirrors compose (RABBITMQ_URL only, CONTRACTS.md §4).
+# Kept at 1 replica; scale drills use `make cluster-scale S=profile-worker N=`.
+apiVersion: v1
+kind: Service
+metadata:
+  name: profile-worker
+  namespace: lab-core
+  labels:
+    app: profile-worker
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+  selector:
+    app: profile-worker
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: profile-worker
+  namespace: lab-core
+  labels:
+    app: profile-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: profile-worker
+  template:
+    metadata:
+      labels:
+        app: profile-worker
+        lab.local/role: worker
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      # runAsNonRoot only — each image defines its own non-root user; forcing
+      # a UID broke graphrag's pip --user layout (see that manifest's note)
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: profile-worker
+          image: localhost:5001/profile-worker:dev
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: RABBITMQ_PASSWORD
+            - name: RABBITMQ_URL
+              value: amqp://guest:$(RABBITMQ_PASSWORD)@rabbitmq.lab-infra:5672/
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 300m
+              memory: 128Mi

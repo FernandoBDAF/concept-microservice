@@ -1,9 +1,0 @@
-FROM python:3.9-slim
-
-WORKDIR /app
-
-COPY rabbitmq-amqp-test.py .
-
-RUN pip install pika
-
-CMD ["python", "rabbitmq-amqp-test.py"] 

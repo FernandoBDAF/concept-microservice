@@ -3,7 +3,7 @@
 Findings from running the [EXPERIMENTS.md](../../EXPERIMENTS.md) catalog.
 One file per session or per notable finding, named
 `YYYY-MM-DD-<slug>.md`. The era-1 k6 analyses
-(`legacy_project/k8s/k6/analyses/`) are the quality bar: numbers observed,
+(`k8s/k6/analyses/` on branch `archive/era-1`) are the quality bar: numbers observed,
 what they mean, what to change.
 
 Findings that expose design flaws should also feed

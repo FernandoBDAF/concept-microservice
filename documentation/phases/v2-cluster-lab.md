@@ -1,8 +1,13 @@
 # Phase v2 — Restore the cluster lab (kind)
 
-**Status:** pending · **Depends on:** v1.1 catalog pass · **Exit tag:**
-`lab-v2.0` · **Decisions in force:** ADR-002 (all), ADR-009.4 (cert-manager),
-ADR-010.2 (CI phase 1), ADR-010.4 (legacy mining)
+**Status:** ✅ shipped 2026-07-10 (same session as the v1.1 exit run) ·
+**Exit tag:** `lab-v2.0` · **Exit runs:** EXP-20..23 all pass — see
+[the run report](../experiments/2026-07-10-v2-cluster-exit-runs.md); three
+defects fixed en route (mongodb probe YAML, rabbitmq probe economics,
+runAsNonRoot vs named users), two design findings recorded
+(readiness-coupling → CONCEPTUAL_REVIEW §12; netpol union-of-allows →
+EXP-23's calibrated text) · **Decisions in force:** ADR-002 (all),
+ADR-009.4 (cert-manager), ADR-010.2 (CI phase 1), ADR-010.4 (legacy mining)
 
 ## Mission
 
@@ -37,7 +42,7 @@ consolidated architecture instead of resurrected.
    mine era-1 configs.
 3. **Local registry (ADR-002.3):** registry container at `localhost:5001`
    wired into kind (containerd mirror config); `make images` builds+tags+
-   pushes all 7 images; manifests reference `localhost:5001/...`.
+   pushes all 6 images; manifests reference `localhost:5001/...`.
 4. **Infra in-cluster:** StatefulSets (postgres w/ init SQL ConfigMap, mongo,
    minio, rabbitmq w/ enabled_plugins+conf mounts) + Deployments (redis);
    one-shot migrations as Jobs mirroring compose's api-migrate/auth-migrate;
@@ -89,9 +94,13 @@ architecture changes (v4).
 
 ## Acceptance
 
-- [ ] `make cluster-up` from clean machine state → all pods Ready < ~10 min
-- [ ] EXP-20..23 pass, written up in documentation/experiments/
-- [ ] CI phase 1 green on main; drift check fails when compose/kustomize
-      disagree (prove once deliberately)
-- [ ] legacy_project archived to branch; main slimmed
-- [ ] Tag `lab-v2.0`
+- [x] `make cluster-up` from clean machine state → all pods Ready < ~10 min
+      (multinode from deleted cluster: 9 m 21 s incl. builds; single is
+      faster)
+- [x] EXP-20..23 pass, written up in documentation/experiments/
+      (2026-07-10-v2-cluster-exit-runs.md)
+- [x] CI phase 1 workflow added (`make verify` green locally); drift check
+      proven red on deliberate env drift, green after revert. *CI-on-main
+      turns green with the merge/push of this branch.*
+- [x] legacy_project archived to branch `archive/era-1`; main slimmed
+- [x] Tag `lab-v2.0`

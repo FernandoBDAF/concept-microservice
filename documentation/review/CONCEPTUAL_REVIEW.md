@@ -212,3 +212,23 @@ setup (`make init-secrets`), SOPS/sealed-secrets for k8s, `.env` gitignored
   the status endpoint imply a lifecycle that doesn't exist. Needs a results
   channel (worker→API callback, a status queue, or shared-DB decision) —
   pairs with the outbox question (OQ-M3).
+- **Publisher-confirm timeouts surface as unlogged 500s** (v1.1 exit run,
+  EXP-03/04): when a RabbitMQ confirm misses the 5 s `ConfirmTimeout`, the
+  task endpoint returns 500 but emits no error-level log — only the info
+  access line betrays it (latency ≈ 5.01 s). ~0.06–0.17% of publishes under
+  10–50 VU load. Ties into §8 (observability loop) and the v4 retry/outbox
+  work; at minimum the publish path should log the confirm failure.
+- **Cache outage = silent latency amplification** (EXP-12 discovery,
+  [write-up](../experiments/2026-07-10-cache-outage-latency-amplification.md)):
+  cache-aside fallback works (0% errors) but requests pay 0.3–4 s go-redis
+  dial penalties; client logs bypass zap; only `/ready` tells the truth.
+  Fail-fast cache path + `redis.SetLogger` are v4-hardening candidates;
+  latency-based SLIs (v3) are the operational tell.
+- **`/ready` ANDs every dependency → k8s amplifies broker outage to full
+  API outage** (EXP-20 on kind,
+  [write-up](../experiments/2026-07-10-readiness-coupling-broker-outage.md)):
+  compose kept CRUD serving through a RabbitMQ outage; on Kubernetes the
+  same `/ready` fails the readinessProbe, the Service loses every endpoint,
+  and nginx 503s the routes that never needed the broker. Readiness should
+  gate on what all routes need (PG), or the app should serve degraded —
+  decide in v4; the v8 template must not ship the AND.

@@ -1,0 +1,22 @@
+# Namespace layout (phase v2 brief §1): services / data stores / observability.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lab-core
+  labels:
+    lab.local/tier: services
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lab-infra
+  labels:
+    lab.local/tier: data-stores
+---
+# Reserved for v3 (kube-prometheus-stack et al.) — empty on purpose.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lab-obs
+  labels:
+    lab.local/tier: observability

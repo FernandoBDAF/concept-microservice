@@ -1,0 +1,37 @@
+# kind-multinode: for node-kill drills (EXP-21). Pins the stateful stores to
+# the node labeled node-type=infrastructure (deploy/kind/multinode.yaml):
+# kind's local-path PVs carry node affinity, so an unpinned store landing on
+# the drill's victim node would strand its data instead of teaching
+# rescheduling. Application pods stay free to move.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+patches:
+  - target:
+      kind: StatefulSet
+      namespace: lab-infra
+    patch: |-
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: unused
+      spec:
+        template:
+          spec:
+            nodeSelector:
+              node-type: infrastructure
+  - target:
+      kind: Deployment
+      name: redis
+      namespace: lab-infra
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: redis
+      spec:
+        template:
+          spec:
+            nodeSelector:
+              node-type: infrastructure

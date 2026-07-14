@@ -1,0 +1,38 @@
+# kind profile: 1 control-plane + 3 workers — for node-kill/rescheduling
+# drills only (EXP-21); RAM cost contained per ADR-002.2.
+#
+# node-type labels (era-1 pattern): the kind-multinode overlay pins the
+# stateful stores to the infrastructure node so that killing an application
+# node exercises pod rescheduling instead of stranding node-local PVCs
+# (kind's local-path volumes carry node affinity).
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: lab
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 80
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 443
+        protocol: TCP
+  - role: worker
+    labels:
+      node-type: infrastructure
+  - role: worker
+    labels:
+      node-type: application
+  - role: worker
+    labels:
+      node-type: application
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      config_path = "/etc/containerd/certs.d"

@@ -42,7 +42,9 @@ services:
       - ./scripts/compose/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
       - ./scripts/compose/rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/20-lab.conf:ro
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      # check_port_connectivity (not ping): the node answers ping before the
+      # AMQP listener accepts, so dependents crash-loop at boot (EXP-01 run)
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
       interval: 10s
       timeout: 5s
       retries: 12

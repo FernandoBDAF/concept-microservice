@@ -1,8 +1,0 @@
-.git
-.gitignore
-.env
-*.md
-test/
-k8s/
-Dockerfile
-.dockerignore 

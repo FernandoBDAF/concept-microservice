@@ -1,0 +1,134 @@
+# auth-service — env names are FROZEN (CONTRACTS.md §4, zod schema). Single
+# replica on purpose: the in-app lockout/limiter state is per-instance memory
+# (ADR-009.5 keeps Redis-backed lockout parked until drills scale auth >1).
+# The PDB therefore allows eviction (maxUnavailable 1) instead of blocking
+# node drains forever on a 1-replica deployment.
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: lab-core
+  labels:
+    app: auth-service
+spec:
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+  selector:
+    app: auth-service
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: lab-core
+  labels:
+    app: auth-service
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: auth-service
+  template:
+    metadata:
+      labels:
+        app: auth-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+    spec:
+      # runAsNonRoot only — each image defines its own non-root user; forcing
+      # a UID broke graphrag's pip --user layout (see that manifest's note)
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: auth-service
+          image: localhost:5001/auth-service:dev
+          imagePullPolicy: Always
+          # drain window: endpoints propagation lags SIGTERM, so without this
+          # a rolling update briefly routes new connections to a terminating
+          # pod (observed: 2/200 failed probes in EXP-22)
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: "3000"
+            - name: DATABASE_HOST
+              value: postgres.lab-infra
+            - name: DATABASE_PORT
+              value: "5432"
+            - name: DATABASE_NAME
+              value: auth_db
+            - name: DATABASE_USER
+              value: auth_user
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: AUTH_DB_PASSWORD
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: auth-service-secrets
+                  key: JWT_SECRET
+            - name: LOG_LEVEL
+              value: info
+            # lab-sized app limits (compose parity); the per-IP edge limit
+            # lives on the ingress (ADR-009.5)
+            - name: RATE_LIMIT_MAX_REQUESTS
+              value: "100000"
+            - name: TOKEN_VALIDATION_RATE_LIMIT_MAX
+              value: "100000"
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: auth-service
+  namespace: lab-core
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: auth-service
