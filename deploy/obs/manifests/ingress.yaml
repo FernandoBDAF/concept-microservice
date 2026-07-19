@@ -1,0 +1,122 @@
+# Observability UIs behind the lab ingress — same hostname/TLS convention as
+# deploy/k8s/base/ingress/ingress.yaml (lab-ca ClusterIssuer, *.lab.local via
+# /etc/hosts or curl --resolve). Tempo gets no ingress: Grafana explores it.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana
+  namespace: lab-obs
+  annotations:
+    cert-manager.io/cluster-issuer: lab-ca
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [grafana.lab.local]
+      secretName: grafana-lab-local-tls
+  rules:
+    - host: grafana.lab.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: grafana # kps grafana.fullnameOverride
+                port:
+                  number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: prometheus
+  namespace: lab-obs
+  annotations:
+    cert-manager.io/cluster-issuer: lab-ca
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [prometheus.lab.local]
+      secretName: prometheus-lab-local-tls
+  rules:
+    - host: prometheus.lab.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kps-prometheus
+                port:
+                  number: 9090
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: alertmanager
+  namespace: lab-obs
+  annotations:
+    cert-manager.io/cluster-issuer: lab-ca
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [alertmanager.lab.local]
+      secretName: alertmanager-lab-local-tls
+  rules:
+    - host: alertmanager.lab.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kps-alertmanager
+                port:
+                  number: 9093
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: opensearch-dashboards
+  namespace: lab-obs
+  annotations:
+    cert-manager.io/cluster-issuer: lab-ca
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [opensearch.lab.local]
+      secretName: opensearch-lab-local-tls
+  rules:
+    - host: opensearch.lab.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: opensearch-dashboards
+                port:
+                  number: 5601
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ntfy
+  namespace: lab-obs
+  annotations:
+    cert-manager.io/cluster-issuer: lab-ca
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [ntfy.lab.local]
+      secretName: ntfy-lab-local-tls
+  rules:
+    - host: ntfy.lab.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ntfy
+                port:
+                  number: 80

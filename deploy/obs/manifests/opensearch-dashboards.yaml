@@ -1,0 +1,65 @@
+# OpenSearch Dashboards (ADR-003.3) — version-matched to the opensearch
+# StatefulSet. Reached via opensearch.lab.local (ingress.yaml).
+apiVersion: v1
+kind: Service
+metadata:
+  name: opensearch-dashboards
+  namespace: lab-obs
+  labels:
+    app: opensearch-dashboards
+spec:
+  ports:
+    - name: http
+      port: 5601
+      targetPort: http
+  selector:
+    app: opensearch-dashboards
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opensearch-dashboards
+  namespace: lab-obs
+  labels:
+    app: opensearch-dashboards
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opensearch-dashboards
+  template:
+    metadata:
+      labels:
+        app: opensearch-dashboards
+    spec:
+      containers:
+        - name: opensearch-dashboards
+          image: opensearchproject/opensearch-dashboards:2.19.1
+          ports:
+            - name: http
+              containerPort: 5601
+          env:
+            - name: OPENSEARCH_HOSTS
+              value: '["http://opensearch:9200"]'
+            - name: DISABLE_SECURITY_DASHBOARDS_PLUGIN
+              value: "true"
+          readinessProbe:
+            httpGet:
+              path: /api/status
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

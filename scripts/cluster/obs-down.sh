@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# make obs-down: remove the observability stack (ADR-003) from lab-obs.
+# Idempotent — safe on a cluster that never had it. The namespace itself
+# belongs to deploy/k8s/base (namespaces.yaml) and stays. The prometheus-
+# operator CRDs also stay: helm does not uninstall CRDs, and dropping them
+# would cascade-delete any monitors a re-install would want back; remove by
+# hand with `kubectl delete crd -l app.kubernetes.io/part-of=kube-prometheus`
+# if you really want a bare cluster.
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+
+step() { printf '\n\033[1;34m== %s\033[0m\n' "$*"; }
+
+step "1/2 delete deploy/obs/manifests"
+kustomize build --load-restrictor LoadRestrictionsNone deploy/obs/manifests \
+  | kubectl delete -f - --ignore-not-found
+
+step "2/2 uninstall helm releases"
+for release in redis-exporter postgres-exporter tempo kps; do
+  helm uninstall "$release" -n lab-obs --wait 2>/dev/null \
+    && echo "  uninstalled $release" \
+    || echo "  $release not installed"
+done
+
+printf '\n\033[1;32mobs stack removed\033[0m\n'

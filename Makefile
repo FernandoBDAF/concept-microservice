@@ -12,9 +12,11 @@ TAG        ?= dev
 PROFILE    ?= single
 
 .PHONY: help up infra down nuke ps logs verify verify-api verify-workers verify-auth verify-graphrag \
+	verify-relay verify-controld verify-guest \
 	monitoring queues sim-smoke sim-load sim-burst sim-poison sim-outage scale demo-document \
 	images init-secrets cluster-up cluster-down cluster-status cluster-logs cluster-queues \
-	cluster-scale cluster-sim-smoke cluster-sim-load cluster-sim-burst drift-check
+	cluster-scale cluster-sim-smoke cluster-sim-load cluster-sim-burst drift-check \
+	obs-up obs-down controld status-page guest-up guest-down guest-status
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -37,7 +39,7 @@ ps: ## Show stack status
 logs: ## Tail logs (all, or S=<service>)
 	docker compose logs -f $(S)
 
-verify: verify-api verify-workers verify-auth verify-graphrag ## Build + test every project locally
+verify: verify-api verify-workers verify-auth verify-graphrag verify-relay verify-controld verify-guest ## Build + test every project locally
 	@echo "✅ all projects verified"
 
 verify-api: ## Build, vet, test api-service (Go)
@@ -51,6 +53,15 @@ verify-auth: ## Typecheck, build, test auth-service (TypeScript)
 
 verify-graphrag: ## Compile-check graphrag-service (Python)
 	python3 -m compileall -q graph-worker/graphrag-service/src graph-worker/graphrag-service/cmd
+
+verify-relay: ## Build, vet, test the Alertmanager→ntfy relay (Go)
+	cd scripts/obs/ntfy-relay && go build ./... && go vet ./... && go test ./...
+
+verify-controld: ## Build, vet, test lab-controld (Go)
+	cd mission-control/controld && go build ./... && go vet ./... && go test ./...
+
+verify-guest: ## Build, vet, test the hello-guest fixture (Go)
+	cd guests/hello-guest && go build ./... && go vet ./... && go test ./...
 
 # ── Monitoring & simulations (PRD v1) ────────────────────────────────────────
 
@@ -98,7 +109,10 @@ images: ## Build + push all service images to the local registry (TAG=dev)
 	docker build -t $(REGISTRY)/email-worker:$(TAG) -f graph-worker/operational-workers/Dockerfile.email graph-worker/operational-workers
 	docker build -t $(REGISTRY)/image-worker:$(TAG) -f graph-worker/operational-workers/Dockerfile.image graph-worker/operational-workers
 	docker build -t $(REGISTRY)/profile-worker:$(TAG) -f graph-worker/operational-workers/Dockerfile.profile graph-worker/operational-workers
-	for i in api-service auth-service graphrag-service email-worker image-worker profile-worker; do \
+	docker build -t $(REGISTRY)/ntfy-relay:$(TAG) scripts/obs/ntfy-relay
+	docker build -t $(REGISTRY)/hello-guest-web:$(TAG) --build-arg CMD=web guests/hello-guest
+	docker build -t $(REGISTRY)/hello-guest-worker:$(TAG) --build-arg CMD=worker guests/hello-guest
+	for i in api-service auth-service graphrag-service email-worker image-worker profile-worker ntfy-relay hello-guest-web hello-guest-worker; do \
 		docker push $(REGISTRY)/$$i:$(TAG) || exit 1; done
 
 init-secrets: ## Generate lab credentials -> k8s Secrets (ADR-009.3; FORCE=1 rotates)
@@ -138,3 +152,32 @@ cluster-sim-burst: ## k6 burst against the cluster ingress
 
 drift-check: ## Compose ⇄ kustomize drift check (ADR-002.4)
 	python3 scripts/check-kustomize-drift.py
+
+# ── Observability stack (PRD v3, ADR-003) ─────────────────────────────────────
+
+obs-up: ## Observability stack into lab-obs (kps+tempo+exporters+logs+ntfy)
+	bash scripts/cluster/obs-up.sh
+
+obs-down: ## Remove the observability stack (namespace and CRDs stay)
+	bash scripts/cluster/obs-down.sh
+
+# ── Mission Control seed (PRD v3→v6, ADR-001.3/ADR-005) ──────────────────────
+
+controld: ## Run the read-only lab-controld on 127.0.0.1:4900
+	cd mission-control/controld && go run .
+
+status-page: ## Run the status page on 127.0.0.1:4901
+	cd mission-control/status-page && npm install && npm run dev
+
+# ── Guests (ADR-001.4/ADR-007, documentation/HOST_CONTRACT.md) ───────────────
+
+G ?= hello-guest
+
+guest-up: ## Start guest G as its own compose project (G=hello-guest)
+	docker compose -f guests/$(G)/docker-compose.yml up -d --build
+
+guest-down: ## Stop guest G
+	docker compose -f guests/$(G)/docker-compose.yml down
+
+guest-status: ## Status of guest G
+	docker compose -f guests/$(G)/docker-compose.yml ps

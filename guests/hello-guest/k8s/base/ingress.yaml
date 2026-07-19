@@ -1,0 +1,26 @@
+# hello-guest.lab.local via the shared ingress-nginx, TLS from the lab-ca
+# ClusterIssuer (same convention as deploy/k8s/base/ingress). Add the host to
+# /etc/hosts alongside api/auth.lab.local, or curl --resolve.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hello-guest-web
+  namespace: hello-guest
+  annotations:
+    cert-manager.io/cluster-issuer: lab-ca
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [hello-guest.lab.local]
+      secretName: hello-guest-lab-local-tls
+  rules:
+    - host: hello-guest.lab.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hello-guest-web
+                port:
+                  name: http

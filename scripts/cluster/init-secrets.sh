@@ -49,3 +49,7 @@ for ns in lab-infra lab-core; do
   apply_secret "$ns" minio-credentials "MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD"
 done
 apply_secret lab-core auth-service-secrets "JWT_SECRET=$JWT_SECRET"
+# lab-obs: the postgres-exporter (deploy/obs, ADR-003.5) reads the postgres
+# password from this Secret in its own namespace
+apply_secret lab-obs postgres-credentials \
+  "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" "AUTH_DB_PASSWORD=$AUTH_DB_PASSWORD"

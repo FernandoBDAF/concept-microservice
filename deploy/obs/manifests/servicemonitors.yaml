@@ -1,0 +1,101 @@
+# ServiceMonitors for the lab services (ADR-003.1) — the CRD-driven
+# equivalent of scripts/compose/prometheus.yml. Prometheus is configured with
+# serviceMonitorSelectorNilUsesHelmValues=false, so no release labels are
+# needed here. Port names/paths verified against the Service manifests under
+# deploy/k8s/base/. 15s interval = compose parity (CONTRACTS.md §5).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: api-service
+  namespace: lab-obs
+  labels:
+    lab.local/tier: observability
+spec:
+  namespaceSelector:
+    matchNames: [lab-core]
+  selector:
+    matchLabels:
+      app: api-service
+  endpoints:
+    - port: metrics # 8081
+      path: /metrics
+      interval: 15s
+---
+# auth-service serves /metrics on its main HTTP port (health.routes.ts,
+# mounted at the app root) — no separate metrics port.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: auth-service
+  namespace: lab-obs
+  labels:
+    lab.local/tier: observability
+spec:
+  namespaceSelector:
+    matchNames: [lab-core]
+  selector:
+    matchLabels:
+      app: auth-service
+  endpoints:
+    - port: http # 3000
+      path: /metrics
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: graphrag-service
+  namespace: lab-obs
+  labels:
+    lab.local/tier: observability
+spec:
+  namespaceSelector:
+    matchNames: [lab-core]
+  selector:
+    matchLabels:
+      app: graphrag-service
+  endpoints:
+    - port: metrics # 8081
+      path: /metrics
+      interval: 15s
+---
+# One monitor for all three workers: their Services share the port layout
+# (http/8080 doubling as metrics), so a matchExpressions selector covers
+# them; pod-level discovery resolves the EXP-07 scale-out undercount.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: workers
+  namespace: lab-obs
+  labels:
+    lab.local/tier: observability
+spec:
+  namespaceSelector:
+    matchNames: [lab-core]
+  selector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [email-worker, image-worker, profile-worker]
+  endpoints:
+    - port: http # 8080
+      path: /metrics
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: rabbitmq
+  namespace: lab-obs
+  labels:
+    lab.local/tier: observability
+spec:
+  namespaceSelector:
+    matchNames: [lab-infra]
+  selector:
+    matchLabels:
+      app: rabbitmq
+  endpoints:
+    - port: metrics # 15692 (rabbitmq_prometheus plugin)
+      path: /metrics
+      interval: 15s

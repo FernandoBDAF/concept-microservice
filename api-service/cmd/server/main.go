@@ -23,6 +23,7 @@ import (
 	"github.com/fernandobarroso/microservices/api-service/internal/infrastructure/rabbitmq"
 	redisInfra "github.com/fernandobarroso/microservices/api-service/internal/infrastructure/redis"
 	"github.com/fernandobarroso/microservices/api-service/internal/pkg/logger"
+	"github.com/fernandobarroso/microservices/api-service/internal/pkg/tracing"
 )
 
 func main() {
@@ -38,6 +39,21 @@ func main() {
 		os.Exit(1)
 	}
 	zap.ReplaceGlobals(log)
+
+	// OpenTelemetry tracing (ADR-003.2): no-op unless
+	// OTEL_EXPORTER_OTLP_ENDPOINT is set. Must run before anything that
+	// creates tracers (router, postgres client, publisher).
+	tracingShutdown, err := tracing.Init(context.Background(), "api-service")
+	if err != nil {
+		log.Fatal("failed to init tracing", zap.Error(err))
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := tracingShutdown(ctx); err != nil {
+			log.Error("failed to shutdown tracing", zap.Error(err))
+		}
+	}()
 
 	db, err := postgres.NewClient(cfg.Postgres)
 	if err != nil {

@@ -30,3 +30,11 @@ scrape_configs:
   - job_name: rabbitmq
     static_configs:
       - targets: ["rabbitmq:15692"]
+
+  # Guests (HOST_CONTRACT.md): targets resolve only while the guest project is
+  # up — a down job here is expected, and is itself a useful signal.
+  - job_name: hello-guest
+    static_configs:
+      - targets:
+          - "hello-guest-web:8080"
+          - "hello-guest-worker:8080"

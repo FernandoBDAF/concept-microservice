@@ -1,0 +1,31 @@
+# prometheus-postgres-exporter (pinned 8.2.0 / v0.20.1 — ADR-003.5: postgres
+# and redis exporters only). Password comes from Secret postgres-credentials,
+# which scripts/cluster/init-secrets.sh must also apply into lab-obs.
+fullnameOverride: postgres-exporter
+
+config:
+  datasource:
+    host: postgres.lab-infra
+    port: "5432"
+    user: postgres
+    database: postgres
+    sslmode: disable
+    passwordSecret:
+      name: postgres-credentials
+      key: POSTGRES_PASSWORD
+
+serviceMonitor:
+  enabled: true
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    cpu: 100m
+    memory: 64Mi
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]

@@ -16,3 +16,8 @@ minio>=7.2.0,<8.0.0                  # document download from MinIO
 python-json-logger>=2.0.0,<4.0.0     # structured JSON logs
 pydantic>=2.7.0,<3.0.0
 pydantic-settings>=2.2.0,<3.0.0
+
+# Tracing (optional at runtime: src/monitoring/tracing.py degrades to a no-op
+# when these are absent or OTEL_EXPORTER_OTLP_ENDPOINT is unset).
+opentelemetry-sdk==1.44.0
+opentelemetry-exporter-otlp-proto-http==1.44.0

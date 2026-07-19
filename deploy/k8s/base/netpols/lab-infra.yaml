@@ -58,6 +58,13 @@ spec:
         - podSelector:
             matchLabels:
               app: auth-migrate
+        # postgres-exporter (lab-obs, ADR-003.5)
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-obs
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus-postgres-exporter
       ports:
         - protocol: TCP
           port: 5432
@@ -80,6 +87,13 @@ spec:
           podSelector:
             matchLabels:
               app: api-service
+        # redis-exporter (lab-obs, ADR-003.5)
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-obs
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus-redis-exporter
       ports:
         - protocol: TCP
           port: 6379
@@ -117,6 +131,17 @@ spec:
       ports:
         - protocol: TCP
           port: 5672
+    # prometheus (lab-obs) scrapes the rabbitmq_prometheus plugin port
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-obs
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 15692
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

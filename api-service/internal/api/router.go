@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"go.uber.org/zap"
 
 	"github.com/fernandobarroso/microservices/api-service/internal/api/handlers"
@@ -29,6 +30,11 @@ func NewRouter(
 	logger *zap.Logger,
 ) *Router {
 	engine := gin.New()
+	// otelgin goes first so every downstream middleware/handler (including
+	// the logging middleware's trace_id field) sees the server span in the
+	// request context. With the no-op tracer provider (tracing disabled)
+	// this is effectively free.
+	engine.Use(otelgin.Middleware("api-service"))
 	engine.Use(gin.Recovery())
 	engine.Use(middleware.LoggingMiddleware(logger))
 	engine.Use(middleware.MetricsMiddleware())

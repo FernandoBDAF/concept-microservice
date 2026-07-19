@@ -1,0 +1,92 @@
+# OpenSearch single node (ADR-003.3 — the deliberately heavyweight choice).
+# Hard JVM caps (512m heap) + memory limits: resource pressure on the laptop
+# cluster is expected and is itself drill material. Storage is emptyDir on
+# purpose — lab logs are disposable; a pod restart costing the index is an
+# acceptable trade against pinning a PV to a kind node.
+apiVersion: v1
+kind: Service
+metadata:
+  name: opensearch
+  namespace: lab-obs
+  labels:
+    app: opensearch
+spec:
+  ports:
+    - name: http
+      port: 9200
+      targetPort: http
+    - name: transport
+      port: 9300
+      targetPort: transport
+  selector:
+    app: opensearch
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: opensearch
+  namespace: lab-obs
+  labels:
+    app: opensearch
+spec:
+  serviceName: opensearch
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opensearch
+  template:
+    metadata:
+      labels:
+        app: opensearch
+    spec:
+      initContainers:
+        # Lucene mmaps segment files; the kind node inherits the host's
+        # vm.max_map_count (usually 65530) and OpenSearch refuses to boot
+        # below 262144. Privileged one-shot, same pattern the upstream chart
+        # uses.
+        - name: sysctl
+          image: busybox:1.36.1
+          command: ["sysctl", "-w", "vm.max_map_count=262144"]
+          securityContext:
+            privileged: true
+      containers:
+        - name: opensearch
+          image: opensearchproject/opensearch:2.19.1
+          ports:
+            - name: http
+              containerPort: 9200
+            - name: transport
+              containerPort: 9300
+          env:
+            - name: discovery.type
+              value: single-node
+            - name: DISABLE_SECURITY_PLUGIN
+              value: "true"
+            - name: OPENSEARCH_JAVA_OPTS
+              value: "-Xms512m -Xmx512m"
+          volumeMounts:
+            - name: data
+              mountPath: /usr/share/opensearch/data
+          readinessProbe:
+            httpGet:
+              path: /_cluster/health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              cpu: 1000m
+              memory: 1536Mi
+      volumes:
+        - name: data
+          emptyDir: {}

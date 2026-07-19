@@ -467,6 +467,138 @@ overlay (15 policies: 6 lab-core + 9 lab-infra).
 
 ---
 
+## Observability experiments (v3)
+
+These need the v3 observability stack: `make obs-up` on the kind cluster
+(kube-prometheus-stack + Tempo + OpenSearch + fluent-bit + ntfy), or the
+compose stack where noted. Setup and URLs:
+[documentation/deployment/OBSERVABILITY.md](documentation/deployment/OBSERVABILITY.md).
+
+---
+
+## EXP-30 · One trace, whole system
+
+**Goal:** follow a single request from HTTP upload through the queue into
+graphrag consumption as *one* trace — proof the envelope `trace_id` is real
+W3C context, not decoration.
+**Validates:** ADR-003.2 — OTel SDKs in api-service/auth/workers/graphrag,
+AMQP context propagation (traceparent header), Tempo ingest, Grafana trace
+panels.
+
+**Steps**
+1. `make demo-document` (compose: tempo container; kind: Tempo in lab-obs).
+2. Grafana → Explore → Tempo: search service `api-service`, span name
+   containing `document.process` (or paste the `trace_id` printed in the
+   api-service log line for the upload).
+3. Open the trace; screenshot it for the write-up.
+
+**Expect:** one trace with spans from **≥3 services** — api-service HTTP +
+publish spans, graphrag consume span, plus the auth introspection HTTP call;
+envelope `metadata.trace_id` (visible in graphrag's log line) equals the
+Tempo trace ID.
+
+---
+
+## EXP-31 · Log triage
+
+**Goal:** from a Grafana DLQ blip to the exact failing payload, using only
+UIs — the operator's triage loop without terminal access.
+**Validates:** ADR-003.3 — fluent-bit shipping, OpenSearch index shape,
+trace_id correlation between metrics, traces, and logs.
+
+**Steps**
+1. Inject poison (EXP-05 levers): `python3 scripts/simulate/publish.py
+   poison --count 3` (or the port-forward variant on kind).
+2. Grafana **Dead-letter queues** panel steps up — note the queue and time.
+3. OpenSearch Dashboards → Discover → index `lab-logs-*`: filter
+   `kubernetes.labels.app: email-worker AND level: error` in that time
+   window; find the validation-error document; read the raw payload and its
+   `trace_id`.
+4. Search that `trace_id` across all services' logs — the full story of one
+   poison message, kubectl never touched.
+
+**Expect:** the failing payload reachable in ≤4 UI steps from the panel; the
+trace_id search returns correlated lines from ≥2 services.
+*Calibrated 2026-07-19:* publish.py poison bypasses HTTP, so its trace_ids
+are single-consumer — the validation-error line carries one (step 3 works),
+but the ≥2-service pivot belongs to API-originated traffic (e.g. a
+demo-document trace_id: api-service + graphrag lines in one query). The
+non-JSON flavor has no envelope to take a trace_id from; its path is
+queue+level+DLQ payload.
+
+---
+
+## EXP-32 · Page yourself
+
+**Goal:** the alert finds *you* before you find it — push-based alerting via
+ntfy, then a clean recovery.
+**Validates:** ADR-003.4 — PrometheusRule alert set, Alertmanager → ntfy
+routing, runbook links, alert resolution.
+
+**Steps**
+1. Subscribe to the lab topic (ntfy app or `curl -s ntfy.lab.local/lab-alerts/sse`).
+2. `kubectl -n lab-core scale deploy/email-worker --replicas=0`, then flood:
+   `python3 scripts/simulate/publish.py flood --routing-key email.send
+   --count 600` (port-forward recipe in deploy/k8s/README.md).
+3. Do not open Grafana. Wait for the **QueueDepthSustained** notification
+   (fires after depth > 500 for 5m) — it carries the runbook link to EXP-04/06.
+4. Recover: scale back to 1, watch the drain; the alert must resolve
+   (resolved notification arrives).
+
+**Expect:** the push arrives before you look at any dashboard; the runbook
+link opens the matching experiment; recovery clears the alert without manual
+silencing.
+
+---
+
+## EXP-33 · SLO baseline
+
+**Goal:** measure what the lab actually does under steady load and turn that
+into SLOs — this experiment's artifact IS the acceptance.
+**Validates:** ADR-003.6 — SLOs derive from measured baselines, encoded where
+alert rules read them.
+
+**Steps**
+1. Cluster up + obs up, everything idle-healthy.
+2. `bash scripts/simulate/slo-baseline.sh` (steady `sim-load` at calibrated
+   VUs/duration; snapshots p50/p95/p99, drain rates, and resource envelopes
+   from Prometheus at the end).
+3. Review the appended results block in
+   `documentation/experiments/SLO-BASELINE.md`; set SLO = baseline + margin
+   per the doc's worksheet; update the placeholder thresholds in the
+   PrometheusRule (`deploy/obs/manifests/`) to match.
+
+**Expect:** SLO-BASELINE.md gains a dated results block; alert thresholds
+stop being placeholders; a rerun under the same conditions stays within the
+recorded envelopes.
+
+---
+
+## EXP-34 · Hello-guest onboarding
+
+**Goal:** a foreign system onboards as a guest under the host contract and
+becomes a first-class lab citizen — isolation enforced, observability shared.
+**Validates:** ADR-001.4/ADR-007.1/.2 — HOST_CONTRACT.md v0, port blocks,
+namespace/netpol isolation, shared Grafana visibility.
+
+**Steps**
+1. `make guest-up G=hello-guest` (compose) or the cluster variant in
+   [guests/hello-guest/README.md](guests/hello-guest/README.md).
+2. Contract walk: web on its 41xx port block; `/health`, `/ready`,
+   `/metrics` all answer; Prometheus shows the guest targets up;
+   `hello_guest_*` series plot in Grafana.
+3. Isolation proof (kind): from the guest namespace, `nc -zv -w 3
+   postgres.lab-infra 5432` times out (guest matches no allow); the guest's
+   own web↔worker paths work.
+4. Run the guest's own experiment: EXP-HG-01 in
+   `guests/hello-guest/EXPERIMENTS.md`.
+
+**Expect:** guest up in one command; every contract clause demonstrably held
+(the README's clause→evidence table); EXP-HG-01 passes; `make guest-down
+G=hello-guest` leaves no residue.
+
+---
+
 ## Adding an experiment
 
 Copy this skeleton; keep Watch concrete (panel names, PromQL, commands) and

@@ -1,0 +1,42 @@
+# ServiceMonitors for hello-guest — kept apart from base because they need
+# the monitoring.coreos.com CRDs from the obs stack (deploy/obs, phase v3).
+# Apply only after the obs stack is installed:
+#   kubectl apply -k guests/hello-guest/k8s/obs
+#
+# NOTE: kube-prometheus-stack must be configured to select ServiceMonitors
+# across namespaces regardless of helm-release labels
+# (serviceMonitorSelectorNilUsesHelmValues: false) — or add its release label
+# here to match deploy/obs's selector.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: hello-guest-web
+  namespace: hello-guest
+  labels:
+    app: hello-guest-web
+    lab.local/guest: hello-guest
+spec:
+  selector:
+    matchLabels:
+      app: hello-guest-web
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: hello-guest-worker
+  namespace: hello-guest
+  labels:
+    app: hello-guest-worker
+    lab.local/guest: hello-guest
+spec:
+  selector:
+    matchLabels:
+      app: hello-guest-worker
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s

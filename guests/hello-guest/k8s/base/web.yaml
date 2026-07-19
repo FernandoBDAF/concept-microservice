@@ -1,0 +1,78 @@
+# hello-guest web — single port serves app + /metrics (tiny guest; no
+# separate metrics listener). Scraped via the ServiceMonitor in ../obs.
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-guest-web
+  namespace: hello-guest
+  labels:
+    app: hello-guest-web
+    lab.local/guest: hello-guest
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+  selector:
+    app: hello-guest-web
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-guest-web
+  namespace: hello-guest
+  labels:
+    app: hello-guest-web
+    lab.local/guest: hello-guest
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hello-guest-web
+  template:
+    metadata:
+      labels:
+        app: hello-guest-web
+        lab.local/guest: hello-guest
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: web
+          image: localhost:5001/hello-guest-web:dev
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8080
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 64Mi

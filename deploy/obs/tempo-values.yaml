@@ -1,0 +1,33 @@
+# grafana/tempo (single-binary chart, pinned 1.24.4 / Tempo 2.9.0 — ADR-003.2).
+# Chart over raw manifests: the chart's config template already wires
+# receivers/retention/storage coherently and matches the compose tempo.yaml
+# shape (HTTP API on 3200), so one mental model covers both targets.
+# No persistence: lab traces are disposable (same argument as OpenSearch
+# emptyDir, ADR-003.3); 24h in-pod retention is plenty for a drill session.
+fullnameOverride: tempo
+
+tempo:
+  reportingEnabled: false
+  retention: 24h
+  # OTLP only — nothing in the lab speaks jaeger/opencensus/zipkin.
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: "0.0.0.0:4317"
+        http:
+          endpoint: "0.0.0.0:4318"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+
+persistence:
+  enabled: false
