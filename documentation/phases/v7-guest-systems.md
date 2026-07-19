@@ -1,6 +1,9 @@
 # Phase v7 — Guest systems: mycelium (formerly KnowledgeManager) & loam
 
-**Status:** pending · **Depends on:** v6 (systems model), v5 (AWS sessions) ·
+**Status:** recon + plans + handoff landed (expedited 2026-07-19; both
+repos live under `~/repo/forest/`, not the paths below) — execute via
+[v7-HANDOFF.md](v7-HANDOFF.md) · **Depends on:** v6 (systems model), v5
+(AWS sessions) ·
 **Exit tag:** `lab-v7.0` · **Decisions in force:** ADR-007 (all), ADR-005.5,
 ADR-008 (conventions KM adopts), ADR-009.3 (secrets)
 

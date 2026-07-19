@@ -1,0 +1,23 @@
+# DRAFT (phase v7 — not yet launchable): loam guest registration.
+# Port block 43xx (HOST_CONTRACT.md). The knowledge UI is the long-running
+# service; agent runs execute as k8s Jobs in namespace `loam` (ADR-007.5)
+# and are NOT a systems-registry target — they arrive via the loam-side
+# runner adapter (v7-HANDOFF.md §5 spec).
+name: loam
+description: loam knowledge UI (service) + agent runs as k8s Jobs — guest
+port_block: 43xx
+targets:
+  compose:
+    up: make guest-up G=loam
+    down: make guest-down G=loam
+    status: make guest-status G=loam
+  kind:
+    up: kubectl apply -k guests/loam/k8s/base
+    down: kubectl delete -k guests/loam/k8s/base
+    status: kubectl -n loam get pods,jobs
+links:
+  compose:
+    knowledge-ui: http://localhost:4310
+  kind:
+    knowledge-ui: https://loam.lab.local
+experiments: guests/loam/

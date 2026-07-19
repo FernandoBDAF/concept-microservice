@@ -1,0 +1,23 @@
+# DRAFT (phase v7 — not yet launchable): mycelium (formerly
+# KnowledgeManager) guest registration. Port block 42xx (HOST_CONTRACT.md).
+# Becomes real when guests/mycelium/ lands per v7-HANDOFF.md §2-3; until
+# then controld should surface it as "planned" (registry loader treats a
+# missing guests/<name>/ dir as not-launchable).
+name: mycelium
+description: GraphRAG ingestion pipeline (YouTube → knowledge graphs) — guest
+port_block: 42xx
+targets:
+  compose:
+    up: make guest-up G=mycelium
+    down: make guest-down G=mycelium
+    status: make guest-status G=mycelium
+  kind:
+    up: kubectl apply -k guests/mycelium/k8s/base
+    down: kubectl delete -k guests/mycelium/k8s/base
+    status: kubectl -n mycelium get pods
+links:
+  compose:
+    stages-ui: http://localhost:4210
+  kind:
+    stages-ui: https://mycelium.lab.local
+experiments: guests/mycelium/
