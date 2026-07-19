@@ -1,0 +1,161 @@
+# Persistent base stack (ADR-006.4): everything here must idle at ≈ $0.
+# ECR repos, Route53 zone, budget alarms, TTL reaper. Applied rarely;
+# destroyed never (except account teardown).
+#
+# terraform init -backend-config="bucket=<state_bucket from bootstrap>" \
+#                -backend-config="dynamodb_table=coppice-lab-tf-lock" \
+#                -backend-config="region=<aws_region>"
+# terraform apply -var-file=../terraform.tfvars
+
+terraform {
+  required_version = ">= 1.9"
+  required_providers {
+    aws = { source = "hashicorp/aws", version = "~> 6.0" }
+  }
+  backend "s3" {
+    key     = "base/terraform.tfstate"
+    encrypt = true
+    # bucket/dynamodb_table/region via -backend-config (account-specific)
+  }
+}
+
+variable "aws_region" { type = string }
+variable "aws_profile" { type = string }
+variable "lab_domain" { type = string }
+variable "budget_limit" { type = number }
+variable "alert_email" { type = string }
+
+provider "aws" {
+  region  = var.aws_region
+  profile = var.aws_profile
+  default_tags {
+    tags = { project = "coppice-lab", stack = "base" }
+  }
+}
+
+# ── ECR: one repo per image `make images` pushes (incl. v3 additions) ────────
+locals {
+  images = [
+    "api-service", "auth-service", "graphrag-service",
+    "email-worker", "image-worker", "profile-worker",
+    "ntfy-relay", "hello-guest-web", "hello-guest-worker",
+  ]
+}
+
+resource "aws_ecr_repository" "svc" {
+  for_each             = toset(local.images)
+  name                 = "coppice-lab/${each.key}"
+  image_tag_mutability = "MUTABLE" # dev tags; sessions pin by digest/tag
+  force_delete         = true
+}
+
+resource "aws_ecr_lifecycle_policy" "svc" {
+  for_each   = aws_ecr_repository.svc
+  repository = each.value.name
+  # keep last 10 images — storage stays in cents territory
+  policy = jsonencode({
+    rules = [{
+      rulePriority = 1
+      description  = "keep last 10"
+      selection = {
+        tagStatus   = "any"
+        countType   = "imageCountMoreThan"
+        countNumber = 10
+      }
+      action = { type = "expire" }
+    }]
+  })
+}
+
+# ── Route53 zone (ADR-006.6) — delegate lab_domain's NS here ─────────────────
+resource "aws_route53_zone" "lab" {
+  name    = var.lab_domain
+  comment = "coppice lab (ADR-006.6); survives sessions"
+}
+
+# ── Budget + alarms (ADR-006.4): 50/80/100% notifications ───────────────────
+resource "aws_budgets_budget" "monthly" {
+  name         = "coppice-lab-monthly"
+  budget_type  = "COST"
+  limit_amount = tostring(var.budget_limit)
+  limit_unit   = "USD"
+  time_unit    = "MONTHLY"
+
+  dynamic "notification" {
+    for_each = [50, 80, 100]
+    content {
+      comparison_operator        = "GREATER_THAN"
+      threshold                  = notification.value
+      threshold_type             = "PERCENTAGE"
+      notification_type          = "ACTUAL"
+      subscriber_email_addresses = [var.alert_email]
+      # TODO(v5): ntfy delivery — SNS topic + a tiny Lambda POSTing to the
+      # ntfy topic (reuse scripts/obs/ntfy-relay payload mapping). Email is
+      # the v0 channel; HANDOFF §3 has the Lambda outline.
+    }
+  }
+}
+
+# ── TTL reaper (ADR-006.4): EventBridge hourly → Lambda deleting expired ────
+# ttl-tagged resources. SKELETON: infra wired, function body pending
+# (HANDOFF §4 — resource-groups query on tag `ttl` < now, delete by type;
+# aws-nuke rejected in favor of this scoped reaper).
+resource "aws_iam_role" "reaper" {
+  name = "coppice-lab-reaper"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "lambda.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "reaper" {
+  name = "reaper"
+  role = aws_iam_role.reaper.id
+  # TODO(v5): tighten to the exact delete surface once the function exists;
+  # start read-only (DescribeInstances, tag:GetResources, logs) + dry-run.
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["tag:GetResources", "logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
+      Resource = "*"
+    }]
+  })
+}
+
+resource "aws_lambda_function" "reaper" {
+  function_name = "coppice-lab-reaper"
+  role          = aws_iam_role.reaper.arn
+  runtime       = "python3.12"
+  handler       = "reaper.handler"
+  filename      = "${path.module}/reaper/reaper.zip" # built by `make aws-reaper-pack` (HANDOFF §4)
+  timeout       = 60
+  environment {
+    variables = { DRY_RUN = "true" } # flip only after EXP-55 dry-run proof
+  }
+}
+
+resource "aws_cloudwatch_event_rule" "reaper_hourly" {
+  name                = "coppice-lab-reaper-hourly"
+  schedule_expression = "rate(1 hour)"
+}
+
+resource "aws_cloudwatch_event_target" "reaper" {
+  rule = aws_cloudwatch_event_rule.reaper_hourly.name
+  arn  = aws_lambda_function.reaper.arn
+}
+
+resource "aws_lambda_permission" "reaper_events" {
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.reaper.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.reaper_hourly.arn
+}
+
+output "ecr_registry" { value = split("/", aws_ecr_repository.svc["api-service"].repository_url)[0] }
+output "zone_id" { value = aws_route53_zone.lab.zone_id }
+output "zone_ns" { value = aws_route53_zone.lab.name_servers }

@@ -1,0 +1,25 @@
+# AWS overlay (phase v5) — SKELETON. v2's kustomize tree is the deployment
+# unit; this overlay swaps the kind-isms for EKS realities. It renders today
+# (CI-checkable) but the TODO patches below are the v5 handoff work
+# (documentation/phases/v5-HANDOFF.md §6):
+#
+#  1. images: localhost:5001/* → <ecr_registry>/coppice-lab/*:<tag>
+#     (kustomize `images:` transformer; tag from the deploy pipeline)
+#  2. MinIO env → S3: api-service MINIO_ENDPOINT dropped, IRSA
+#     ServiceAccount annotation (eks.amazonaws.com/role-arn), bucket name
+#     from session outputs; minio/minio-init/mongodb? — minio Statefulset
+#     REMOVED via patchesStrategicMerge $patch: delete (mongo/redis/rabbitmq
+#     stay self-hosted, ADR-006.3)
+#  3. DSNs from Secrets Manager via external-secrets (ADR-009.3):
+#     ExternalSecret CRs replacing init-secrets.sh Secrets, same Secret
+#     names/keys so deployments don't change
+#  4. ingress: className alb + ACM annotations, hosts api.<domain>,
+#     grafana.<domain>; cert-manager/lab-ca patches removed
+#  5. storage classes: gp3 for any PVCs (rabbitmq/mongo/postgres-replaced)
+#  6. netpols: kept as-is (VPC CNI needs the network-policy agent enabled —
+#     HANDOFF flags the EKS addon config)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base

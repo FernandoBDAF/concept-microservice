@@ -1,6 +1,9 @@
 # Phase v5 — AWS track
 
-**Status:** pending · **Depends on:** v4 (deploys the hardened lab) ·
+**Status:** architecture + terraform skeleton landed (expedited 2026-07-19;
+never applied — no AWS account wired) — execute via
+[v5-HANDOFF.md](v5-HANDOFF.md) · **Depends on:** v4 (deploys the hardened
+lab) ·
 **Exit tag:** `lab-v5.0` · **Decisions in force:** ADR-006 (all), ADR-009.3
 (Secrets Manager layer), ADR-010.2 (CI phase 3)
 

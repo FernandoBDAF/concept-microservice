@@ -181,3 +181,18 @@ guest-down: ## Stop guest G
 
 guest-status: ## Status of guest G
 	docker compose -f guests/$(G)/docker-compose.yml ps
+
+# ── AWS track (PRD v5, ADR-006) — skeleton; see deploy/aws/README.md ─────────
+
+TFVARS := deploy/aws/terraform.tfvars
+
+aws-plan: ## Terraform plan for the session stack (requires step-0 setup)
+	cd deploy/aws/session && terraform plan -var-file=../terraform.tfvars
+
+aws-up: ## Stand up a session: apply session stack, deploy, verify (~20 min)
+	@test -f $(TFVARS) || { echo "missing $(TFVARS) — see documentation/deployment/AWS_SESSION.md step 0"; exit 1; }
+	cd deploy/aws/session && terraform apply -var-file=../terraform.tfvars
+	@echo "TODO(v5 HANDOFF §7): kubeconfig + kustomize apply overlays/aws + obs install + checkpoints"
+
+aws-down: ## Destroy the session stack (explicit confirmation inside)
+	cd deploy/aws/session && terraform destroy -var-file=../terraform.tfvars
