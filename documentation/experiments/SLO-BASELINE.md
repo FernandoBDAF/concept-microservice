@@ -60,7 +60,11 @@ Conditions: target=cluster, VUs=10, duration=10m, host=fbarrosoaw.
 Snapshot note: the in-run port-forward died before the snapshot; these
 are the same instant queries re-evaluated at 20:57:50Z (&time=) over
 the [10m] run window — numerically equivalent, repair documented in
-the exit-runs write-up.
+the exit-runs write-up. Reading the block: `p5` is the script's old
+quantile-label artifact for **p50** (generator fixed for future runs);
+the empty `5xx ratio` section is an empty query result — zero 5xx series
+in the window, the worksheet's 100%; the lone unlabeled drain-rate value
+is the email worker's (the write-up's 7.6 msg/s figure).
 
 ```
 -- API latency quantiles (s, over the run window) --
@@ -86,5 +90,3 @@ image-worker-747744f8-s5wh2: 11382784.0000
 profile-worker-7457c696c4-zk7kc: 20557824.0000
 email-worker-dc7c9d464-htvnb: 12095488.0000
 ```
-
-_Next: transfer these into the worksheet above, add margins, update the PrometheusRule thresholds._

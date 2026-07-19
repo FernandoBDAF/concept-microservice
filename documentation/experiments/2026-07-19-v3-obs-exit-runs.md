@@ -4,8 +4,8 @@
 v3 implementation itself was the 2026-07-19 expedited pass) · **Cluster:**
 kind `single` (kindest/node:v1.36.1, kind v0.32.0) on a fresh Windows 11 +
 WSL2 host — the toolchain bootstrap that machine needed is PR'd separately
-(README Dependencies guide) · **Result:** all five pass; **four real
-defects** found and fixed en route (three of them the exact class the
+(README Dependencies guide) · **Result:** all five pass; **six real
+defects** found and fixed en route (four of them the exact class the
 deferred ledger existed to catch: code that compiles green but had never
 executed).
 
@@ -48,6 +48,17 @@ v1.1/v2 runs.
    consume span's trace id (always valid at that site — extracted parent
    or fresh root). The unmarshal-flavor line stays bare: a non-JSON body
    has no envelope to extract, and its triage path is queue+level+payload.
+5. **Prometheus could not scrape guest namespaces** — the guest-side netpol
+   admitted lab-obs, but lab-obs's `prometheus-scrape-egress` had never
+   learned about guest namespaces; zero-trust cuts both ends. Fix: one
+   egress rule selecting `lab.local/tier: guest` namespaces on the
+   contract's :8080 — every future guest inherits scrapeability from the
+   namespace label (full story in EXP-34).
+6. **EXP-HG-01's compose crash lever could never fire** — `docker kill` is
+   a manual stop, which `restart: unless-stopped` deliberately does not
+   revive; the drill claimed self-healing with a lever that cannot show
+   it. Fix: crash from inside (`docker exec … kill 1`), validated live —
+   revived in ~6 s (details in EXP-34).
 
 Cross-platform verify fixes that fell out of running the battery on
 Windows (not lab defects): `rimraf --glob` in auth-service scripts,
@@ -234,10 +245,6 @@ read-only banner — screenshot in the session evidence. One environment
 note: Next.js 15 enforces Node ≥ 18.18 — the host's Node 18.17 refused to
 even start the dev server (ZIP-installed Node 24 resolved it; the README
 dependency guide's "Node 20+" line is the requirement to trust).
-
-## Status page + watch-without-terminal spot-check
-
-<!-- PENDING -->
 
 ## Operational notes for future runs
 

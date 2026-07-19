@@ -22,9 +22,10 @@ machine and **every item passed**, finding six real defects on the way
 
 ## Caveats from the implementation pass — resolution
 
-- **Alert routing deviates from the phase text** (Prometheus-native, not
+- **Alert routing deviates from ADR-003.4** (Prometheus-native, not
   Grafana alerting): kept — EXP-32 validated the full pipeline; one
-  alerting path is easier to drill than two.
+  alerting path is easier to drill than two. Promoted to the decision
+  trail as ADR-003.7, which supersedes 003.4.
 - **SLO thresholds are placeholders**: resolved — calibrated 2026-07-19,
   see SLO-BASELINE.md worksheet (including the deliberate queue-depth
   override and its rationale).
