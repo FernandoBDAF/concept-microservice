@@ -24,3 +24,4 @@ scripts/obs/ntfy-relay/ntfy-relay
 .terraform.lock.hcl
 deploy/aws/terraform.tfvars
 deploy/aws/base/reaper/reaper.zip
+deploy/aws/base/ntfy-notifier/ntfy-notifier.zip

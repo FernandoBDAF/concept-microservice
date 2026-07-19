@@ -1,0 +1,53 @@
+# Migration Jobs (patch 5): point at RDS instead of the in-cluster postgres.
+# The PGPASSWORD env still comes from postgres-credentials (ExternalSecret);
+# only the host changes + TLS is required. The whole `command` list is
+# replaced (atomic — no merge key) so the psql -h target moves to RDS.
+#
+# WP1 EXPECTATION: RDS must already have the databases and the auth role when
+# these Jobs run — they apply schema DDL, they do NOT CREATE DATABASE/ROLE
+# (on kind that was postgres-initdb). terraform must provision:
+#   database api_db, database auth_db, role auth_user (password=AUTH_DB_PASSWORD)
+# owning/granted auth_db. HANDOFF §5.3 calls this out.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: api-migrate
+  namespace: lab-infra
+spec:
+  template:
+    spec:
+      containers:
+        - name: migrate
+          command:
+            - sh
+            - -c
+            - >
+              for f in $(ls /migrations/*.up.sql | sort); do
+              echo "applying $f";
+              psql -h RDS_ADDRESS_PLACEHOLDER -U postgres -d api_db -v ON_ERROR_STOP=1 -f "$f" || exit 1;
+              done
+          env:
+            - name: PGSSLMODE
+              value: require
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: auth-migrate
+  namespace: lab-infra
+spec:
+  template:
+    spec:
+      containers:
+        - name: migrate
+          command:
+            - sh
+            - -c
+            - >
+              for f in $(ls /migrations/*.sql | sort); do
+              echo "applying $f";
+              psql -h RDS_ADDRESS_PLACEHOLDER -U auth_user -d auth_db -v ON_ERROR_STOP=1 -f "$f" || exit 1;
+              done
+          env:
+            - name: PGSSLMODE
+              value: require

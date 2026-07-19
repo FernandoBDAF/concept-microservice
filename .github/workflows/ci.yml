@@ -64,7 +64,12 @@ jobs:
             https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.5.0/kustomize_v5.5.0_linux_amd64.tar.gz
           tar -xzf /tmp/kustomize.tgz -C /usr/local/bin kustomize
       - run: python3 scripts/check-kustomize-drift.py
+      # v5 aws overlay renders (phase 3 deploy target — the deploy-aws.yml apply
+      # unit; base needs LoadRestrictionsNone, see deploy/k8s/base/kustomization)
+      - run: kustomize build --load-restrictor LoadRestrictionsNone deploy/k8s/overlays/aws > /dev/null
       # v3 additions render standalone (not part of the drift-checked overlay)
       - run: kustomize build --load-restrictor LoadRestrictionsNone deploy/obs/manifests > /dev/null
+      # v5: obs log pipeline split out (OBS_LOGS=0 lets AWS sessions skip it)
+      - run: kustomize build deploy/obs/manifests/logs > /dev/null
       - run: kustomize build guests/hello-guest/k8s/base > /dev/null
       - run: kustomize build guests/hello-guest/k8s/obs > /dev/null

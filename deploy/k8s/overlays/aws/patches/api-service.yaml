@@ -1,0 +1,41 @@
+# api-service (patches 2 + 3): IRSA SA, MinIO env → S3, DSN host → RDS.
+#
+# CODE GAP (WP-external, MUST fix for S3 auth to work): api-service's storage
+# client is minio-go constructed with credentials.NewStaticV4 (see
+# api-service/internal/infrastructure/minio/client.go). Static V4 creds do NOT
+# use IRSA; with the MINIO_ACCESS_KEY/SECRET_KEY env dropped below the client
+# gets empty creds and S3 calls fail. The code must switch to the IRSA
+# web-identity provider (minio-go credentials.NewIAM("") or the AWS SDK
+# default chain) before this overlay works end to end. Also: config.Validate()
+# currently REQUIRES access+secret keys when minio.endpoint is set — that guard
+# must relax under IRSA. Tracked in wp2 integration notes.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-service
+  namespace: lab-core
+spec:
+  template:
+    spec:
+      serviceAccountName: api-service
+      containers:
+        - name: api-service
+          env:
+            # static MinIO creds removed — IRSA supplies S3 credentials
+            - name: MINIO_ACCESS_KEY
+              $patch: delete
+            - name: MINIO_SECRET_KEY
+              $patch: delete
+            # point the S3-API client at real S3 (regional endpoint, TLS on)
+            - name: MINIO_ENDPOINT
+              value: s3.AWS_REGION_PLACEHOLDER.amazonaws.com
+            - name: MINIO_USE_SSL
+              value: "true"
+            - name: MINIO_BUCKET_NAME
+              value: S3_BUCKET_PLACEHOLDER
+            - name: AWS_REGION
+              value: AWS_REGION_PLACEHOLDER
+            # DSN password still injected from the postgres-credentials Secret
+            # (now an ExternalSecret); only the host moves to RDS + TLS.
+            - name: API_POSTGRES_DSN
+              value: postgres://postgres:$(POSTGRES_PASSWORD)@RDS_ADDRESS_PLACEHOLDER:5432/api_db?sslmode=require

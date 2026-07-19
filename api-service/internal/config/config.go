@@ -224,11 +224,13 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("auth url cannot be empty")
 	}
 	if c.MinIO.Endpoint != "" {
-		if c.MinIO.AccessKeyID == "" {
-			return fmt.Errorf("minio access key is required when endpoint is set")
-		}
-		if c.MinIO.SecretAccessKey == "" {
-			return fmt.Errorf("minio secret key is required when endpoint is set")
+		// Both keys empty is valid: the client falls back to the ambient AWS
+		// credential chain (EKS IRSA / instance role). Both keys set selects
+		// static creds (compose/kind/MinIO). Only a partial config is an error.
+		hasAccess := c.MinIO.AccessKeyID != ""
+		hasSecret := c.MinIO.SecretAccessKey != ""
+		if hasAccess != hasSecret {
+			return fmt.Errorf("minio access key and secret key must both be set (static creds) or both be empty (ambient/IRSA creds)")
 		}
 	}
 	return nil

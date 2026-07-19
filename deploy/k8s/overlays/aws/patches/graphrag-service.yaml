@@ -1,0 +1,25 @@
+# graphrag-service (patch 2): IRSA SA, MinIO env → S3. Same CODE GAP caveat as
+# api-service — the S3 client must use IRSA creds, not the dropped static keys.
+# mongodb + rabbitmq stay self-hosted, so their env is untouched.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: graphrag-service
+  namespace: lab-core
+spec:
+  template:
+    spec:
+      serviceAccountName: graphrag-service
+      containers:
+        - name: graphrag-service
+          env:
+            - name: MINIO_ACCESS_KEY
+              $patch: delete
+            - name: MINIO_SECRET_KEY
+              $patch: delete
+            - name: MINIO_ENDPOINT
+              value: s3.AWS_REGION_PLACEHOLDER.amazonaws.com
+            - name: MINIO_USE_SSL
+              value: "true"
+            - name: AWS_REGION
+              value: AWS_REGION_PLACEHOLDER

@@ -1,13 +1,40 @@
 # Phase v5 handoff — AWS track
 
 **Audience:** the session that finishes v5. Decisions are settled
-(ADR-006); this file sequences the work. The skeleton you inherit:
-`deploy/aws/{backend-bootstrap,base,session}` (bootstrap + base are
-essentially complete; session has settled TODO blocks),
-`deploy/k8s/overlays/aws` (renders, patches pending), `make
-aws-plan/aws-up/aws-down` stubs, `documentation/deployment/AWS_SESSION.md`
-draft. **Nothing has ever been applied — terraform was not installed at
-authoring time; expect first-`terraform validate` fixes as your step 1.**
+(ADR-006); this file sequences the work.
+
+## Execution state (2026-07-19 execution pass — code-complete, never applied)
+
+All build-side steps below (1, 3-9) are **DONE** and statically verified:
+three terraform stacks `fmt`+`validate` clean (terraform 1.15.8; modules
+resolved live: eks 21.24.0, rds 6.13.1, iam 5.60.0, vpc 6.x; provider aws
+6.55.0); aws overlay + kind overlays + obs manifests render; `make verify`
++ `make drift-check` green; reaper has offline unit tests; both workflows
+parse. Chart pins verified against the live helm repos: alb-controller
+3.4.2, external-secrets 2.8.0 (CRs on `external-secrets.io/v1` — v1beta1
+is served:false in that chart), external-dns 1.21.1. Extra beyond this
+file's plan: api-service (Go) and graphrag (Python) S3 clients gained an
+ambient-credential (IRSA) fallback — the static-key-only clients would
+have failed on EKS once the overlay drops the key env.
+
+**Still open (needs the step-0 account / a live session):**
+
+1. Step 0 itself (account, `lab` profile, tfvars) — owner-manual.
+2. First applies: bootstrap apply → `make aws-init` → `make aws-base-pack`
+   → base apply → NS delegation → ECR seed (steps 1-2 below).
+3. GitHub repo vars `AWS_DEPLOY_ROLE_ARN`/`AWS_REGION`; per-session tfvar
+   `deploy_role_arn` (grants the CI role its EKS access entry) — then
+   EXP-54.
+4. EXP-50..55, incl. flipping the reaper's DRY_RUN (EXP-55) and the
+   presigned-URL-under-IRSA round-trip (EXP-50).
+5. Follow-ups registered in AWS_SESSION.md "Known gaps": lab-obs
+   postgres-exporter ExternalSecret, `patches/netpols-aws.yaml` once
+   VPC-CNI enforcement is exercised, WAF for auth rate-limiting,
+   auth-service RDS TLS check, uniform Secrets-Manager migration for
+   rabbitmq/mongo/jwt.
+
+The original sequencing below is kept as the record of what each step
+meant — read it with the state above in mind.
 
 Order matters: 0 → 1 → 2 → 3/4 (parallel-ok) → 5 → 6 → 7 → 8 → 9.
 

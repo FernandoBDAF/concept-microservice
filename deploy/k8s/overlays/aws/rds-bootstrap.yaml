@@ -1,0 +1,67 @@
+# RDS bootstrap (WP1 contract §3): on kind, postgres-initdb.sh created the
+# auth_user role + auth_db database. RDS only creates api_db (owned by the
+# master `postgres`), so this one-shot Job does the rest before auth-migrate
+# can connect. Runs as the RDS master; idempotent (\gexec guards) so re-runs
+# and backoff retries are safe.
+#
+# Ordering: auth-migrate has backoffLimit 10 / restartPolicy OnFailure, so it
+# self-heals once this Job completes even when applied together. make
+# aws-deploy SHOULD still `kubectl wait --for=condition=complete job/rds-bootstrap`
+# before the migration Jobs for determinism (see wp2 notes).
+#
+# NETPOL: like the migrate Jobs this needs egress to RDS (an EXTERNAL address,
+# not the removed in-cluster postgres pod). With the VPC-CNI network-policy
+# agent enabled the base allows do NOT cover external egress — see the netpol
+# note in kustomization.yaml / wp2 notes.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rds-bootstrap
+  namespace: lab-infra
+  labels:
+    app: rds-bootstrap
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      labels:
+        app: rds-bootstrap
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: bootstrap
+          image: postgres:15-alpine
+          # literal block (|) — the psql heredoc needs real newlines and the
+          # `SQL` terminator on its own line; a folded (>) scalar would break it.
+          command:
+            - sh
+            - -c
+            - |
+              psql -h RDS_ADDRESS_PLACEHOLDER -U postgres -d api_db -v ON_ERROR_STOP=1 -v pw="$AUTH_DB_PASSWORD" <<'SQL'
+              SELECT 'CREATE ROLE auth_user LOGIN PASSWORD ' || quote_literal(:'pw')
+                WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'auth_user')\gexec
+              SELECT 'ALTER ROLE auth_user LOGIN PASSWORD ' || quote_literal(:'pw')
+                WHERE EXISTS (SELECT FROM pg_roles WHERE rolname = 'auth_user')\gexec
+              SELECT 'CREATE DATABASE auth_db OWNER auth_user'
+                WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'auth_db')\gexec
+              SQL
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_PASSWORD
+            - name: AUTH_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: AUTH_DB_PASSWORD
+            - name: PGSSLMODE
+              value: require
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi

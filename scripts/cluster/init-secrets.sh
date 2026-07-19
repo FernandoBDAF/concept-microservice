@@ -3,8 +3,16 @@
 # k8s Secrets in both namespaces. Values persist in .lab-secrets.env
 # (gitignored) so re-runs and cluster rebuilds reuse them; FORCE=1 rotates.
 # Compose mode is untouched — it keeps its lab-default .env values.
+#
+# SKIP_POSTGRES=1 (AWS sessions, v5): don't touch any postgres-credentials
+# Secret — on EKS those are owned by the external-secrets ExternalSecret
+# (real RDS password from Secrets Manager); a random one here would fight the
+# controller and be wrong anyway. rabbitmq/mongo/jwt stay seeded here on AWS
+# too (follow-up: move them to Secrets Manager for uniformity).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+
+SKIP_POSTGRES="${SKIP_POSTGRES:-0}"
 
 ENVFILE=".lab-secrets.env"
 
@@ -39,7 +47,7 @@ apply_secret() { # ns name key=value...
 
 echo "applying secrets:"
 for ns in lab-infra lab-core; do
-  apply_secret "$ns" postgres-credentials \
+  [ "$SKIP_POSTGRES" = "1" ] || apply_secret "$ns" postgres-credentials \
     "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" "AUTH_DB_PASSWORD=$AUTH_DB_PASSWORD"
   # username stays `guest` — the api-service viper default (CONTRACTS.md §4);
   # the docker image permits remote guest, and the password is real anyway
@@ -50,6 +58,8 @@ for ns in lab-infra lab-core; do
 done
 apply_secret lab-core auth-service-secrets "JWT_SECRET=$JWT_SECRET"
 # lab-obs: the postgres-exporter (deploy/obs, ADR-003.5) reads the postgres
-# password from this Secret in its own namespace
-apply_secret lab-obs postgres-credentials \
+# password from this Secret in its own namespace. Skipped on AWS with the
+# others — the exporter needs an ExternalSecret + RDS host there (follow-up,
+# registered in v5-HANDOFF).
+[ "$SKIP_POSTGRES" = "1" ] || apply_secret lab-obs postgres-credentials \
   "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" "AUTH_DB_PASSWORD=$AUTH_DB_PASSWORD"

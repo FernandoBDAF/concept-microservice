@@ -5,3 +5,10 @@ aws_profile  = "lab"                # SSO/credentials profile for the dedicated 
 lab_domain   = "lab.example.com"    # ADR-006.6: Route53 zone you own
 budget_limit = 50                   # USD/month (ADR-006.4)
 alert_email  = "you@example.com"    # budget alarms (ntfy topic wired later)
+
+# Optional (defaulted) — uncomment to override. Stack-specific vars stay
+# commented here so the other stacks don't warn about undeclared values.
+# ntfy_topic_url  = "https://ntfy.sh/coppice-lab-budget"  # base: budget→ntfy fan-out (HANDOFF §3); "" = email-only
+# cluster_version = "1.33"   # session: EKS control plane, keep at latest-1
+# multi_az        = true     # session: RDS Multi-AZ — ONLY for the EXP-53 failover session
+# deploy_role_arn = ""       # session: base stack output `oidc_deploy_role_arn` → CI gets an EKS access entry (EXP-54)
