@@ -1,0 +1,28 @@
+# EXP-04 · Burst absorption & drain. Prose companion: EXPERIMENTS.md §EXP-04.
+id: exp-04
+title: Burst absorption & drain
+needs: [compose]
+steps:
+  - run: make queues
+  # 50 VUs / 30s (~1,400 iterations). k6's http_req_failed<0.05 threshold means
+  # a passing step already proves "backlog is buffering, not failing".
+  - run: make sim-burst
+  - run: make queues
+watch:
+  - "Lab Overview → Queue depth: email/profile-processing climb into the hundreds, then drain"
+  - "backlog peaks of several hundred; full drain in a few minutes"
+  - "email (prefetch 5) vs profile (prefetch 2) drain slopes — note msg/s per worker (EXP-07 baseline)"
+assertions:
+  # the point of the queue: the backlog fully drains after the burst ends.
+  - type: promql
+    query: sum(rabbitmq_queue_messages{queue=~".*-processing"})
+    op: "<="
+    value: 0
+    timeout: 300s
+  # load is not failure — the Dead-letter queues panel stays flat.
+  - type: promql
+    query: sum(rabbitmq_queue_messages{queue=~".+\\.dlq"})
+    op: "=="
+    value: 0
+    timeout: 30s
+cleanup: []

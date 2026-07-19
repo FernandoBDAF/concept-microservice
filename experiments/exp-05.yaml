@@ -1,0 +1,47 @@
+# EXP-05 · Poison messages & DLQ triage. Prose companion: EXPERIMENTS.md §EXP-05.
+# v4 note: with the ADR-008.1 retry classifier, poison (unmarshal / empty-payload
+# = ErrUnretryable) skips the retry tiers and is published straight to the DLQ,
+# so the +6 / +3 counts below hold exactly as in v1. (Pre-A3 nack-to-DLQ yields
+# the same counts.)
+id: exp-05
+title: Poison messages & DLQ triage
+needs: [compose]
+steps:
+  # publish.py poison sends count x 2 flavors (not-JSON + empty-payload) to all
+  # 4 exchanges → +6 each for the Go workers.
+  - run: make sim-poison
+watch:
+  - "Lab Overview → Dead-letter queues panel steps up; Worker errors blips"
+  - "RabbitMQ UI → email-processing.dlq → Get messages: read the raw poison payload"
+  - "make logs S=email-worker — find the parse/validation error lines"
+assertions:
+  # email/image/profile-processing.dlq +6 each = 18 (>= tolerates residue from an
+  # earlier run; this experiment's cleanup purges the DLQs).
+  - type: promql
+    query: sum(rabbitmq_queue_messages{queue=~"(email|image|profile)-processing\\.dlq"})
+    op: ">="
+    value: 18
+    timeout: 120s
+  # document-processing.dlq +3 only — graphrag ACK-drops the structurally-valid
+  # empty-payload flavor by design (CONCEPTUAL_REVIEW §12), keeping just not-JSON.
+  - type: promql
+    query: rabbitmq_queue_messages{queue="document-processing.dlq"}
+    op: ">="
+    value: 3
+    timeout: 120s
+  # work queues return to 0 — poison is dead-lettered, not stuck.
+  - type: promql
+    query: sum(rabbitmq_queue_messages{queue=~".*-processing"})
+    op: "<="
+    value: 0
+    timeout: 60s
+  # consumers stay alive through the poison flood (crash-resilience).
+  - type: cli
+    run: docker compose ps --status running --services | grep -q email-worker
+    timeout: 30s
+cleanup:
+  # purge the DLQs so reruns start clean (prose: "purge DLQs in the RabbitMQ UI").
+  - run: docker compose exec -T rabbitmq rabbitmqctl purge_queue email-processing.dlq
+  - run: docker compose exec -T rabbitmq rabbitmqctl purge_queue image-processing.dlq
+  - run: docker compose exec -T rabbitmq rabbitmqctl purge_queue profile-processing.dlq
+  - run: docker compose exec -T rabbitmq rabbitmqctl purge_queue document-processing.dlq

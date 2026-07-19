@@ -57,6 +57,27 @@ unknown extra fields (forward compatibility) and MUST NOT require `metadata`.
 
 ## 3. Auth HTTP contract (api-service → auth-service)
 
+**Token model (ADR-009.1/.2):** access + refresh tokens are JWTs signed **RS256**
+with a `kid` header when an auth-service keypair is configured (env
+`JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY` = base64-encoded PEM single line, or raw PEM;
+`JWT_ALGORITHM=RS256|HS256`, default RS256 when both keys are present). **HS256
+stays the keyless fallback** and both algorithms are accepted during migration,
+so compose/CI without keys keep working. Claims are unchanged and still embed
+`userId`, `email`, `role`. Access tokens are stateless, TTL ≤15m; refresh tokens
+are one-time-use, rotated against a DB `sessions` table (reuse ⇒ session revoked
++ audit). api-service verifies access tokens **locally** against the cached JWKS;
+the HTTP introspection endpoint below remains available for revocation-strict
+routes (opt-in).
+
+### JWKS — public key distribution
+
+`GET {AUTH_URL}/.well-known/jwks.json` — **no auth, no rate limit**.
+- 200 response: `{ "keys": [ { "kty":"RSA", "use":"sig", "alg":"RS256", "kid":"…", "n":"…", "e":"…" } ] }`
+- `kid` = first 8 bytes of SHA-256 over the SPKI DER (hex); it matches the token header `kid`.
+- Empty `keys` array in the HS256 keyless fallback.
+
+### Introspection — still available (opt-in)
+
 `POST {AUTH_URL}/v1/auth/token/validate`
 - Headers: `Authorization: Bearer <token>`, `Content-Type: application/json`
 - Body: `{"token": "<jwt>"}`

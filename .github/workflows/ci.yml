@@ -46,6 +46,7 @@ jobs:
       - run: docker build -t ci/email-worker -f graph-worker/operational-workers/Dockerfile.email graph-worker/operational-workers
       - run: docker build -t ci/image-worker -f graph-worker/operational-workers/Dockerfile.image graph-worker/operational-workers
       - run: docker build -t ci/profile-worker -f graph-worker/operational-workers/Dockerfile.profile graph-worker/operational-workers
+      - run: docker build -t ci/loadgen -f graph-worker/operational-workers/Dockerfile.loadgen graph-worker/operational-workers
       - run: docker build -t ci/ntfy-relay scripts/obs/ntfy-relay
       - run: docker build -t ci/hello-guest-web --build-arg CMD=web guests/hello-guest
       - run: docker build -t ci/hello-guest-worker --build-arg CMD=worker guests/hello-guest
@@ -58,6 +59,23 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install pyyaml
+      # generator output must be committed: definitions.json + both routing-key
+      # tables regenerate byte-identically (ADR-008.4)
+      - name: rabbitmq definitions + routing-keys committed
+        run: |
+          make routing-keys
+          git diff --exit-code \
+            deploy/rabbitmq/definitions.json \
+            deploy/rabbitmq/ROUTING_KEYS.generated.md \
+            graph-worker/shared/contracts/ROUTING_KEYS.md
+      # scored-experiment no-stack gates (fast lane): schema-validate every
+      # experiments/*.yaml, run the runner's pure-logic unit tests, and check the
+      # generated EXPERIMENTS.md index is committed (ADR-004.1)
+      - name: experiments validate + unit tests + index
+        run: |
+          python3 scripts/experiments/run.py --validate
+          python3 -m unittest discover -s scripts/experiments
+          python3 scripts/experiments/gen-index.py --check
       - name: install kustomize
         run: |
           curl -sfLo /tmp/kustomize.tgz \
@@ -68,3 +86,30 @@ jobs:
       - run: kustomize build --load-restrictor LoadRestrictionsNone deploy/obs/manifests > /dev/null
       - run: kustomize build guests/hello-guest/k8s/base > /dev/null
       - run: kustomize build guests/hello-guest/k8s/obs > /dev/null
+
+  # CI phase 2 (ADR-010.2): scored smoke experiments on main only (PRs stay
+  # fast). Runs the compose stack and a small set of scored experiments; junit
+  # XML (.experiment-results/, written by scripts/experiments/run.py) uploads
+  # as an artifact.
+  scored-smoke:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # run.py writes junit XML to $EXPERIMENT_REPORT_DIR (default
+    # .experiment-results/ at the repo root); pinned explicitly so the upload
+    # glob and .gitignore stay in lockstep even if the default moves
+    env:
+      EXPERIMENT_REPORT_DIR: .experiment-results
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install pyyaml
+      - run: make up
+      - run: for e in exp-01 exp-02 exp-05; do make experiment E=$e || exit 1; done
+      - run: make down
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: experiment-junit
+          path: .experiment-results/*.xml

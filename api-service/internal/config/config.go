@@ -66,6 +66,11 @@ type RabbitMQConfig struct {
 type AuthConfig struct {
 	URL     string        `mapstructure:"url"`
 	Timeout time.Duration `mapstructure:"timeout"`
+	// StrictIntrospection switches token validation back to per-request
+	// HTTP introspection against auth-service (the pre-v4 path, breaker
+	// included). Default false: local JWKS verification (ADR-009.1).
+	// Env: API_AUTH_STRICT_INTROSPECTION.
+	StrictIntrospection bool `mapstructure:"strict_introspection"`
 }
 
 type LoggingConfig struct {
@@ -120,6 +125,7 @@ func Load() (*Config, error) {
 	viper.BindEnv("rabbitmq.hosts", "API_RABBITMQ_HOSTS")
 	viper.BindEnv("rabbitmq.password", "API_RABBITMQ_PASSWORD")
 	viper.BindEnv("auth.url", "API_AUTH_URL")
+	viper.BindEnv("auth.strict_introspection", "API_AUTH_STRICT_INTROSPECTION")
 	viper.BindEnv("minio.endpoint", "MINIO_ENDPOINT")
 	viper.BindEnv("minio.access_key_id", "MINIO_ACCESS_KEY")
 	viper.BindEnv("minio.secret_access_key", "MINIO_SECRET_KEY")
@@ -182,6 +188,7 @@ func setDefaults() {
 
 	viper.SetDefault("auth.url", "http://auth-service:3000")
 	viper.SetDefault("auth.timeout", "5s")
+	viper.SetDefault("auth.strict_introspection", false)
 
 	viper.SetDefault("logging.level", "info")
 	viper.SetDefault("logging.format", "json")

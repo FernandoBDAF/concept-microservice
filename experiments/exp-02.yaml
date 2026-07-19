@@ -1,0 +1,29 @@
+# EXP-02 · Golden-path smoke — first migrated definition (ADR-004.2).
+# Prose companion: EXPERIMENTS.md §EXP-02. This is the reference example for
+# migrating EXP-01..12 (v4 HANDOFF §B1).
+id: exp-02
+title: Golden-path smoke
+needs: [compose]
+steps:
+  - run: make sim-smoke
+watch:
+  - "Lab Overview → API request rate (2xx wave)"
+  - "Lab Overview → Worker throughput (email+profile blips ~10-15s later)"
+assertions:
+  # k6 exits non-zero on failed thresholds — sim-smoke succeeding is step 1;
+  # these verify the async half actually drained.
+  - type: promql
+    query: sum(rabbitmq_queue_messages{queue=~".*-processing"})
+    op: "<="
+    value: 0
+    timeout: 60s
+  - type: promql
+    query: sum(rabbitmq_queue_messages{queue=~".+\\.dlq"})
+    op: "=="
+    value: 0
+    timeout: 30s
+  - type: http
+    url: http://localhost:8080/ready
+    status: 200
+    timeout: 30s
+cleanup: []

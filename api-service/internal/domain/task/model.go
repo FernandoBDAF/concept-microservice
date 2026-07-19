@@ -16,71 +16,51 @@ type Message struct {
 	Priority      int32             `json:"priority" validate:"min=0,max=9"`
 }
 
+// RoutingConfig maps a routing key to the broker resources that already
+// exist for it. Topology (exchanges, queues, bindings, TTL/retry args) is
+// owned by deploy/rabbitmq/definitions.json (ADR-008.4); this map is only
+// the publish/consume-side lookup — services verify passively and never
+// declare.
 type RoutingConfig struct {
-	Exchange      string
-	Queue         string
-	TTL           time.Duration
-	Prefetch      int
-	Durable       bool
-	AutoDelete    bool
-	Exclusive     bool
-	NoWait        bool
-	DeadLetterTTL time.Duration
-	MaxRetries    int
-	Description   string
+	Exchange    string
+	Queue       string
+	Prefetch    int
+	Description string
 }
 
+// DefaultRoutingMap holds the four contract task types (ADR-008.6). There
+// is no fallback: unknown routing keys are a publisher bug and fail fast.
+// Names mirror deploy/rabbitmq/ROUTING_KEYS.generated.md.
 var DefaultRoutingMap = map[string]RoutingConfig{
 	"profile.task": {
-		Exchange:      "profile-tasks",
-		Queue:         "profile-processing",
-		TTL:           1 * time.Hour,
-		Prefetch:      2,
-		Durable:       true,
-		AutoDelete:    false,
-		Exclusive:     false,
-		NoWait:        false,
-		DeadLetterTTL: 24 * time.Hour,
-		MaxRetries:    3,
-		Description:   "Profile processing tasks with standard TTL and moderate prefetch",
+		Exchange:    "profile-tasks",
+		Queue:       "profile-processing",
+		Prefetch:    2,
+		Description: "Profile processing tasks",
 	},
 	"email.send": {
-		Exchange:      "email-tasks",
-		Queue:         "email-processing",
-		TTL:           1 * time.Hour,
-		Prefetch:      5,
-		Durable:       true,
-		AutoDelete:    false,
-		Exclusive:     false,
-		NoWait:        false,
-		DeadLetterTTL: 24 * time.Hour,
-		MaxRetries:    5,
-		Description:   "Email sending tasks with short TTL and high prefetch",
+		Exchange:    "email-tasks",
+		Queue:       "email-processing",
+		Prefetch:    5,
+		Description: "Email sending tasks",
 	},
 	"image.process": {
-		Exchange:      "image-tasks",
-		Queue:         "image-processing",
-		TTL:           6 * time.Hour,
-		Prefetch:      1,
-		Durable:       true,
-		AutoDelete:    false,
-		Exclusive:     false,
-		NoWait:        false,
-		DeadLetterTTL: 3 * 24 * time.Hour,
-		MaxRetries:    2,
-		Description:   "Image processing tasks with long TTL and low prefetch",
+		Exchange:    "image-tasks",
+		Queue:       "image-processing",
+		Prefetch:    1,
+		Description: "Image processing tasks",
 	},
 	"document.process": {
-		Exchange:      "document-tasks",
-		Queue:         "document-processing",
-		TTL:           12 * time.Hour,
-		Prefetch:      1,
-		Durable:       true,
-		AutoDelete:    false,
-		Exclusive:     false,
-		NoWait:        false,
-		DeadLetterTTL: 7 * 24 * time.Hour,
-		MaxRetries:    3,
-		Description:   "Document processing tasks for GraphRAG",
+		Exchange:    "document-tasks",
+		Queue:       "document-processing",
+		Prefetch:    1,
+		Description: "Document processing tasks for GraphRAG",
 	},
+}
+
+// IsContractTaskType reports whether s is one of the four contract task
+// types / routing keys (ADR-008.6 whitelist).
+func IsContractTaskType(s string) bool {
+	_, ok := DefaultRoutingMap[s]
+	return ok
 }

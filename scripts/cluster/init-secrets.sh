@@ -11,6 +11,15 @@ ENVFILE=".lab-secrets.env"
 if [ "${FORCE:-0}" = "1" ]; then rm -f "$ENVFILE"; fi
 
 if [ ! -f "$ENVFILE" ]; then
+  # RSA-2048 keypair for auth-service RS256 (ADR-009.1). Stored base64(PEM)
+  # single-line so it fits the env-file model and matches the k8s Secret shape
+  # (and the compose .env shape, scripts/compose/gen-jwt-keys.sh).
+  keydir="$(mktemp -d)"
+  openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$keydir/private.pem" 2>/dev/null
+  openssl pkey -in "$keydir/private.pem" -pubout -out "$keydir/public.pem" 2>/dev/null
+  JWT_PRIVATE_KEY_B64="$(base64 < "$keydir/private.pem" | tr -d '\n')"
+  JWT_PUBLIC_KEY_B64="$(base64 < "$keydir/public.pem" | tr -d '\n')"
+  rm -rf "$keydir"
   cat > "$ENVFILE" <<EOF
 POSTGRES_PASSWORD=$(openssl rand -hex 16)
 AUTH_DB_PASSWORD=$(openssl rand -hex 16)
@@ -18,6 +27,10 @@ RABBITMQ_PASSWORD=$(openssl rand -hex 16)
 MONGO_ROOT_PASSWORD=$(openssl rand -hex 16)
 MINIO_ROOT_PASSWORD=$(openssl rand -hex 16)
 JWT_SECRET=$(openssl rand -hex 32)
+JWT_PRIVATE_KEY=$JWT_PRIVATE_KEY_B64
+JWT_PUBLIC_KEY=$JWT_PUBLIC_KEY_B64
+SEED_ADMIN_EMAIL=admin@lab.local
+SEED_ADMIN_PASSWORD=admin-$(openssl rand -hex 8)
 EOF
   echo "generated $ENVFILE"
 fi
@@ -42,13 +55,29 @@ for ns in lab-infra lab-core; do
   apply_secret "$ns" postgres-credentials \
     "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" "AUTH_DB_PASSWORD=$AUTH_DB_PASSWORD"
   # username stays `guest` — the api-service viper default (CONTRACTS.md §4);
-  # the docker image permits remote guest, and the password is real anyway
+  # the docker image permits remote guest, and the password is real anyway.
+  # ⚠️ Guest-password caveat (ADR-008.4): the broker loads deploy/rabbitmq/
+  # definitions.json at boot via load_definitions, which declares the guest user
+  # from a password_hash baked into that committed file (currently guest/guest).
+  # This rotated RABBITMQ_PASSWORD is NOT reflected there, so on kind the broker
+  # keeps accepting "guest" until the definitions are regenerated with it:
+  #   python3 scripts/rabbitmq/generate-definitions.py --password "$RABBITMQ_PASSWORD"
+  # and the rabbitmq-config configMap rebuilt / STS restarted. Auto-wiring this
+  # is deferred — see the v4 deferral ledger (guest-password ⇄ definitions.json).
   apply_secret "$ns" rabbitmq-credentials \
     "RABBITMQ_USER=guest" "RABBITMQ_PASSWORD=$RABBITMQ_PASSWORD"
   apply_secret "$ns" mongodb-credentials "MONGO_ROOT_PASSWORD=$MONGO_ROOT_PASSWORD"
   apply_secret "$ns" minio-credentials "MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD"
 done
-apply_secret lab-core auth-service-secrets "JWT_SECRET=$JWT_SECRET"
+# auth-service RS256 keypair (ADR-009.1) — its own Secret so key rotation does
+# not churn the other auth credentials; base64(PEM) single-line (app decodes it)
+apply_secret lab-core auth-service-keys \
+  "JWT_PRIVATE_KEY=$JWT_PRIVATE_KEY" "JWT_PUBLIC_KEY=$JWT_PUBLIC_KEY"
+# JWT_SECRET stays for the HS256 fallback + refresh signing; SEED_ADMIN_*
+# bootstraps the admin role on first boot (ADR-009.7)
+apply_secret lab-core auth-service-secrets \
+  "JWT_SECRET=$JWT_SECRET" \
+  "SEED_ADMIN_EMAIL=$SEED_ADMIN_EMAIL" "SEED_ADMIN_PASSWORD=$SEED_ADMIN_PASSWORD"
 # lab-obs: the postgres-exporter (deploy/obs, ADR-003.5) reads the postgres
 # password from this Secret in its own namespace
 apply_secret lab-obs postgres-credentials \

@@ -10,7 +10,9 @@ configMapGenerator:
     files:
       - ../../../../api-service/migrations/000001_create_profiles.up.sql
       - ../../../../api-service/migrations/000002_create_documents.up.sql
+      - ../../../../api-service/migrations/000003_create_outbox.up.sql
   - name: auth-migrations
     namespace: lab-infra
     files:
       - ../../../../auth-service/migrations/001_create_users_table.sql
+      - ../../../../auth-service/migrations/002_sessions_roles.sql

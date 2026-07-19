@@ -1,5 +1,4 @@
 import bcrypt from "bcrypt";
-import crypto from "node:crypto";
 import { v4 as uuidv4 } from "uuid";
 import type { IUserRepository } from "./IUserRepository.js";
 import type {
@@ -20,16 +19,13 @@ export class UserRepository implements IUserRepository {
 
   async create(data: CreateUserDTO): Promise<UserEntity> {
     const id = uuidv4();
-    const salt = crypto.randomBytes(32).toString("hex");
-    const hashedPassword = await bcrypt.hash(
-      data.password + salt,
-      this.SALT_ROUNDS
-    );
+    // bcrypt salts internally (ADR-009.6: the separate salt column was dropped).
+    const hashedPassword = await bcrypt.hash(data.password, this.SALT_ROUNDS);
     const now = new Date();
 
     const query = `
-      INSERT INTO users (id, email, hashed_password, salt, role, is_active, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      INSERT INTO users (id, email, hashed_password, role, is_active, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING *
     `;
 
@@ -37,7 +33,6 @@ export class UserRepository implements IUserRepository {
       id,
       data.email.toLowerCase().trim(),
       hashedPassword,
-      salt,
       data.role ?? "user",
       true,
       now,
@@ -91,15 +86,9 @@ export class UserRepository implements IUserRepository {
     }
 
     if (data.password !== undefined) {
-      const salt = crypto.randomBytes(32).toString("hex");
-      const hashedPassword = await bcrypt.hash(
-        data.password + salt,
-        this.SALT_ROUNDS
-      );
+      const hashedPassword = await bcrypt.hash(data.password, this.SALT_ROUNDS);
       updates.push(`hashed_password = $${nextParam()}`);
       values.push(hashedPassword);
-      updates.push(`salt = $${nextParam()}`);
-      values.push(salt);
     }
 
     if (updates.length === 0) {
@@ -194,7 +183,7 @@ export class UserRepository implements IUserRepository {
   }
 
   async validatePassword(user: UserEntity, password: string): Promise<boolean> {
-    return bcrypt.compare(password + user.salt, user.hashedPassword);
+    return bcrypt.compare(password, user.hashedPassword);
   }
 }
 

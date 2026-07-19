@@ -1,0 +1,39 @@
+# EXP-08 · Incident reproduction: rate limit → breaker → outage.
+# Prose companion: EXPERIMENTS.md §EXP-08.
+# Recreating auth-service (step 2) resets its metrics, so the /token/validate
+# counters below start from zero and the breaker signature is clean.
+# NOTE: the runner edits `.env` in place and restores it in cleanup. sed is GNU
+# (Linux compose host / CI ubuntu); on a BSD/mac host use `sed -i ''`.
+id: exp-08
+title: "Incident reproduction: rate limit → breaker → outage"
+needs: [compose]
+steps:
+  # tighten the token-validate limit to 100 (compose templates it from .env).
+  - run: grep -q '^TOKEN_VALIDATION_RATE_LIMIT_MAX=' .env && sed -i 's/^TOKEN_VALIDATION_RATE_LIMIT_MAX=.*/TOKEN_VALIDATION_RATE_LIMIT_MAX=100/' .env || echo 'TOKEN_VALIDATION_RATE_LIMIT_MAX=100' >> .env
+  - run: docker compose up -d auth-service
+  # the burst trips the limit and fails partway through — that IS the incident,
+  # so fire it and continue (background) rather than fail-fast on its exit code.
+  - run: make sim-burst
+    background: true
+watch:
+  - "Lab Overview → API request rate shows a 401 wall"
+  - "Lab Overview → Auth request rate flat-lines while the API is 'busy' (breaker open = validate calls stop leaving api-service)"
+  - "k6 fails 90%+ with 401s at ~2-4ms — that suspicious SPEED is the breaker's signature (rejections without upstream calls)"
+  - "PromQL: sum by (status_code) (auth_service_http_requests_total{route=\"/token/validate\"}) shows ~100x200 then 429s"
+assertions:
+  # the throttle fires: 429s appear on the token-validate route.
+  - type: promql
+    query: sum(auth_service_http_requests_total{route="/token/validate",status_code="429"})
+    op: ">"
+    value: 0
+    timeout: 120s
+  # the cascade reaches clients: the API returns 401s (breaker-open rejections).
+  - type: promql
+    query: sum(api_http_requests_total{status="401"})
+    op: ">"
+    value: 0
+    timeout: 120s
+cleanup:
+  # restore the generous default and recreate auth-service (prose: set 100000).
+  - run: grep -q '^TOKEN_VALIDATION_RATE_LIMIT_MAX=' .env && sed -i 's/^TOKEN_VALIDATION_RATE_LIMIT_MAX=.*/TOKEN_VALIDATION_RATE_LIMIT_MAX=100000/' .env || echo 'TOKEN_VALIDATION_RATE_LIMIT_MAX=100000' >> .env
+  - run: docker compose up -d auth-service

@@ -1,6 +1,7 @@
 package rabbitmq
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"sync"
@@ -12,17 +13,22 @@ import (
 	"github.com/fernandobarroso/microservices/api-service/internal/domain/task"
 )
 
-// Client manages a RabbitMQ connection and channel
+// Client manages a RabbitMQ connection and channel.
+//
+// Topology ownership (ADR-008.4): the broker loads the full topology from
+// deploy/rabbitmq/definitions.json at boot. This client never declares
+// anything — it only verifies passively at (re)connect that the resources
+// in task.DefaultRoutingMap exist, and crashes with a pointed message when
+// they don't.
 type Client struct {
-	conn             *amqp.Connection
-	channel          *amqp.Channel
-	config           config.RabbitMQConfig
-	confirms         chan amqp.Confirmation
-	confirmTracker   map[uint64]chan bool
-	trackerMu        sync.RWMutex
-	connected        bool
-	mu               sync.RWMutex
-	declaredTopology sync.Map // routingKey -> struct{}, reset on every (re)connect
+	conn           *amqp.Connection
+	channel        *amqp.Channel
+	config         config.RabbitMQConfig
+	confirms       chan amqp.Confirmation
+	confirmTracker map[uint64]chan bool
+	trackerMu      sync.RWMutex
+	connected      bool
+	mu             sync.RWMutex
 }
 
 func NewClient(cfg config.RabbitMQConfig) (*Client, error) {
@@ -65,6 +71,13 @@ func (c *Client) connect() error {
 
 	c.conn = conn
 
+	// Passive verification before anything publishes/consumes: the broker
+	// must already hold the definitions.json topology (ADR-008.4).
+	if err := verifyTopology(conn); err != nil {
+		_ = conn.Close()
+		return err
+	}
+
 	ch, err := c.conn.Channel()
 	if err != nil {
 		return fmt.Errorf("failed to open channel: %w", err)
@@ -90,15 +103,47 @@ func (c *Client) connect() error {
 	return nil
 }
 
+// verifyTopology passively checks every exchange and queue in the routing
+// map. A failed passive declare closes its channel, so each entry gets a
+// throwaway channel; any failure aborts with the pointed crash message —
+// the process must not start against a topology-less broker.
+func verifyTopology(conn *amqp.Connection) error {
+	for routingKey, rc := range task.DefaultRoutingMap {
+		ch, err := conn.Channel()
+		if err != nil {
+			return fmt.Errorf("failed to open verification channel: %w", err)
+		}
+
+		if err := ch.ExchangeDeclarePassive(rc.Exchange, "direct", true, false, false, false, nil); err != nil {
+			return topologyMissingError("exchange", rc.Exchange, routingKey, err)
+		}
+		if _, err := ch.QueueDeclarePassive(rc.Queue, true, false, false, false, nil); err != nil {
+			return topologyMissingError("queue", rc.Queue, routingKey, err)
+		}
+
+		_ = ch.Close()
+	}
+	return nil
+}
+
+func topologyMissingError(kind, name, routingKey string, err error) error {
+	return fmt.Errorf(
+		"broker topology missing — is definitions.json loaded? (%s %q for routing key %q not found: %v)",
+		kind, name, routingKey, err,
+	)
+}
+
 func (c *Client) handleConfirms() {
 	for confirm := range c.confirms {
-		c.trackerMu.RLock()
+		// Write lock: this deletes from the tracker (the old code deleted
+		// under RLock — a data race).
+		c.trackerMu.Lock()
 		if ch, exists := c.confirmTracker[confirm.DeliveryTag]; exists {
 			ch <- confirm.Ack
 			close(ch)
 			delete(c.confirmTracker, confirm.DeliveryTag)
 		}
-		c.trackerMu.RUnlock()
+		c.trackerMu.Unlock()
 	}
 }
 
@@ -112,6 +157,8 @@ func (c *Client) monitorConnection() {
 			for {
 				if err := c.connect(); err == nil {
 					break
+				} else {
+					log.Printf("RabbitMQ reconnect failed: %v", err)
 				}
 				time.Sleep(c.config.ReconnectTimeout)
 			}
@@ -119,115 +166,13 @@ func (c *Client) monitorConnection() {
 	}
 }
 
-// ensureTopology declares the exchange/queue/DLQ for routingKey. Declarations
-// are idempotent on the broker, but re-issuing five AMQP calls on every single
-// publish adds needless round-trip latency, so successful declarations are
-// cached in-process and skipped on subsequent publishes for the same key.
-func (c *Client) ensureTopology(routingKey string) error {
-	if _, ok := c.declaredTopology.Load(routingKey); ok {
-		return nil
-	}
-
-	config, exists := task.DefaultRoutingMap[routingKey]
-	if !exists {
-		config = task.RoutingConfig{
-			Exchange:      "default-tasks",
-			Queue:         "default-processing",
-			TTL:           24 * time.Hour,
-			Prefetch:      1,
-			Durable:       true,
-			AutoDelete:    false,
-			Exclusive:     false,
-			NoWait:        false,
-			DeadLetterTTL: 7 * 24 * time.Hour,
-			MaxRetries:    3,
-			Description:   "Default configuration for unknown routing keys",
-		}
-	}
-
-	if err := c.channel.ExchangeDeclare(
-		config.Exchange,
-		"direct",
-		config.Durable,
-		config.AutoDelete,
-		false,
-		config.NoWait,
-		nil,
-	); err != nil {
-		return fmt.Errorf("failed to declare exchange %s: %w", config.Exchange, err)
-	}
-
-	dlxName := config.Exchange + ".dlx"
-	if err := c.channel.ExchangeDeclare(
-		dlxName,
-		"direct",
-		config.Durable,
-		config.AutoDelete,
-		false,
-		config.NoWait,
-		nil,
-	); err != nil {
-		return fmt.Errorf("failed to declare dead letter exchange %s: %w", dlxName, err)
-	}
-
-	queueArgs := amqp.Table{
-		"x-dead-letter-exchange":    dlxName,
-		"x-dead-letter-routing-key": routingKey,
-		"x-message-ttl":             int32(config.TTL.Milliseconds()),
-		"x-max-retries":             config.MaxRetries,
-	}
-
-	if _, err := c.channel.QueueDeclare(
-		config.Queue,
-		config.Durable,
-		config.AutoDelete,
-		config.Exclusive,
-		config.NoWait,
-		queueArgs,
-	); err != nil {
-		return fmt.Errorf("failed to declare queue %s: %w", config.Queue, err)
-	}
-
-	if err := c.channel.QueueBind(
-		config.Queue,
-		routingKey,
-		config.Exchange,
-		config.NoWait,
-		nil,
-	); err != nil {
-		return fmt.Errorf("failed to bind queue %s to exchange %s: %w", config.Queue, config.Exchange, err)
-	}
-
-	dlqName := config.Queue + ".dlq"
-	dlqArgs := amqp.Table{
-		"x-message-ttl": int32(config.DeadLetterTTL.Milliseconds()),
-	}
-	if _, err := c.channel.QueueDeclare(
-		dlqName,
-		config.Durable,
-		config.AutoDelete,
-		config.Exclusive,
-		config.NoWait,
-		dlqArgs,
-	); err != nil {
-		return fmt.Errorf("failed to declare dead letter queue %s: %w", dlqName, err)
-	}
-
-	if err := c.channel.QueueBind(
-		dlqName,
-		routingKey,
-		dlxName,
-		config.NoWait,
-		nil,
-	); err != nil {
-		return fmt.Errorf("failed to bind dead letter queue %s: %w", dlqName, err)
-	}
-
-	c.declaredTopology.Store(routingKey, struct{}{})
-	return nil
-}
-
-func (c *Client) PublishWithRoutingKey(routingKey string, body []byte, headers amqp.Table, msgID string, priority uint8, timestamp time.Time, correlationID string, contentType string) error {
+// Publish sends a raw, pre-serialized envelope with publisher confirms. No
+// topology is declared (ADR-008.4): the routing key maps to its exchange
+// via task.DefaultRoutingMap, and unknown keys fail fast — there is no
+// default-tasks fallback (ADR-008.6). headers and messageID restore the
+// broker-level metadata the pre-outbox direct path set (trace propagation
+// headers for the workers' extractTraceContext); both may be empty.
+func (c *Client) Publish(ctx context.Context, routingKey string, body []byte, headers amqp.Table, messageID string) error {
 	c.mu.RLock()
 	if !c.connected {
 		c.mu.RUnlock()
@@ -235,13 +180,9 @@ func (c *Client) PublishWithRoutingKey(routingKey string, body []byte, headers a
 	}
 	c.mu.RUnlock()
 
-	if err := c.ensureTopology(routingKey); err != nil {
-		return fmt.Errorf("failed to ensure topology: %w", err)
-	}
-
-	config := task.DefaultRoutingMap[routingKey]
-	if config.Exchange == "" {
-		config.Exchange = "default-tasks"
+	rc, ok := task.DefaultRoutingMap[routingKey]
+	if !ok {
+		return fmt.Errorf("unknown routing key %q: not in the contract routing map (ADR-008.6)", routingKey)
 	}
 
 	c.trackerMu.Lock()
@@ -250,21 +191,20 @@ func (c *Client) PublishWithRoutingKey(routingKey string, body []byte, headers a
 	c.confirmTracker[deliveryTag] = confirmCh
 	c.trackerMu.Unlock()
 
-	if err := c.channel.Publish(
-		config.Exchange,
+	if err := c.channel.PublishWithContext(
+		ctx,
+		rc.Exchange,
 		routingKey,
 		true,
 		false,
 		amqp.Publishing{
 			Headers:         headers,
-			ContentType:     contentType,
+			ContentType:     "application/json",
 			ContentEncoding: "utf-8",
 			Body:            body,
 			DeliveryMode:    amqp.Persistent,
-			Priority:        priority,
-			Timestamp:       timestamp,
-			MessageId:       msgID,
-			CorrelationId:   correlationID,
+			Timestamp:       time.Now().UTC(),
+			MessageId:       messageID,
 		},
 	); err != nil {
 		c.trackerMu.Lock()
@@ -283,12 +223,33 @@ func (c *Client) PublishWithRoutingKey(routingKey string, body []byte, headers a
 			return fmt.Errorf("message was not acknowledged by broker")
 		}
 		return nil
+	case <-ctx.Done():
+		c.trackerMu.Lock()
+		delete(c.confirmTracker, deliveryTag)
+		c.trackerMu.Unlock()
+		return ctx.Err()
 	case <-time.After(timeout):
 		c.trackerMu.Lock()
 		delete(c.confirmTracker, deliveryTag)
 		c.trackerMu.Unlock()
 		return fmt.Errorf("publisher confirm timeout after %v", timeout)
 	}
+}
+
+// Channel opens a fresh channel on the current connection (used by
+// consumers, which manage their own channel lifecycle).
+func (c *Client) Channel() (*amqp.Channel, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if !c.connected || c.conn == nil {
+		return nil, fmt.Errorf("not connected to rabbitmq")
+	}
+	return c.conn.Channel()
+}
+
+// PrefetchCount exposes the configured consumer prefetch.
+func (c *Client) PrefetchCount() int {
+	return c.config.PrefetchCount
 }
 
 func (c *Client) Close() error {

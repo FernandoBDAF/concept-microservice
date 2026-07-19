@@ -1,0 +1,17 @@
+# PodChaos: one-shot kill of an email-worker pod in lab-core (EXP-44; also the
+# A3 retry drill's "worker dies mid-flight" trigger). pod-kill is a single
+# action with no duration — the Deployment reschedules a replacement. Apply to
+# inject; delete to clear the experiment record. Requires `make chaos-up`.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: kill-email-worker
+  namespace: chaos-mesh
+spec:
+  action: pod-kill
+  mode: one
+  selector:
+    namespaces:
+      - lab-core
+    labelSelectors:
+      app: email-worker

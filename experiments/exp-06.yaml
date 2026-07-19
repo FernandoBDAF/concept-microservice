@@ -1,0 +1,29 @@
+# EXP-06 · Worker outage & recovery. Prose companion: EXPERIMENTS.md §EXP-06.
+id: exp-06
+title: Worker outage & recovery
+needs: [compose]
+steps:
+  # sim-outage stops email-worker, floods 100 email.send, restarts, and polls
+  # until drained — the script EXITS NON-ZERO if it does not drain in 2m, so a
+  # passing step already proves "no loss, backlog drained".
+  - run: make sim-outage
+watch:
+  - "Lab Overview → Queue depth (email-processing): vertical climb to 100 (consumers=0), clean drain after restart"
+  - "Lab Overview → Worker throughput: silent during the outage, spike after"
+  - "make queues during the stopped phase: email-processing shows consumers 0"
+  - "zero message loss: 100 in → 100 processed"
+assertions:
+  # backlog fully drained after restart (durable queues + reconnect).
+  - type: promql
+    query: rabbitmq_queue_messages{queue="email-processing"}
+    op: "=="
+    value: 0
+    timeout: 180s
+  # an outage is not an error — no message dead-lettered (assumes a clean email
+  # DLQ baseline: EXP-05 cleanup purges it, or run on a fresh stack).
+  - type: promql
+    query: rabbitmq_queue_messages{queue="email-processing.dlq"}
+    op: "=="
+    value: 0
+    timeout: 30s
+cleanup: []

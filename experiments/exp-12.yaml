@@ -1,0 +1,31 @@
+# EXP-12 · Cache outage (discovery experiment). Prose companion:
+# EXPERIMENTS.md §EXP-12.
+# Originally open-ended; the 2026-07-10 exit run calibrated the Expect: cache-aside
+# fallback works (0% errors) but requests silently pay a 0.3-4s dial penalty and
+# only /ready reports the outage. The mechanical core of that finding — API stays
+# live, /ready names redis down — is asserted; the latency-amplification and
+# cache-repopulation observations stay in `watch` (need authed CRUD + timing).
+id: exp-12
+title: Cache outage (discovery experiment)
+needs: [compose]
+steps:
+  - run: docker compose stop redis
+watch:
+  - "Probe: repeat GET /api/v1/profiles and a create — status codes? latency change (0.3-4s dial penalty)? make logs S=api-service errors?"
+  - "After restart: confirm recovery; is stale cache repopulated? docker compose exec redis redis-cli keys 'profile*'"
+  - "Calibrated 2026-07-10: fallback works, 0% errors, silent 0.3-4s penalty, only /ready reports the outage (see documentation/experiments/2026-07-10-cache-outage-latency-amplification.md)"
+assertions:
+  # only /ready reports the outage: it degrades and names redis down.
+  - type: http
+    url: http://localhost:8080/ready
+    status: 503
+    json_path: checks.redis
+    json_equals: down
+    timeout: 30s
+  # the API process stays live (cache-aside fallback to Postgres, not a crash).
+  - type: http
+    url: http://localhost:8080/health
+    status: 200
+    timeout: 30s
+cleanup:
+  - run: docker compose start redis

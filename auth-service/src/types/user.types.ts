@@ -4,7 +4,6 @@ export interface User {
   id: string;
   email: string;
   hashedPassword: string;
-  salt: string;
   role: UserRole;
   isActive: boolean;
   failedAttempts: number;

@@ -2,6 +2,7 @@ package base
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/fernandobarroso/microservices/operational-workers/internal/common/idempotency"
 	"github.com/fernandobarroso/microservices/operational-workers/internal/common/processors"
 	commonQueue "github.com/fernandobarroso/microservices/operational-workers/internal/common/queue"
 	"github.com/fernandobarroso/microservices/operational-workers/internal/common/tracing"
@@ -39,19 +41,23 @@ type BaseWorker struct {
 	consumer  *commonQueue.Consumer
 	server    *HTTPServer
 	metrics   *WorkerMetrics
+	guard     idempotency.Guard
 }
 
 // WorkerMetrics provides common metrics for all workers
 type WorkerMetrics struct {
-	ConsumeLatency prometheus.Histogram
-	ConsumeErrors  prometheus.Counter
-	MessageAge     prometheus.Histogram
+	ConsumeLatency    prometheus.Histogram
+	ConsumeErrors     prometheus.Counter
+	MessageAge        prometheus.Histogram
+	Duplicates        prometheus.Counter
+	IdempotencyErrors prometheus.Counter
 }
 
 // NewBaseWorker creates a new base worker
 func NewBaseWorker(config *WorkerConfig, processor processors.MessageProcessor) (*BaseWorker, error) {
 	// Initialize queue configuration
 	queueConfig := commonQueue.NewConfig()
+	queueConfig.WorkerType = config.WorkerType
 	queueConfig.Queue = config.QueueName
 	queueConfig.Exchange = config.ExchangeName
 	queueConfig.RoutingKey = config.RoutingKey
@@ -92,7 +98,23 @@ func NewBaseWorker(config *WorkerConfig, processor processors.MessageProcessor) 
 				Help: fmt.Sprintf("Age of messages when consumed by %s worker", config.WorkerType),
 			},
 		)),
+		Duplicates: utils.RegisterOrExisting(prometheus.NewCounter(
+			prometheus.CounterOpts{
+				Name: fmt.Sprintf("%s_duplicates_total", config.WorkerType),
+				Help: fmt.Sprintf("Total duplicate deliveries deduped by the %s worker idempotency guard", config.WorkerType),
+			},
+		)),
+		IdempotencyErrors: utils.RegisterOrExisting(prometheus.NewCounter(
+			prometheus.CounterOpts{
+				Name: fmt.Sprintf("%s_idempotency_errors_total", config.WorkerType),
+				Help: fmt.Sprintf("Total idempotency guard errors (fail-open) for the %s worker", config.WorkerType),
+			},
+		)),
 	}
+
+	// Idempotency guard (ADR-008.2): shared Redis SETNX in production; an
+	// in-memory guard (single-replica dev only) when REDIS_ADDR is unset.
+	guard := resolveGuard(config.WorkerType)
 
 	return &BaseWorker{
 		config:    config,
@@ -100,7 +122,21 @@ func NewBaseWorker(config *WorkerConfig, processor processors.MessageProcessor) 
 		consumer:  consumer,
 		server:    server,
 		metrics:   metrics,
+		guard:     guard,
 	}, nil
+}
+
+// resolveGuard builds the idempotency guard from REDIS_ADDR (host:port, e.g.
+// redis:6379). An empty value falls back to an in-memory guard with a loud
+// warning — that only dedupes within a single process, so it is dev-only.
+func resolveGuard(workerType string) idempotency.Guard {
+	if addr := os.Getenv("REDIS_ADDR"); addr != "" {
+		log.Printf("%s worker: idempotency guard using Redis at %s", workerType, addr)
+		return idempotency.NewRedisGuardFromAddr(addr)
+	}
+	log.Printf("%s worker: REDIS_ADDR unset — using in-memory idempotency guard "+
+		"(single-replica dev only; duplicates across replicas/restarts are NOT deduped)", workerType)
+	return idempotency.NewInMemoryGuard()
 }
 
 // resolveRabbitURL implements the CONTRACTS.md env var contract: RABBITMQ_URL
@@ -145,10 +181,34 @@ func (w *BaseWorker) Start(ctx context.Context) error {
 		timer := prometheus.NewTimer(w.metrics.ConsumeLatency)
 		defer timer.ObserveDuration()
 
-		// Validate message first
+		// Validate message first. A validation failure is unretryable (no
+		// number of retries fixes a malformed message), so wrap it with
+		// ErrUnretryable — the consumer then routes it straight to the DLQ
+		// instead of cycling it through the retry tiers (ADR-008.1).
 		if err := w.processor.Validate(msg); err != nil {
 			w.metrics.ConsumeErrors.Inc()
-			return w.processor.HandleError(processCtx, msg, err)
+			return w.processor.HandleError(processCtx, msg, errors.Join(commonQueue.ErrUnretryable, err))
+		}
+
+		// Idempotency guard (ADR-008.2). First delivery of an
+		// (envelope, attempt) wins; a genuine duplicate (same attempt
+		// redelivered) is acked without reprocessing. The key is scoped by
+		// attempt so an intentional retry (which increments the attempt) is
+		// still reprocessed. Guard errors FAIL OPEN — process anyway — because
+		// dedupe is a safety net, not a lock.
+		if msg.ID != "" {
+			key := idempotency.KeyForAttempt(w.config.QueueName, msg.ID, msg.Attempt)
+			switch ok, gerr := w.guard.Begin(processCtx, key, idempotency.DefaultTTL); {
+			case gerr != nil:
+				w.metrics.IdempotencyErrors.Inc()
+				log.Printf("%s worker: idempotency guard error for %s (fail-open, processing anyway): %v",
+					w.config.WorkerType, key, gerr)
+			case !ok:
+				w.metrics.Duplicates.Inc()
+				log.Printf("%s worker: duplicate delivery id=%s attempt=%d — acking without reprocessing",
+					w.config.WorkerType, msg.ID, msg.Attempt)
+				return nil // ack, skip processing
+			}
 		}
 
 		// Process message

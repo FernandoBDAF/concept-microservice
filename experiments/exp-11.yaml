@@ -1,0 +1,33 @@
+# EXP-11 · Document pipeline E2E. Prose companion: EXPERIMENTS.md §EXP-11.
+# v4 note (A5): task-results + the api-service write-back consumer close the old
+# "status stays pending forever" gap — the document should now reach `completed`
+# via the API. Verifying that needs the DOC_ID printed by demo-document (not a
+# static query), so it stays a `watch` this round; the mechanical assertions
+# below cover the graphrag consume path and the queue draining.
+id: exp-11
+title: Document pipeline E2E
+needs: [compose]
+steps:
+  # demo-document: register → login → create profile → upload → poll status →
+  # print download URL. It EXITS NON-ZERO unless it reaches "E2E OK", so a passing
+  # step already proves upload + MinIO object + status poll + download URL.
+  - run: make demo-document
+watch:
+  - "MinIO console (localhost:9001) → documents-raw bucket → today's object exists"
+  - "make logs S=graphrag-service — envelope received; stub-mode note ('GraphRAG pipeline unavailable' is correct without LLM deps/keys)"
+  - "Lab Overview → GraphRAG processing panel ticks"
+  - "v4/A5: document status should advance pending → completed via the task-results write-back (was a known gap pre-v4; CONCEPTUAL_REVIEW §12)"
+assertions:
+  # graphrag consumed the document.process envelope (stub result counts too).
+  - type: promql
+    query: graphrag_messages_processed_total
+    op: ">="
+    value: 1
+    timeout: 120s
+  # the document work queue returns to 0 after consumption.
+  - type: promql
+    query: rabbitmq_queue_messages{queue="document-processing"}
+    op: "=="
+    value: 0
+    timeout: 60s
+cleanup: []

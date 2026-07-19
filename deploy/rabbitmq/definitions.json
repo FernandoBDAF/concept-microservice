@@ -1,0 +1,555 @@
+{
+  "rabbit_version": "3.12.0",
+  "vhosts": [
+    {
+      "name": "/"
+    }
+  ],
+  "users": [
+    {
+      "name": "guest",
+      "password_hash": "yv66vmXEgsNmsRvzj9HEqCuJmRcNVMyyo7lqSeHce+VyRjxH",
+      "hashing_algorithm": "rabbit_password_hashing_sha256",
+      "tags": [
+        "administrator"
+      ]
+    }
+  ],
+  "permissions": [
+    {
+      "user": "guest",
+      "vhost": "/",
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
+    }
+  ],
+  "topic_permissions": [],
+  "parameters": [],
+  "global_parameters": [],
+  "policies": [],
+  "exchanges": [
+    {
+      "name": "profile-tasks",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "profile-tasks.dlx",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "profile-tasks.retry",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "email-tasks",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "email-tasks.dlx",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "email-tasks.retry",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "image-tasks",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "image-tasks.dlx",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "image-tasks.retry",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "document-tasks",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "document-tasks.dlx",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "document-tasks.retry",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "task-results",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    }
+  ],
+  "queues": [
+    {
+      "name": "profile-processing",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "profile-tasks.dlx",
+        "x-dead-letter-routing-key": "profile.task"
+      }
+    },
+    {
+      "name": "profile-processing.retry.5s",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 5000,
+        "x-dead-letter-exchange": "profile-tasks",
+        "x-dead-letter-routing-key": "profile.task"
+      }
+    },
+    {
+      "name": "profile-processing.retry.30s",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 30000,
+        "x-dead-letter-exchange": "profile-tasks",
+        "x-dead-letter-routing-key": "profile.task"
+      }
+    },
+    {
+      "name": "profile-processing.retry.2m",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 120000,
+        "x-dead-letter-exchange": "profile-tasks",
+        "x-dead-letter-routing-key": "profile.task"
+      }
+    },
+    {
+      "name": "profile-processing.dlq",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 86400000
+      }
+    },
+    {
+      "name": "email-processing",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "email-tasks.dlx",
+        "x-dead-letter-routing-key": "email.expired",
+        "x-message-ttl": 3600000
+      }
+    },
+    {
+      "name": "email-processing.retry.5s",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 5000,
+        "x-dead-letter-exchange": "email-tasks",
+        "x-dead-letter-routing-key": "email.send"
+      }
+    },
+    {
+      "name": "email-processing.retry.30s",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 30000,
+        "x-dead-letter-exchange": "email-tasks",
+        "x-dead-letter-routing-key": "email.send"
+      }
+    },
+    {
+      "name": "email-processing.retry.2m",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 120000,
+        "x-dead-letter-exchange": "email-tasks",
+        "x-dead-letter-routing-key": "email.send"
+      }
+    },
+    {
+      "name": "email-processing.dlq",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 86400000
+      }
+    },
+    {
+      "name": "image-processing",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "image-tasks.dlx",
+        "x-dead-letter-routing-key": "image.process"
+      }
+    },
+    {
+      "name": "image-processing.retry.5s",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 5000,
+        "x-dead-letter-exchange": "image-tasks",
+        "x-dead-letter-routing-key": "image.process"
+      }
+    },
+    {
+      "name": "image-processing.retry.30s",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 30000,
+        "x-dead-letter-exchange": "image-tasks",
+        "x-dead-letter-routing-key": "image.process"
+      }
+    },
+    {
+      "name": "image-processing.retry.2m",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 120000,
+        "x-dead-letter-exchange": "image-tasks",
+        "x-dead-letter-routing-key": "image.process"
+      }
+    },
+    {
+      "name": "image-processing.dlq",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 259200000
+      }
+    },
+    {
+      "name": "document-processing",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "document-tasks.dlx",
+        "x-dead-letter-routing-key": "document.process"
+      }
+    },
+    {
+      "name": "document-processing.retry.5s",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 5000,
+        "x-dead-letter-exchange": "document-tasks",
+        "x-dead-letter-routing-key": "document.process"
+      }
+    },
+    {
+      "name": "document-processing.retry.30s",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 30000,
+        "x-dead-letter-exchange": "document-tasks",
+        "x-dead-letter-routing-key": "document.process"
+      }
+    },
+    {
+      "name": "document-processing.retry.2m",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 120000,
+        "x-dead-letter-exchange": "document-tasks",
+        "x-dead-letter-routing-key": "document.process"
+      }
+    },
+    {
+      "name": "document-processing.dlq",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 604800000
+      }
+    },
+    {
+      "name": "email-expired",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 86400000
+      }
+    },
+    {
+      "name": "task-results",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    }
+  ],
+  "bindings": [
+    {
+      "source": "profile-tasks",
+      "vhost": "/",
+      "destination": "profile-processing",
+      "destination_type": "queue",
+      "routing_key": "profile.task",
+      "arguments": {}
+    },
+    {
+      "source": "profile-tasks.retry",
+      "vhost": "/",
+      "destination": "profile-processing.retry.5s",
+      "destination_type": "queue",
+      "routing_key": "profile.task.retry.5s",
+      "arguments": {}
+    },
+    {
+      "source": "profile-tasks.retry",
+      "vhost": "/",
+      "destination": "profile-processing.retry.30s",
+      "destination_type": "queue",
+      "routing_key": "profile.task.retry.30s",
+      "arguments": {}
+    },
+    {
+      "source": "profile-tasks.retry",
+      "vhost": "/",
+      "destination": "profile-processing.retry.2m",
+      "destination_type": "queue",
+      "routing_key": "profile.task.retry.2m",
+      "arguments": {}
+    },
+    {
+      "source": "profile-tasks.dlx",
+      "vhost": "/",
+      "destination": "profile-processing.dlq",
+      "destination_type": "queue",
+      "routing_key": "profile.task",
+      "arguments": {}
+    },
+    {
+      "source": "email-tasks",
+      "vhost": "/",
+      "destination": "email-processing",
+      "destination_type": "queue",
+      "routing_key": "email.send",
+      "arguments": {}
+    },
+    {
+      "source": "email-tasks.retry",
+      "vhost": "/",
+      "destination": "email-processing.retry.5s",
+      "destination_type": "queue",
+      "routing_key": "email.send.retry.5s",
+      "arguments": {}
+    },
+    {
+      "source": "email-tasks.retry",
+      "vhost": "/",
+      "destination": "email-processing.retry.30s",
+      "destination_type": "queue",
+      "routing_key": "email.send.retry.30s",
+      "arguments": {}
+    },
+    {
+      "source": "email-tasks.retry",
+      "vhost": "/",
+      "destination": "email-processing.retry.2m",
+      "destination_type": "queue",
+      "routing_key": "email.send.retry.2m",
+      "arguments": {}
+    },
+    {
+      "source": "email-tasks.dlx",
+      "vhost": "/",
+      "destination": "email-processing.dlq",
+      "destination_type": "queue",
+      "routing_key": "email.send",
+      "arguments": {}
+    },
+    {
+      "source": "image-tasks",
+      "vhost": "/",
+      "destination": "image-processing",
+      "destination_type": "queue",
+      "routing_key": "image.process",
+      "arguments": {}
+    },
+    {
+      "source": "image-tasks.retry",
+      "vhost": "/",
+      "destination": "image-processing.retry.5s",
+      "destination_type": "queue",
+      "routing_key": "image.process.retry.5s",
+      "arguments": {}
+    },
+    {
+      "source": "image-tasks.retry",
+      "vhost": "/",
+      "destination": "image-processing.retry.30s",
+      "destination_type": "queue",
+      "routing_key": "image.process.retry.30s",
+      "arguments": {}
+    },
+    {
+      "source": "image-tasks.retry",
+      "vhost": "/",
+      "destination": "image-processing.retry.2m",
+      "destination_type": "queue",
+      "routing_key": "image.process.retry.2m",
+      "arguments": {}
+    },
+    {
+      "source": "image-tasks.dlx",
+      "vhost": "/",
+      "destination": "image-processing.dlq",
+      "destination_type": "queue",
+      "routing_key": "image.process",
+      "arguments": {}
+    },
+    {
+      "source": "document-tasks",
+      "vhost": "/",
+      "destination": "document-processing",
+      "destination_type": "queue",
+      "routing_key": "document.process",
+      "arguments": {}
+    },
+    {
+      "source": "document-tasks.retry",
+      "vhost": "/",
+      "destination": "document-processing.retry.5s",
+      "destination_type": "queue",
+      "routing_key": "document.process.retry.5s",
+      "arguments": {}
+    },
+    {
+      "source": "document-tasks.retry",
+      "vhost": "/",
+      "destination": "document-processing.retry.30s",
+      "destination_type": "queue",
+      "routing_key": "document.process.retry.30s",
+      "arguments": {}
+    },
+    {
+      "source": "document-tasks.retry",
+      "vhost": "/",
+      "destination": "document-processing.retry.2m",
+      "destination_type": "queue",
+      "routing_key": "document.process.retry.2m",
+      "arguments": {}
+    },
+    {
+      "source": "document-tasks.dlx",
+      "vhost": "/",
+      "destination": "document-processing.dlq",
+      "destination_type": "queue",
+      "routing_key": "document.process",
+      "arguments": {}
+    },
+    {
+      "source": "email-tasks.dlx",
+      "vhost": "/",
+      "destination": "email-expired",
+      "destination_type": "queue",
+      "routing_key": "email.expired",
+      "arguments": {}
+    },
+    {
+      "source": "task-results",
+      "vhost": "/",
+      "destination": "task-results",
+      "destination_type": "queue",
+      "routing_key": "task.result",
+      "arguments": {}
+    }
+  ]
+}
