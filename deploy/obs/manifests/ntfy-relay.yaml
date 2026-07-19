@@ -1,0 +1,72 @@
+# ntfy-relay (ADR-003.4): Alertmanager webhook -> ntfy publish. Source:
+# scripts/obs/ntfy-relay/. Image is built into the local registry by
+# `make images` like every lab service. To page via ntfy.sh instead of the
+# in-cluster server: NTFY_URL=https://ntfy.sh and a hard-to-guess topic
+# (plus a netpol/egress allow for 443 — already present in netpols.yaml).
+apiVersion: v1
+kind: Service
+metadata:
+  name: ntfy-relay
+  namespace: lab-obs
+  labels:
+    app: ntfy-relay
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+  selector:
+    app: ntfy-relay
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ntfy-relay
+  namespace: lab-obs
+  labels:
+    app: ntfy-relay
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ntfy-relay
+  template:
+    metadata:
+      labels:
+        app: ntfy-relay
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: ntfy-relay
+          image: localhost:5001/ntfy-relay:dev
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: NTFY_URL
+              value: http://ntfy
+            - name: NTFY_TOPIC
+              value: lab-alerts
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 32Mi

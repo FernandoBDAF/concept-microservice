@@ -4,6 +4,8 @@ from typing import Awaitable, Callable, Optional
 
 import aio_pika
 
+from src.monitoring.tracing import consumer_span
+
 logger = logging.getLogger(__name__)
 
 
@@ -118,9 +120,29 @@ class AsyncRabbitMQConsumer:
                     logger.error("Invalid JSON payload; rejecting to DLQ", exc_info=True)
                     raise
 
-                logger.info("Received message", extra={"id": payload.get("id")})
-                await handler(payload)
-                logger.info("Processed message", extra={"id": payload.get("id")})
+                # CONSUMER span around validate+process, with the parent
+                # context extracted from the publisher's W3C tracecontext
+                # AMQP headers (no-op when tracing is disabled). The envelope
+                # also carries an app-level metadata.trace_id (correlation
+                # id) which is recorded as an attribute for cross-reference.
+                metadata = payload.get("metadata") or {}
+                with consumer_span(
+                    "consume document-processing",
+                    headers=dict(message.headers or {}),
+                    attributes={
+                        "messaging.system": "rabbitmq",
+                        "messaging.operation": "process",
+                        "messaging.destination.name": self.config.get(
+                            "queue", "document-processing"
+                        ),
+                        "messaging.rabbitmq.destination.routing_key": message.routing_key,
+                        "messaging.message.id": payload.get("id"),
+                        "app.envelope.trace_id": metadata.get("trace_id"),
+                    },
+                ):
+                    logger.info("Received message", extra={"id": payload.get("id")})
+                    await handler(payload)
+                    logger.info("Processed message", extra={"id": payload.get("id")})
         except Exception:
             logger.exception("Message processing failed; nacked without requeue (-> DLQ)")
 

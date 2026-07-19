@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 )
@@ -13,7 +14,11 @@ type Message struct {
 	Metadata  map[string]string `json:"metadata,omitempty"`
 }
 
-type MessageHandler func(msg *Message) error
+// MessageHandler processes one delivered message. The context carries the
+// consumer span extracted from the delivery's trace headers; it is derived
+// from context.Background() (not the shutdown context) so an in-flight
+// message finishes even when shutdown has been signaled.
+type MessageHandler func(ctx context.Context, msg *Message) error
 
 func NewMessage(id, msgType string, payload interface{}) (*Message, error) {
 	payloadBytes, err := json.Marshal(payload)

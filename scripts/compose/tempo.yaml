@@ -1,0 +1,30 @@
+# Tempo single-binary config for the compose stack (ADR-003.2) — mirrors the
+# grafana/tempo chart's shape on kind: HTTP API on 3200, OTLP in on 4317
+# (grpc) / 4318 (http), local storage, 24h retention (lab traces are
+# disposable). Mounted at /etc/tempo.yaml by the compose `tempo` service.
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: "0.0.0.0:4317"
+        http:
+          endpoint: "0.0.0.0:4318"
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/traces
+    wal:
+      path: /var/tempo/wal
+
+compactor:
+  compaction:
+    block_retention: 24h
+
+usage_report:
+  reporting_enabled: false

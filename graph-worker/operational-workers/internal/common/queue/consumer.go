@@ -8,7 +8,12 @@ import (
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.uber.org/zap"
+
+	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
 // Consumer connects to RabbitMQ, declares its topology idempotently, and
@@ -305,7 +310,27 @@ func (c *Consumer) handleDelivery(delivery amqp.Delivery, handler MessageHandler
 		return
 	}
 
-	if err := handler(&msg); err != nil {
+	// Continue the trace started by the publisher: the parent span context
+	// arrives in the AMQP headers (traceparent, injected from envelope
+	// metadata). The consumer span is deliberately rooted in
+	// context.Background(), not the shutdown context, so an in-flight
+	// message is never aborted mid-processing by SIGTERM.
+	ctx := extractTraceContext(context.Background(), delivery.Headers)
+	ctx, span := otel.Tracer("operational-workers/queue").Start(ctx,
+		"consume "+c.config.Queue,
+		oteltrace.WithSpanKind(oteltrace.SpanKindConsumer),
+		oteltrace.WithAttributes(
+			attribute.String("messaging.system", "rabbitmq"),
+			attribute.String("messaging.operation", "process"),
+			attribute.String("messaging.destination.name", c.config.Queue),
+			attribute.String("messaging.message.id", msg.ID),
+		),
+	)
+	defer span.End()
+
+	if err := handler(ctx, &msg); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "message processing failed")
 		c.logger.Error("failed to process message; dropping to DLQ",
 			zap.Error(err),
 			zap.String("queue", c.config.Queue),

@@ -1,0 +1,56 @@
+# hello-guest — its OWN compose project (ADR-007.2: project-per-guest).
+# Host-port block 41xx per the registry in documentation/HOST_CONTRACT.md §1.4.
+#
+# Both services sit on this project's private default network AND on the lab's
+# `microservices_default` network, with `hello-guest-*` aliases there so the
+# host Prometheus can scrape hello-guest-web:8080 / hello-guest-worker:8080
+# (and Grafana can graph them). Requires the lab stack to be up first
+# (`make up` at the repo root creates microservices_default).
+name: hello-guest
+
+services:
+  web:
+    build:
+      context: .
+      args:
+        CMD: web
+    image: localhost:5001/hello-guest-web:dev
+    ports:
+      - "4100:8080"
+    networks:
+      default: {}
+      lab:
+        aliases: [hello-guest-web]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+  worker:
+    build:
+      context: .
+      args:
+        CMD: worker
+    image: localhost:5001/hello-guest-worker:dev
+    environment:
+      HELLO_JOB_INTERVAL: 2s
+    ports:
+      - "4110:8080"
+    networks:
+      default: {}
+      lab:
+        aliases: [hello-guest-worker]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+networks:
+  default: {}
+  lab:
+    external: true
+    name: microservices_default

@@ -1,6 +1,8 @@
 # Phase v3 — Observability depth (+ status page + hello-guest)
 
-**Status:** pending · **Depends on:** v2 · **Exit tag:** `lab-v3.0` ·
+**Status:** implemented (expedited 2026-07-19; exit experiments authored but
+not yet run — ledger in [v3-DEFERRED.md](v3-DEFERRED.md)) · **Depends on:**
+v2 · **Exit tag:** `lab-v3.0` (tag after the deferred runs pass) ·
 **Decisions in force:** ADR-003 (all), ADR-001.3 (status page), ADR-001.4
 (hello-guest), ADR-005.1/.2 seeds, ADR-007.1/.2 (contract draft)
 

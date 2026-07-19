@@ -1,0 +1,81 @@
+# Lab alert set (ADR-003.4, phase brief §4). Every alert carries a runbook
+# annotation pointing at the matching drill in EXPERIMENTS.md — an alert you
+# can't act on teaches nothing. Node-pressure alerts are NOT duplicated here:
+# kube-prometheus-stack's default rules already ship KubeNodePressure /
+# NodeMemoryHighUtilization / NodeFilesystemSpaceFillingUp et al.
+# Discovered via ruleSelectorNilUsesHelmValues=false (no release label).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: lab-alerts
+  namespace: lab-obs
+  labels:
+    lab.local/tier: observability
+spec:
+  groups:
+    - name: lab.rules
+      rules:
+        - alert: QueueDepthSustained
+          expr: rabbitmq_queue_messages{queue=~".*-processing"} > 500
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Queue {{ $labels.queue }} depth over 500 for 5m"
+            description: >-
+              {{ $labels.queue }} has held {{ $value }} messages for 5
+              minutes — consumers are absent or can't keep up. Scale the
+              matching worker or find out why it stopped consuming.
+            runbook_url: https://github.com/FernandoBDAF/coppice/blob/main/EXPERIMENTS.md#exp-04--burst-absorption--drain
+        - alert: DLQGrowth
+          expr: increase(rabbitmq_queue_messages{queue=~".+\\.dlq"}[10m]) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "DLQ {{ $labels.queue }} is growing"
+            description: >-
+              {{ $labels.queue }} gained messages in the last 10 minutes —
+              something is poisoning or failing. Triage the payloads
+              (Grafana DLQ panel -> trace_id -> OpenSearch).
+            runbook_url: https://github.com/FernandoBDAF/coppice/blob/main/EXPERIMENTS.md#exp-05--poison-messages--dlq-triage
+        - alert: AuthBreakerOpen
+          # api_auth_breaker_state: 0=closed 1=half-open 2=open (v3 metric,
+          # added with the breaker instrumentation).
+          expr: api_auth_breaker_state == 2
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "API->auth circuit breaker is open"
+            description: >-
+              api-service has opened its breaker to auth-service: token
+              validation is failing fast. Check auth-service health and the
+              rate-limit path.
+            runbook_url: https://github.com/FernandoBDAF/coppice/blob/main/EXPERIMENTS.md#exp-08--incident-reproduction-rate-limit--breaker--outage
+        - alert: APIP99OverSLO
+          # 0.5s is a PLACEHOLDER until the v3 calibration run writes
+          # documentation/experiments/SLO-BASELINE.md (ADR-003.6); update the
+          # threshold to baseline+margin from that doc when it lands.
+          expr: histogram_quantile(0.99, sum by (le) (rate(api_http_request_duration_seconds_bucket[5m]))) > 0.5
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "API p99 latency over SLO (placeholder 500ms)"
+            description: >-
+              p99 across all API routes is {{ $value }}s, over the SLO
+              threshold. Check saturation (CPU throttling, queue backlogs,
+              DB pool) before blaming the network.
+            runbook_url: https://github.com/FernandoBDAF/coppice/blob/main/EXPERIMENTS.md#exp-03--steady-load
+        - alert: ScrapeTargetDown
+          expr: up == 0
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Scrape target {{ $labels.job }}/{{ $labels.instance }} down"
+            description: >-
+              Prometheus has failed to scrape {{ $labels.instance }}
+              (job {{ $labels.job }}, namespace {{ $labels.namespace }}) for
+              2 minutes — the pod is gone, not ready, or netpol-blocked.
+            runbook_url: https://github.com/FernandoBDAF/coppice/blob/main/EXPERIMENTS.md#exp-06--worker-outage--recovery

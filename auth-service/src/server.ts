@@ -1,3 +1,8 @@
+// Tracing MUST be the first import: it starts the OpenTelemetry SDK (behind
+// the OTEL_EXPORTER_OTLP_ENDPOINT gate) before express/pg/http are loaded so
+// their instrumentation hooks can patch them. See infrastructure/tracing/otel.ts.
+import "./infrastructure/tracing/register.js";
+import { shutdownTracing } from "./infrastructure/tracing/otel.js";
 import { createApp } from "./app.js";
 import { config } from "./config/index.js";
 import { migrationService } from "./infrastructure/database/migrations.js";
@@ -49,6 +54,10 @@ async function startServer() {
           .close()
           .catch((dbErr: unknown) => {
             logger.error({ err: dbErr }, "Error closing database pool");
+          })
+          .then(() => shutdownTracing())
+          .catch((otelErr: unknown) => {
+            logger.error({ err: otelErr }, "Error shutting down tracing");
           })
           .finally(() => {
             clearTimeout(forceExitTimer);

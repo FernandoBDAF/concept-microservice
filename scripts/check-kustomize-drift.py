@@ -45,9 +45,12 @@ SERVICE_MAP = {
     "minio-init": "minio-bucket-init",
     "api-migrate": "api-migrate",
     "auth-migrate": "auth-migrate",
-    # observability stays compose-side until v3 (phase brief: out of scope)
+    # compose-side observability: the cluster twin runs kube-prometheus-stack
+    # + Tempo via helm in lab-obs (deploy/obs, ADR-003) — outside the kustomize
+    # tree this check renders, so all three stay deliberately one-sided here
     "prometheus": None,
     "grafana": None,
+    "tempo": None,
 }
 
 # cluster-only env keys: secretKeyRef helpers consumed by $(VAR) expansion in

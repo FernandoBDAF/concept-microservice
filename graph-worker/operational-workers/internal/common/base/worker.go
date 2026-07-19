@@ -11,6 +11,7 @@ import (
 
 	"github.com/fernandobarroso/microservices/operational-workers/internal/common/processors"
 	commonQueue "github.com/fernandobarroso/microservices/operational-workers/internal/common/queue"
+	"github.com/fernandobarroso/microservices/operational-workers/internal/common/tracing"
 	"github.com/fernandobarroso/microservices/operational-workers/internal/common/utils"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -134,15 +135,15 @@ func (w *BaseWorker) Start(ctx context.Context) error {
 		}
 	}()
 
-	// Message handler with metrics. Processing runs on a detached context
-	// (not the shutdown-signal ctx) so an in-flight message finishes
-	// instead of being aborted mid-way when SIGTERM/SIGINT arrives; the
-	// consumer stops pulling *new* deliveries as soon as ctx is done.
-	handler := func(msg *commonQueue.Message) error {
+	// Message handler with metrics. processCtx comes from the consumer: it
+	// carries the consumer span (extracted from the delivery's trace
+	// headers) but is detached from the shutdown-signal ctx, so an
+	// in-flight message finishes instead of being aborted mid-way when
+	// SIGTERM/SIGINT arrives; the consumer stops pulling *new* deliveries
+	// as soon as ctx is done.
+	handler := func(processCtx context.Context, msg *commonQueue.Message) error {
 		timer := prometheus.NewTimer(w.metrics.ConsumeLatency)
 		defer timer.ObserveDuration()
-
-		processCtx := context.Background()
 
 		// Validate message first
 		if err := w.processor.Validate(msg); err != nil {
@@ -185,6 +186,22 @@ func (w *BaseWorker) Shutdown(ctx context.Context) error {
 
 // Run runs the worker with signal handling
 func (w *BaseWorker) Run() error {
+	// OpenTelemetry tracing (ADR-003.2): no-op unless
+	// OTEL_EXPORTER_OTLP_ENDPOINT is set. Service name is
+	// "<worker-type>-worker" (e.g. email-worker), overridable via
+	// OTEL_SERVICE_NAME.
+	tracingShutdown, err := tracing.Init(context.Background(), w.config.WorkerType+"-worker")
+	if err != nil {
+		return fmt.Errorf("failed to init tracing: %w", err)
+	}
+	defer func() {
+		flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := tracingShutdown(flushCtx); err != nil {
+			log.Printf("Tracing shutdown error: %v", err)
+		}
+	}()
+
 	// Create context that listens for interrupt signals
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

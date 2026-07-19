@@ -30,8 +30,9 @@ spec:
         - protocol: TCP
           port: 53
 ---
-# api-service: reached from the ingress controller; talks to auth (in-ns),
-# postgres/redis/rabbitmq/minio (lab-infra).
+# api-service: reached from the ingress controller (+ prometheus scrapes
+# :8081); talks to auth (in-ns), postgres/redis/rabbitmq/minio (lab-infra),
+# tempo (lab-obs, OTLP).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -50,6 +51,16 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-obs
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 8081
   egress:
     - to:
         - podSelector:
@@ -58,6 +69,16 @@ spec:
       ports:
         - protocol: TCP
           port: 3000
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-obs
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: tempo
+      ports:
+        - protocol: TCP
+          port: 4318
     - to:
         - namespaceSelector:
             matchLabels:
@@ -99,7 +120,8 @@ spec:
         - protocol: TCP
           port: 9000
 ---
-# auth-service: reached from ingress and api-service; talks only to postgres.
+# auth-service: reached from ingress, api-service and prometheus (metrics
+# share the app port); talks to postgres, tempo (lab-obs, OTLP).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -118,6 +140,12 @@ spec:
         - podSelector:
             matchLabels:
               app: api-service
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-obs
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
       ports:
         - protocol: TCP
           port: 3000
@@ -132,9 +160,20 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-obs
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: tempo
+      ports:
+        - protocol: TCP
+          port: 4318
 ---
-# workers: consume from rabbitmq only — no ingress path at all (health
-# probes come from the kubelet, which NetworkPolicy does not gate).
+# workers: consume from rabbitmq; the only ingress path is prometheus
+# scraping :8080 (health probes come from the kubelet, which NetworkPolicy
+# does not gate). Spans go to tempo (lab-obs, OTLP).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -145,6 +184,17 @@ spec:
     matchLabels:
       lab.local/role: worker
   policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-obs
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 8080
   egress:
     - to:
         - namespaceSelector:
@@ -156,8 +206,19 @@ spec:
       ports:
         - protocol: TCP
           port: 5672
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-obs
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: tempo
+      ports:
+        - protocol: TCP
+          port: 4318
 ---
-# graphrag: rabbitmq + mongodb + minio.
+# graphrag: rabbitmq + mongodb + minio + tempo (lab-obs, OTLP); prometheus
+# scrapes :8081.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -168,7 +229,28 @@ spec:
     matchLabels:
       app: graphrag-service
   policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-obs
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 8081
   egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-obs
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: tempo
+      ports:
+        - protocol: TCP
+          port: 4318
     - to:
         - namespaceSelector:
             matchLabels:

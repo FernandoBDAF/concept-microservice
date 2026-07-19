@@ -1,0 +1,307 @@
+:root {
+  --bg: #0a0e0c;
+  --panel: #10160f;
+  --border: #1f2a21;
+  --border-strong: #2e4030;
+  --text: #c9d4cc;
+  --dim: #6f7f72;
+  --phosphor: #34d399;
+  --green: #4ade80;
+  --yellow: #facc15;
+  --red: #f87171;
+  --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono",
+    monospace;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--bg);
+}
+
+body {
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  min-height: 100vh;
+  padding: 20px 24px 48px;
+}
+
+a {
+  color: var(--phosphor);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+a:focus-visible,
+button:focus-visible {
+  outline: 1px solid var(--phosphor);
+  outline-offset: 2px;
+}
+
+.console {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+/* ---- header / prompt line ---- */
+
+.prompt-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.prompt-title {
+  color: var(--phosphor);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+}
+
+.prompt-sep {
+  color: var(--dim);
+}
+
+.prompt-meta {
+  color: var(--dim);
+}
+
+.tick {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--phosphor);
+  margin-left: 4px;
+  animation: tick-pulse 2s ease-in-out infinite;
+}
+
+.tick.stale {
+  background: var(--red);
+  animation: none;
+}
+
+@keyframes tick-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tick {
+    animation: none;
+  }
+}
+
+/* ---- target switcher ---- */
+
+.switcher {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0 20px;
+}
+
+.switcher button {
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 4px 14px;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.switcher button:hover {
+  color: var(--text);
+  border-color: var(--phosphor);
+}
+
+.switcher button.active {
+  color: var(--bg);
+  background: var(--phosphor);
+  border-color: var(--phosphor);
+  font-weight: 700;
+}
+
+.switcher button.down {
+  border-style: dashed;
+  opacity: 0.7;
+}
+
+.switcher .avail {
+  margin-left: 8px;
+  font-size: 11px;
+}
+
+/* ---- sections ---- */
+
+.section {
+  margin-bottom: 24px;
+}
+
+.section-label {
+  color: var(--dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 8px;
+}
+
+.section-label::before {
+  content: "## ";
+  color: var(--border-strong);
+}
+
+/* ---- service cards ---- */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+}
+
+.card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.card-name {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-sub {
+  color: var(--dim);
+  font-size: 11px;
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- badges: bracketed process-output tokens ---- */
+
+.badge {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.badge::before {
+  content: "[";
+  opacity: 0.6;
+}
+
+.badge::after {
+  content: "]";
+  opacity: 0.6;
+}
+
+.badge.ok {
+  color: var(--green);
+}
+
+.badge.warn {
+  color: var(--yellow);
+}
+
+.badge.bad {
+  color: var(--red);
+}
+
+.badge.dim {
+  color: var(--dim);
+}
+
+/* ---- health rows ---- */
+
+.health-row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 4px 0;
+  border-bottom: 1px dotted var(--border);
+}
+
+.health-row:last-child {
+  border-bottom: none;
+}
+
+.health-service {
+  min-width: 160px;
+  font-weight: 700;
+}
+
+.health-latency {
+  color: var(--dim);
+}
+
+.health-error {
+  color: var(--red);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- links ---- */
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+.link-note {
+  color: var(--dim);
+  font-size: 11px;
+}
+
+/* ---- empty / unavailable states ---- */
+
+.notice {
+  border: 1px dashed var(--border-strong);
+  color: var(--dim);
+  padding: 16px;
+  text-align: center;
+}
+
+.notice strong {
+  color: var(--yellow);
+}
+
+.footer {
+  margin-top: 32px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  color: var(--dim);
+  font-size: 11px;
+}

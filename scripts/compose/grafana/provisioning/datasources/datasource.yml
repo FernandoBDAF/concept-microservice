@@ -8,3 +8,12 @@ datasources:
     url: http://prometheus:9090
     isDefault: true
     editable: true
+
+  # Tempo (ADR-003.2) — single-binary HTTP API; port matches
+  # scripts/compose/tempo.yaml server.http_listen_port.
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: true

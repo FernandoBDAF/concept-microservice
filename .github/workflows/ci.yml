@@ -24,12 +24,15 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: auth-service/package-lock.json
+          cache-dependency-path: |
+            auth-service/package-lock.json
+            mission-control/status-page/package-lock.json
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: cd auth-service && npm ci
       - run: make verify
+      - run: cd mission-control/status-page && npm ci && npm run build
 
   images:
     runs-on: ubuntu-latest
@@ -43,6 +46,9 @@ jobs:
       - run: docker build -t ci/email-worker -f graph-worker/operational-workers/Dockerfile.email graph-worker/operational-workers
       - run: docker build -t ci/image-worker -f graph-worker/operational-workers/Dockerfile.image graph-worker/operational-workers
       - run: docker build -t ci/profile-worker -f graph-worker/operational-workers/Dockerfile.profile graph-worker/operational-workers
+      - run: docker build -t ci/ntfy-relay scripts/obs/ntfy-relay
+      - run: docker build -t ci/hello-guest-web --build-arg CMD=web guests/hello-guest
+      - run: docker build -t ci/hello-guest-worker --build-arg CMD=worker guests/hello-guest
 
   drift-check:
     runs-on: ubuntu-latest
@@ -58,3 +64,7 @@ jobs:
             https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.5.0/kustomize_v5.5.0_linux_amd64.tar.gz
           tar -xzf /tmp/kustomize.tgz -C /usr/local/bin kustomize
       - run: python3 scripts/check-kustomize-drift.py
+      # v3 additions render standalone (not part of the drift-checked overlay)
+      - run: kustomize build --load-restrictor LoadRestrictionsNone deploy/obs/manifests > /dev/null
+      - run: kustomize build guests/hello-guest/k8s/base > /dev/null
+      - run: kustomize build guests/hello-guest/k8s/obs > /dev/null

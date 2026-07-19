@@ -9,8 +9,26 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sony/gobreaker"
+
 	"github.com/fernandobarroso/microservices/api-service/internal/config"
 )
+
+func TestBreakerStateValue_Mapping(t *testing.T) {
+	cases := []struct {
+		state gobreaker.State
+		want  float64
+	}{
+		{gobreaker.StateClosed, 0},
+		{gobreaker.StateHalfOpen, 1},
+		{gobreaker.StateOpen, 2},
+	}
+	for _, tc := range cases {
+		if got := breakerStateValue(tc.state); got != tc.want {
+			t.Errorf("breakerStateValue(%v) = %v, want %v", tc.state, got, tc.want)
+		}
+	}
+}
 
 func newTestClient(handler http.HandlerFunc, readyToTrip uint32) *Client {
 	server := httptest.NewServer(handler)

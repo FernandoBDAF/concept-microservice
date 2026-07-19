@@ -44,6 +44,12 @@ const envSchema = z.object({
     .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
     .default("info"),
   LOG_PRETTY: booleanEnv(false),
+  // Tracing is enabled only when OTEL_EXPORTER_OTLP_ENDPOINT is set (see
+  // infrastructure/tracing/otel.ts, which reads process.env directly because
+  // it must run before this module loads). Declared here for documentation
+  // and typed access; both are optional with no test-fill.
+  OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional(),
+  OTEL_SERVICE_NAME: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

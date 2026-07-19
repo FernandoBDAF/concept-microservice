@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.config.worker_config import load_config
 from src.monitoring.health import set_ready, set_healthy
+from src.monitoring.tracing import TraceContextLogFilter, init_tracing
 from src.worker.base_worker import BaseWorker
 
 
@@ -21,6 +22,8 @@ def setup_logging(level: str) -> None:
         from pythonjsonlogger.jsonlogger import JsonFormatter  # python-json-logger 2.x
 
     handler = logging.StreamHandler()
+    # Adds trace_id/span_id to records when a span is active (no-op otherwise).
+    handler.addFilter(TraceContextLogFilter())
     handler.setFormatter(
         JsonFormatter(
             "%(asctime)s %(name)s %(levelname)s %(message)s",
@@ -39,6 +42,10 @@ async def main() -> None:
 
     logger = logging.getLogger(__name__)
     logger.info("Starting GraphRAG worker")
+
+    # Enabled only when OTEL_EXPORTER_OTLP_ENDPOINT is set; safe no-op
+    # otherwise (or when the opentelemetry packages are not installed).
+    init_tracing()
     logger.info(
         "RabbitMQ config",
         extra={

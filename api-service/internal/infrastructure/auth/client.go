@@ -8,10 +8,35 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sony/gobreaker"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/fernandobarroso/microservices/api-service/internal/config"
 )
+
+// authBreakerState exposes the auth-service circuit breaker state for
+// alerting (AuthBreakerOpen fires on == 2): 0 closed, 1 half-open, 2 open.
+var authBreakerState = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "api_auth_breaker_state",
+	Help: "State of the auth-service circuit breaker (0=closed, 1=half-open, 2=open)",
+})
+
+func init() {
+	prometheus.MustRegister(authBreakerState)
+}
+
+// breakerStateValue maps a gobreaker state to the gauge encoding above.
+func breakerStateValue(state gobreaker.State) float64 {
+	switch state {
+	case gobreaker.StateHalfOpen:
+		return 1
+	case gobreaker.StateOpen:
+		return 2
+	default: // gobreaker.StateClosed
+		return 0
+	}
+}
 
 type Client struct {
 	baseURL        string
@@ -42,12 +67,20 @@ func NewClient(cfg config.AuthConfig, cbCfg config.CircuitBreakerConfig) *Client
 		ReadyToTrip: func(counts gobreaker.Counts) bool {
 			return counts.ConsecutiveFailures >= cbCfg.ReadyToTrip
 		},
+		OnStateChange: func(_ string, _, to gobreaker.State) {
+			authBreakerState.Set(breakerStateValue(to))
+		},
 	}
+	// A fresh breaker starts closed.
+	authBreakerState.Set(breakerStateValue(gobreaker.StateClosed))
 
 	return &Client{
 		baseURL: cfg.URL,
 		httpClient: &http.Client{
 			Timeout: cfg.Timeout,
+			// otelhttp gives client spans (and traceparent header injection)
+			// for introspection calls; a no-op tracer provider makes this free.
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
 		},
 		circuitBreaker: gobreaker.NewCircuitBreaker(cbSettings),
 	}

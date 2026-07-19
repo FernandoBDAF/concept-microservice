@@ -1,0 +1,71 @@
+# One-shot Job: install the lab-logs index template before fluent-bit's
+# first bulk write creates the index with guessed mappings. trace_id/level
+# must be keyword (exact-match filters, the EXP-31 workflow); replicas 0
+# because the cluster is single-node (ADR-003.3) and would otherwise sit
+# yellow forever. Jobs are immutable — obs-up.sh deletes it before re-apply
+# (same pattern as the migration jobs in scripts/cluster/up.sh).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: lab-logs-index-template
+  namespace: lab-obs
+  labels:
+    app: lab-logs-index-template
+spec:
+  backoffLimit: 4
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app: lab-logs-index-template
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: curl
+          image: curlimages/curl:8.11.1
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              until curl -sf http://opensearch:9200 >/dev/null; do
+                echo "waiting for opensearch"; sleep 5
+              done
+              curl -sf -XPUT http://opensearch:9200/_index_template/lab-logs \
+                -H 'Content-Type: application/json' -d @- <<'EOF'
+              {
+                "index_patterns": ["lab-logs-*"],
+                "template": {
+                  "settings": {
+                    "number_of_shards": 1,
+                    "number_of_replicas": 0
+                  },
+                  "mappings": {
+                    "properties": {
+                      "@timestamp": { "type": "date" },
+                      "time":       { "type": "date" },
+                      "level":      { "type": "keyword" },
+                      "msg":        { "type": "text" },
+                      "message":    { "type": "text" },
+                      "trace_id":   { "type": "keyword" },
+                      "span_id":    { "type": "keyword" },
+                      "service":    { "type": "keyword" },
+                      "kubernetes": {
+                        "properties": {
+                          "namespace_name": { "type": "keyword" },
+                          "pod_name":       { "type": "keyword" },
+                          "container_name": { "type": "keyword" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+              EOF
+              echo "lab-logs index template installed"
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 32Mi

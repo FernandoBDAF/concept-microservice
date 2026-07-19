@@ -1,0 +1,21 @@
+# prometheus-redis-exporter (pinned 6.27.0 / v1.87.0 — ADR-003.5). The lab
+# redis has no auth (compose parity), so no secret is involved.
+fullnameOverride: redis-exporter
+
+redisAddress: redis://redis.lab-infra:6379
+
+serviceMonitor:
+  enabled: true
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    cpu: 100m
+    memory: 64Mi
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]

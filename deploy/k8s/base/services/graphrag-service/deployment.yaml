@@ -83,6 +83,14 @@ spec:
                   key: MINIO_ROOT_PASSWORD
             - name: HEALTH_PORT
               value: "8080"
+            # OpenTelemetry (ADR-003.2): OTLP/http to tempo in lab-obs —
+            # netpol egress allow lives in netpols/lab-core.yaml
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://tempo.lab-obs:4318
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: http/protobuf
+            - name: OTEL_SERVICE_NAME
+              value: graphrag-service
           startupProbe:
             httpGet:
               path: /health
