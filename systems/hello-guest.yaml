@@ -1,0 +1,21 @@
+# hello-guest as a system (schema: systems/README.md); mirrors its
+# launch.yaml (guests/hello-guest/launch.yaml is the guest-side contract
+# artifact; this entry is the host-side registration — v7 may unify them).
+name: hello-guest
+description: Reference guest proving HOST_CONTRACT.md (web + worker)
+port_block: 41xx
+targets:
+  compose:
+    up: make guest-up G=hello-guest
+    down: make guest-down G=hello-guest
+    status: make guest-status G=hello-guest
+  kind:
+    up: kubectl apply -k guests/hello-guest/k8s/base
+    down: kubectl delete -k guests/hello-guest/k8s/base
+    status: kubectl -n hello-guest get pods
+links:
+  compose:
+    web: http://localhost:4100
+  kind:
+    web: https://hello-guest.lab.local
+experiments: guests/hello-guest/
