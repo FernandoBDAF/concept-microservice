@@ -1,0 +1,8 @@
+name: Not_Kebab
+description: name is not kebab-case
+port_block: core
+targets:
+  compose:
+    up: make up
+    down: make down
+    status: make ps

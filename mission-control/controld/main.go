@@ -1,9 +1,10 @@
-// controld is the read-only seed of lab-controld (ADR-005.1/.2).
+// controld is lab-controld: the Mission Control daemon (ADR-005.1/.2).
 //
-// STRICTLY read-only in this phase: it only observes the compose and kind
-// targets (docker compose ps, kubectl get pods, HTTP health probes) and
-// serves summaries as JSON. It performs no control actions of any kind.
-// Binds 127.0.0.1 only (ADR-005.4).
+// v3 shipped the read-only sliver (targets/status/health/links). v6 adds the
+// control plane: actions from the systems/ registry executed as make
+// invocations with streamed output (actions.go, engine.go), run history,
+// and the ADR-005.4 auth gate (localhost stays no-auth; token + TLS are
+// mandatory to enable the aws target). Binds 127.0.0.1 by default.
 package main
 
 import (
@@ -14,6 +15,8 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -101,6 +104,8 @@ type server struct {
 	run  runner
 	http *http.Client
 
+	enableAWS bool
+
 	mu            sync.Mutex
 	targetsCache  []Target
 	targetsCached time.Time
@@ -116,10 +121,35 @@ func newServer(log *slog.Logger) *server {
 
 func main() {
 	addr := flag.String("addr", envOr("CONTROLD_ADDR", defaultAddr), "listen address (keep it on 127.0.0.1)")
+	repoRoot := flag.String("repo-root", envOr("CONTROLD_REPO_ROOT", "../.."),
+		"repo root that action commands exec from")
 	flag.Parse()
 
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+	cfg := ConfigFromEnv()
+	cfg.RepoRoot = ResolveRepoRoot(*repoRoot)
+	if err := ValidateStartup(cfg); err != nil {
+		log.Error("startup validation failed", "error", err)
+		os.Exit(1)
+	}
+
+	reg, err := LoadRegistry(filepath.Join(cfg.RepoRoot, "systems"), log)
+	if err != nil {
+		log.Error("registry load failed", "error", err)
+		os.Exit(1) // invalid systems/*.yaml is startup-fatal by design
+	}
+	store := NewStore("runs")
+	engine := NewEngine(cfg, reg, store, log)
+	recorder := NewRecorder("runs", store, log)
+	catalog := NewCatalog(cfg, recorder, log)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	reg.StartSIGHUPReload(ctx)
+
 	s := newServer(log)
+	s.enableAWS = cfg.EnableAWS
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -130,9 +160,27 @@ func main() {
 	mux.HandleFunc("GET /api/status", s.handleStatus)
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("GET /api/links", s.handleLinks)
+	mux.HandleFunc("GET /api/systems", engine.HandleSystems)
+	mux.HandleFunc("POST /api/actions", engine.HandleCreateAction)
+	mux.HandleFunc("GET /api/actions/{id}", engine.HandleGetAction)
+	mux.HandleFunc("GET /api/actions/{id}/stream", engine.HandleStreamAction)
+	mux.HandleFunc("GET /api/runs", engine.HandleRuns)
+	mux.HandleFunc("GET /api/experiments", catalog.HandleList)
+	mux.HandleFunc("POST /api/experiments/{id}/outcome", catalog.HandleOutcome)
+	mux.HandleFunc("POST /api/sessions", recorder.HandleCreate)
+	mux.HandleFunc("GET /api/sessions/current", recorder.HandleCurrent)
+	mux.HandleFunc("PATCH /api/sessions/{id}", recorder.HandlePatch)
+	mux.HandleFunc("GET /api/sessions/{id}/summary", recorder.HandleSummary)
 
-	log.Info("controld listening", "addr", *addr, "mode", "read-only")
-	if err := http.ListenAndServe(*addr, s.middleware(mux)); err != nil {
+	handler := s.middleware(AuthMiddleware(cfg, log)(mux))
+	if cfg.TLSCert != "" && cfg.TLSKey != "" {
+		log.Info("controld listening (TLS)", "addr", *addr, "mode", "read+control")
+		err = http.ListenAndServeTLS(*addr, cfg.TLSCert, cfg.TLSKey, handler)
+	} else {
+		log.Info("controld listening", "addr", *addr, "mode", "read+control")
+		err = http.ListenAndServe(*addr, handler)
+	}
+	if err != nil {
 		log.Error("server exited", "error", err)
 		os.Exit(1)
 	}
@@ -153,8 +201,8 @@ func (s *server) middleware(next http.Handler) http.Handler {
 			w.Header().Set("Vary", "Origin")
 		}
 		if r.Method == http.MethodOptions {
-			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -181,7 +229,7 @@ func (s *server) handleTargets(w http.ResponseWriter, r *http.Request) {
 	if s.targetsCache != nil && time.Since(s.targetsCached) < targetCacheTTL {
 		cached := s.targetsCache
 		s.mu.Unlock()
-		writeJSON(w, http.StatusOK, cached)
+		s.writeTargets(w, cached)
 		return
 	}
 	s.mu.Unlock()
@@ -208,7 +256,23 @@ func (s *server) handleTargets(w http.ResponseWriter, r *http.Request) {
 	s.targetsCache = targets
 	s.targetsCached = time.Now()
 	s.mu.Unlock()
-	writeJSON(w, http.StatusOK, targets)
+	s.writeTargets(w, targets)
+}
+
+// writeTargets responds with the probed targets, appending the aws
+// pseudo-row (a map, so it can carry `note`) when the aws target is enabled —
+// its availability probe stays stubbed until the v5 session semantics land.
+func (s *server) writeTargets(w http.ResponseWriter, targets []Target) {
+	if !s.enableAWS {
+		writeJSON(w, http.StatusOK, targets)
+		return
+	}
+	out := make([]any, 0, len(targets)+1)
+	for _, t := range targets {
+		out = append(out, t)
+	}
+	out = append(out, AWSTargetEntry())
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *server) handleStatus(w http.ResponseWriter, r *http.Request) {

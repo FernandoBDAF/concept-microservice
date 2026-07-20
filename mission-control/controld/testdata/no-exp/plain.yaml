@@ -1,0 +1,8 @@
+name: plain
+description: a system that declares no experiments
+port_block: 42xx
+targets:
+  compose:
+    up: make up
+    down: make down
+    status: make ps

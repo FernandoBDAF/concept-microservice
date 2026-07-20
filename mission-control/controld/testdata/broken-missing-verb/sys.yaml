@@ -1,0 +1,7 @@
+name: missing-verb
+description: compose target has no status command
+port_block: core
+targets:
+  compose:
+    up: make up
+    down: make down

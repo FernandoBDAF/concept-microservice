@@ -1,0 +1,39 @@
+# The lab itself, as a system (schema: systems/README.md).
+name: lab
+description: The microservices lab (api, auth, workers, graphrag + stores)
+port_block: core
+targets:
+  compose:
+    up: make up
+    down: make down
+    status: make ps
+  kind:
+    up: make cluster-up
+    down: make cluster-down
+    status: make cluster-status
+  aws:
+    up: make aws-up
+    down: make aws-down
+    status: make aws-plan
+scale:
+  - component: email-worker
+    compose: make scale S=email-worker N={n}
+    kind: make cluster-scale S=email-worker N={n}
+  - component: image-worker
+    compose: make scale S=image-worker N={n}
+    kind: make cluster-scale S=image-worker N={n}
+  - component: profile-worker
+    compose: make scale S=profile-worker N={n}
+    kind: make cluster-scale S=profile-worker N={n}
+links:
+  compose:
+    grafana: http://localhost:3001
+    prometheus: http://localhost:9090
+    rabbitmq: http://localhost:15672
+    minio: http://localhost:9001
+  kind:
+    grafana: https://grafana.lab.local
+    prometheus: https://prometheus.lab.local
+    opensearch: https://opensearch.lab.local
+    ntfy: https://ntfy.lab.local
+experiments: experiments/
