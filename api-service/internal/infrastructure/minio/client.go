@@ -36,7 +36,8 @@ func NewClient(cfg Config, logger *zap.Logger) (*Client, error) {
 	// projected service-account token with STS. It also covers the EC2/ECS metadata
 	// providers, so it is the correct single "ambient" provider here.
 	// NOTE: presigned URLs generated with temporary (IRSA) creds embed the STS session
-	// token as a query param; the round-trip under IRSA is verified live in EXP-50.
+	// token as a query param; the round-trip under IRSA still needs live verification
+	// (planned as part of EXP-50's smoke leg — not yet run).
 	var creds *credentials.Credentials
 	if cfg.AccessKeyID != "" && cfg.SecretAccessKey != "" {
 		creds = credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretAccessKey, "")

@@ -42,6 +42,11 @@ spec:
                 WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'auth_user')\gexec
               SELECT 'ALTER ROLE auth_user LOGIN PASSWORD ' || quote_literal(:'pw')
                 WHERE EXISTS (SELECT FROM pg_roles WHERE rolname = 'auth_user')\gexec
+              -- RDS PG15: the master (postgres) is NOT superuser, so CREATE
+              -- DATABASE ... OWNER auth_user requires postgres to be a MEMBER of
+              -- auth_user. Idempotent: re-granting an existing membership only
+              -- emits a NOTICE, which ON_ERROR_STOP ignores.
+              GRANT auth_user TO postgres;
               SELECT 'CREATE DATABASE auth_db OWNER auth_user'
                 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'auth_db')\gexec
               SQL

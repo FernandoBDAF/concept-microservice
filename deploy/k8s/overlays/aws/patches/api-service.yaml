@@ -1,14 +1,15 @@
 # api-service (patches 2 + 3): IRSA SA, MinIO env → S3, DSN host → RDS.
 #
-# CODE GAP (WP-external, MUST fix for S3 auth to work): api-service's storage
-# client is minio-go constructed with credentials.NewStaticV4 (see
-# api-service/internal/infrastructure/minio/client.go). Static V4 creds do NOT
-# use IRSA; with the MINIO_ACCESS_KEY/SECRET_KEY env dropped below the client
-# gets empty creds and S3 calls fail. The code must switch to the IRSA
-# web-identity provider (minio-go credentials.NewIAM("") or the AWS SDK
-# default chain) before this overlay works end to end. Also: config.Validate()
-# currently REQUIRES access+secret keys when minio.endpoint is set — that guard
-# must relax under IRSA. Tracked in wp2 integration notes.
+# S3 auth under IRSA: this branch's storage client uses the minio-go IRSA
+# web-identity provider (credentials.NewIAM("")) / AWS default chain when the
+# static MINIO_ACCESS_KEY/SECRET_KEY are absent, and config.Validate() no longer
+# requires those keys once minio.endpoint is set — so dropping the static creds
+# below is correct and S3 calls authenticate via the api-service IRSA role.
+#
+# DSN ordering: POSTGRES_PASSWORD is restated FIRST below so it precedes
+# API_POSTGRES_DSN in the rendered container env. Kubernetes `$(VAR)`
+# substitution only expands vars defined EARLIER in the list; without this the
+# DSN would ship the literal string $(POSTGRES_PASSWORD) and RDS auth would fail.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -21,6 +22,14 @@ spec:
       containers:
         - name: api-service
           env:
+            # POSTGRES_PASSWORD restated FIRST so it precedes API_POSTGRES_DSN in
+            # the rendered env — $(VAR) expands only previously-defined vars.
+            # secretKeyRef copied verbatim from the base deployment.
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_PASSWORD
             # static MinIO creds removed — IRSA supplies S3 credentials
             - name: MINIO_ACCESS_KEY
               $patch: delete

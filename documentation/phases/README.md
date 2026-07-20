@@ -23,10 +23,10 @@ as the record of what exists and what validates it.
 |---|---|---|---|
 | v1 — Foundation | [v1-foundation.md](v1-foundation.md) | ✅ shipped | (pre-tagging) |
 | v1.1 — Guided experiments | [v1.1-experiments.md](v1.1-experiments.md) | ✅ shipped — owner catalog run pending | lab-v1.1 on catalog pass |
-| v2 — Cluster lab (kind) | [v2-cluster-lab.md](v2-cluster-lab.md) | pending | lab-v2.0 |
-| v3 — Observability + status page + hello-guest | [v3-observability.md](v3-observability.md) | pending | lab-v3.0 |
-| v4 — Hardening & scored experiments | [v4-hardening-and-assertions.md](v4-hardening-and-assertions.md) | pending | lab-v4.0 |
-| v5 — AWS track | [v5-aws.md](v5-aws.md) | pending | lab-v5.0 |
+| v2 — Cluster lab (kind) | [v2-cluster-lab.md](v2-cluster-lab.md) | ✅ shipped | lab-v2.0 ✓ |
+| v3 — Observability + status page + hello-guest | [v3-observability.md](v3-observability.md) | ✅ shipped — EXP-30..34 passed | lab-v3.0 ✓ |
+| v4 — Hardening & scored experiments | [v4-hardening-and-assertions.md](v4-hardening-and-assertions.md) | merged to main — live runs (EXP-4x) pending | lab-v4.0 on live pass |
+| v5 — AWS track | [v5-aws.md](v5-aws.md) | code-complete, in PR #4 — step-0 + EXP-50..55 pending | lab-v5.0 on live pass |
 | v6 — Mission Control | [v6-mission-control.md](v6-mission-control.md) | pending | lab-v6.0 |
 | v7 — Guest systems | [v7-guest-systems.md](v7-guest-systems.md) | pending | lab-v7.0 |
 | v8 — Extraction & reuse | [v8-extraction.md](v8-extraction.md) | pending | lab-v8.0 |

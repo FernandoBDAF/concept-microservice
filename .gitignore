@@ -28,7 +28,7 @@ scripts/obs/ntfy-relay/ntfy-relay
 *.tfstate
 *.tfstate.*
 .terraform/
-.terraform.lock.hcl
+# .terraform.lock.hcl is COMMITTED (provider-version reproducibility) — not ignored
 deploy/aws/terraform.tfvars
 deploy/aws/base/reaper/reaper.zip
 deploy/aws/base/ntfy-notifier/ntfy-notifier.zip

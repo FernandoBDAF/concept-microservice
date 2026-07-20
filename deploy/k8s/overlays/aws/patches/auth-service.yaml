@@ -2,9 +2,13 @@
 # discrete DATABASE_* env (not a single DSN); DATABASE_PASSWORD still comes
 # from the postgres-credentials Secret (key AUTH_DB_PASSWORD) unchanged.
 #
-# TODO (WP-external): RDS may enforce TLS (rds.force_ssl). auth-service's pg
-# client env for TLS is unknown from the overlay — verify it connects with
-# sslmode/ssl enabled, add the relevant env if the code supports it.
+# RDS TLS story (WP-external, rds.force_ssl=1): RDS rejects plaintext, so we set
+# DATABASE_SSL=true. Bare TLS would then fail cert verification against the
+# default trust store (no RDS CA), so we mount the vendored RDS global bundle
+# (rds-ca/global-bundle.pem, via the `rds-ca` configMap registered in
+# kustomization.yaml with disableNameSuffixHash) read-only at /etc/rds-ca and
+# point DATABASE_SSL_CA at it. auth-service then connects with verified TLS
+# (ssl: { ca, rejectUnauthorized: true }) — see auth-service/src/config/index.ts.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -18,3 +22,15 @@ spec:
           env:
             - name: DATABASE_HOST
               value: RDS_ADDRESS_PLACEHOLDER
+            - name: DATABASE_SSL
+              value: "true"
+            - name: DATABASE_SSL_CA
+              value: /etc/rds-ca/global-bundle.pem
+          volumeMounts:
+            - name: rds-ca
+              mountPath: /etc/rds-ca
+              readOnly: true
+      volumes:
+        - name: rds-ca
+          configMap:
+            name: rds-ca

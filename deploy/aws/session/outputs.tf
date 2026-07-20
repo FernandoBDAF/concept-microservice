@@ -58,18 +58,18 @@ output "rds_port" {
 
 output "postgres_secret_arn" {
   value       = aws_secretsmanager_secret.postgres_credentials.arn
-  description = "Secrets Manager JSON {POSTGRES_PASSWORD, AUTH_DB_PASSWORD}; WP2 ExternalSecret source"
+  description = "Secrets Manager JSON {POSTGRES_PASSWORD, AUTH_DB_PASSWORD}; the overlay's ExternalSecret source"
 }
 
 output "postgres_secret_name" {
   value       = aws_secretsmanager_secret.postgres_credentials.name
-  description = "stable name WP2 references in the ExternalSecret remoteRef"
+  description = "stable name the overlay's ExternalSecret references in its remoteRef"
 }
 
 # ── ACM (HANDOFF §5.5) ───────────────────────────────────────────────────────
 output "acm_certificate_arn" {
   value       = aws_acm_certificate_validation.wildcard.certificate_arn
-  description = "wildcard *.<lab_domain> cert; the ALB ingress annotation references it"
+  description = "wildcard *.<lab_domain> cert; the ALB controller auto-discovers it by ingress host — the ingress does NOT reference this ARN"
 }
 
 output "zone_id" {

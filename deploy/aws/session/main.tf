@@ -29,6 +29,10 @@ terraform {
 
 variable "aws_region" { type = string }
 variable "aws_profile" { type = string }
+variable "aws_account_id" {
+  type        = string
+  description = "the dedicated lab account id; guards against applying to the wrong account (ADR-006.5)"
+}
 variable "lab_domain" { type = string }
 variable "budget_limit" { type = number }
 variable "alert_email" { type = string }
@@ -59,8 +63,9 @@ variable "cluster_version" {
 
 variable "deploy_role_arn" {
   type = string
-  # base stack output `oidc_deploy_role_arn` (WP4: IAM role coppice-lab-deploy,
-  # assumed by the GitHub Actions OIDC pipeline). Empty ⇒ skip the access entry
+  # base stack output `oidc_deploy_role_arn` (the base-stack IAM role
+  # coppice-lab-deploy, assumed by the GitHub Actions OIDC pipeline —
+  # base/oidc.tf). Empty ⇒ skip the access entry
   # so `terraform validate`/first apply works before the base stack is applied.
   default     = ""
   description = "base stack output oidc_deploy_role_arn; grants the CI deploy role cluster access"
@@ -77,6 +82,9 @@ variable "multi_az" {
 provider "aws" {
   region  = var.aws_region
   profile = var.aws_profile
+  # Wrong-account guard (ADR-006.5): every apply aborts unless the resolved
+  # creds are for the dedicated lab account.
+  allowed_account_ids = [var.aws_account_id]
   default_tags {
     tags = {
       project = "coppice-lab"
@@ -132,7 +140,7 @@ module "eks" {
   # entry so kubectl works immediately post-apply (v21 API auth mode).
   enable_cluster_creator_admin_permissions = true
 
-  # CI deploy role (WP4 base-stack oidc.tf → oidc_deploy_role_arn) needs
+  # CI deploy role (base-stack oidc.tf → oidc_deploy_role_arn) needs
   # in-cluster authz so `kubectl apply -k` works with no laptop creds. Gated
   # on the var so validate/apply pass before the base stack exists (empty ⇒ {}).
   # TODO(v5): scope narrower than cluster-admin once EXP-54 pins the exact verbs.
@@ -157,14 +165,14 @@ module "eks" {
     }
   }
 
-  # VPC-CNI network-policy agent: the base netpols (deploy/k8s/base/netpols)
-  # need it enforced on EKS (kind's CNI does this natively). HANDOFF §6.6.
+  # NetworkPolicy enforcement is DEFERRED on EKS. The aws overlay still ships
+  # kind-shaped NetworkPolicies (default-deny + selectors referencing in-cluster
+  # postgres / ingress-nginx pods that don't exist here), so turning on the
+  # VPC-CNI netpol agent would sever api/auth/graphrag from RDS/S3 and block
+  # ALB→pod traffic. Left off until AWS-shaped policies are authored; without an
+  # enforcing agent the kind netpols remain inert objects.
   addons = {
-    vpc-cni = {
-      configuration_values = jsonencode({
-        enableNetworkPolicy = "true"
-      })
-    }
+    vpc-cni    = {}
     coredns    = {}
     kube-proxy = {}
   }
@@ -174,9 +182,9 @@ module "eks" {
 # HANDOFF §5.3: postgres 15, db.t4g.micro, 20GB gp3, backup_retention 1,
 # multi_az via var (default false). Master creds → Secrets Manager under the
 # EXACT keys the cluster's `postgres-credentials` Secret uses (POSTGRES_PASSWORD,
-# AUTH_DB_PASSWORD) so WP2's ExternalSecret is a straight passthrough. api_db /
+# AUTH_DB_PASSWORD) so the overlay's ExternalSecret is a straight passthrough. api_db /
 # auth_db + the auth_user role are created by the migration Jobs pointed here
-# (overlay patch, NOT this file — see wp1 integration notes for the gap).
+# (overlay patch, NOT this file — the migration Jobs own this gap).
 resource "random_password" "postgres" {
   length  = 32
   special = false # keep DSN URL-safe (no @/: to escape in the connection string)
@@ -189,7 +197,7 @@ resource "random_password" "auth_db" {
 
 # Master creds mirror the k8s Secret `postgres-credentials` key-for-key
 # (recon: scripts/cluster/init-secrets.sh + api/auth deployments). external-
-# secrets (WP2) does `extract` on this JSON → identical Secret, deployments
+# secrets (the overlay) does `extract` on this JSON → identical Secret, deployments
 # unchanged. NOTE: cluster builds the DSN inline from host+password, so the
 # host is patched by the overlay (RDS endpoint), NOT stored here.
 resource "aws_secretsmanager_secret" "postgres_credentials" {
@@ -277,6 +285,9 @@ module "rds" {
     {
       name  = "max_connections"
       value = "100"
+      # STATIC parameter: without pending-reboot the first apply fails with
+      # InvalidParameterCombination (it can't take effect while the DB runs).
+      apply_method = "pending-reboot"
     }
   ]
 }
@@ -297,7 +308,7 @@ resource "aws_s3_bucket_public_access_block" "documents" {
 
 # ── IRSA for api-service — S3 CRUD on the documents bucket (HANDOFF §5.4) ─────
 # Trust bound to the api-service ServiceAccount in lab-core (recon: base
-# manifests run api-service in namespace lab-core; WP2 must name the SA
+# manifests run api-service in namespace lab-core; the overlay must name the SA
 # `api-service` and annotate it with this role ARN). Presigned GETs need no
 # extra perms — the SDK signs locally with the assumed-role creds.
 data "aws_iam_policy_document" "api_service_assume" {

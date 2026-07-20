@@ -18,7 +18,7 @@ PROFILE    ?= single
 	cluster-scale cluster-sim-smoke cluster-sim-load cluster-sim-burst drift-check \
 	obs-up obs-down controld status-page guest-up guest-down guest-status \
 	chaos-up chaos-down routing-keys experiment experiments \
-	aws-init aws-plan aws-up aws-deploy aws-down aws-kubeconfig \
+	aws-init aws-plan aws-up aws-deploy aws-down aws-kubeconfig aws-sim-burst \
 	aws-reaper-pack aws-ntfy-pack aws-base-pack
 
 help: ## Show this help
@@ -234,6 +234,7 @@ aws-init: ## One-time: init base+session backends from bootstrap outputs (step 0
 	done
 
 aws-plan: ## Terraform plan for the session stack (requires step-0 setup)
+	@test -f $(TFVARS) || { echo "missing $(TFVARS) — see documentation/deployment/AWS_SESSION.md step 0"; exit 1; }
 	cd deploy/aws/session && terraform plan -var-file=../terraform.tfvars
 
 aws-up: ## Stand up a session: apply session stack, deploy, obs (~20 min)
@@ -242,6 +243,7 @@ aws-up: ## Stand up a session: apply session stack, deploy, obs (~20 min)
 	$(MAKE) aws-deploy
 
 aws-kubeconfig: ## Point kubectl at the session EKS cluster
+	@test -f $(TFVARS) || { echo "missing $(TFVARS) — see documentation/deployment/AWS_SESSION.md step 0"; exit 1; }
 	@aws eks update-kubeconfig \
 	  --name $$(cd deploy/aws/session && terraform output -raw cluster_name) \
 	  --region $(call AWS_TFVAR,aws_region) --profile $(call AWS_TFVAR,aws_profile)
@@ -251,7 +253,15 @@ aws-kubeconfig: ## Point kubectl at the session EKS cluster
 # kustomization.yaml — don't commit it; same mechanism as deploy-aws.yml),
 # everything else via a post-build stream sed from terraform outputs.
 aws-deploy: aws-kubeconfig ## Deploy the lab onto a live session cluster (no terraform)
+	@git diff --quiet -- deploy/k8s/overlays/aws/kustomization.yaml || { \
+	  echo "aws-deploy: deploy/k8s/overlays/aws/kustomization.yaml is already dirty."; \
+	  echo "  This target mutates it in place (kustomize edit set image) and restores"; \
+	  echo "  it afterward — refusing to start on a dirty overlay so your uncommitted"; \
+	  echo "  edits aren't clobbered. Commit/stash them, or:"; \
+	  echo "    git checkout -- deploy/k8s/overlays/aws/kustomization.yaml"; \
+	  exit 1; }
 	@set -e; \
+	trap 'git checkout -- deploy/k8s/overlays/aws/kustomization.yaml' EXIT; \
 	TF="terraform -chdir=deploy/aws/session output -raw"; \
 	ECR=$$($$TF ecr_registry); \
 	TAG=$${TAG:-$$(git rev-parse --short HEAD)}; \
@@ -278,16 +288,46 @@ aws-deploy: aws-kubeconfig ## Deploy the lab onto a live session cluster (no ter
 	OBS_LOGS=$${OBS_LOGS:-0} SKIP_POSTGRES=1 bash scripts/cluster/obs-up.sh
 	bash scripts/aws/session-checkpoints.sh
 
-aws-down: ## Destroy the session stack, then assert nothing tagged remains
+# Same k6 harness as `make sim-burst` (scripts/simulate/api-load.js), pointed at
+# the live ALB via the API_URL/AUTH_URL override the script already honors — no
+# compose network, real ACM cert. EXP-04 burst/drain against AWS.
+aws-sim-burst: ## k6 burst (50 VUs/30s) against the live AWS ingress — EXP-04 on AWS
+	@test -f $(TFVARS) || { echo "missing $(TFVARS) — see documentation/deployment/AWS_SESSION.md step 0"; exit 1; }
+	@set -e; \
+	DOMAIN=$$(terraform -chdir=deploy/aws/session output -raw lab_domain); \
+	docker run --rm -i \
+	  -e API_URL=https://api.$$DOMAIN -e AUTH_URL=https://auth.$$DOMAIN \
+	  -e SIM_VUS=50 -e SIM_DURATION=30s \
+	  $(K6_IMAGE) run - < scripts/simulate/api-load.js
+
+aws-down: ## Purge ingress/ALB, destroy the session stack, then assert nothing tagged remains
+	@test -f $(TFVARS) || { echo "missing $(TFVARS) — see documentation/deployment/AWS_SESSION.md step 0"; exit 1; }
+	# Delete Ingresses + wait for the ALB controller to reap the ALB BEFORE
+	# destroy — otherwise the ALB/SGs (created outside tfstate) orphan and VPC
+	# deletion fails with DependencyViolation (ADR-006.6).
+	./scripts/aws/purge-ingress.sh --region $(call AWS_TFVAR,aws_region) --profile $(call AWS_TFVAR,aws_profile)
 	cd deploy/aws/session && terraform destroy -var-file=../terraform.tfvars
 	./scripts/aws/assert-clean.sh --region $(call AWS_TFVAR,aws_region) --profile $(call AWS_TFVAR,aws_profile)
 
 # lambda zips must exist before the BASE stack plans/applies (validate is fine
 # without them — source_code_hash is fileexists-guarded)
+# Deterministic zips: copy the source into a temp dir, pin its mtime to a fixed
+# epoch and drop extra attrs (-X), so an unchanged .py yields byte-identical
+# bytes and terraform's source_code_hash stops churning across checkouts.
 aws-reaper-pack: ## Zip the TTL reaper Lambda (HANDOFF §4)
-	cd deploy/aws/base/reaper && rm -f reaper.zip && zip -q -j reaper.zip reaper.py
+	@set -e; d=$$(mktemp -d); cp deploy/aws/base/reaper/reaper.py "$$d/reaper.py"; \
+	  touch -t 200001010000 "$$d/reaper.py"; \
+	  rm -f deploy/aws/base/reaper/reaper.zip; \
+	  (cd "$$d" && zip -qX reaper.zip reaper.py); \
+	  mv "$$d/reaper.zip" deploy/aws/base/reaper/reaper.zip; \
+	  rm -rf "$$d"
 
 aws-ntfy-pack: ## Zip the budget→ntfy notifier Lambda (HANDOFF §3)
-	cd deploy/aws/base/ntfy-notifier && rm -f ntfy-notifier.zip && zip -q -j ntfy-notifier.zip notifier.py
+	@set -e; d=$$(mktemp -d); cp deploy/aws/base/ntfy-notifier/notifier.py "$$d/notifier.py"; \
+	  touch -t 200001010000 "$$d/notifier.py"; \
+	  rm -f deploy/aws/base/ntfy-notifier/ntfy-notifier.zip; \
+	  (cd "$$d" && zip -qX ntfy-notifier.zip notifier.py); \
+	  mv "$$d/ntfy-notifier.zip" deploy/aws/base/ntfy-notifier/ntfy-notifier.zip; \
+	  rm -rf "$$d"
 
 aws-base-pack: aws-reaper-pack aws-ntfy-pack ## Both base-stack lambda zips

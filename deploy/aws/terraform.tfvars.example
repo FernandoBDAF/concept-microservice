@@ -1,10 +1,11 @@
 # Copy to terraform.tfvars (gitignored) and fill in. One file feeds all
 # three stacks via -var-file (the make targets pass it).
-aws_region   = "us-east-1"          # ADR-006.5: pick ONE region, never drift
-aws_profile  = "lab"                # SSO/credentials profile for the dedicated account
-lab_domain   = "lab.example.com"    # ADR-006.6: Route53 zone you own
-budget_limit = 50                   # USD/month (ADR-006.4)
-alert_email  = "you@example.com"    # budget alarms (ntfy topic wired later)
+aws_region     = "us-east-1"         # ADR-006.5: pick ONE region, never drift
+aws_profile    = "lab"               # SSO/credentials profile for the dedicated account
+aws_account_id = "111122223333"      # ADR-006.5: dedicated lab account id; wrong-account guard on all three stacks
+lab_domain     = "lab.example.com"   # ADR-006.6: Route53 zone you own
+budget_limit   = 50                  # USD/month (ADR-006.4)
+alert_email    = "you@example.com"   # budget alarms (ntfy topic wired later)
 
 # Optional (defaulted) — uncomment to override. Stack-specific vars stay
 # commented here so the other stacks don't warn about undeclared values.

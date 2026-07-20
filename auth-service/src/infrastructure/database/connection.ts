@@ -27,7 +27,10 @@ class Database {
       max: config.database.max,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 10000,
-      ssl: config.database.ssl ? { rejectUnauthorized: false } : false,
+      // Resolved in config (false | { ca?, rejectUnauthorized }) so the CA is
+      // read once at startup and the verified/unverified TLS choice lives with
+      // the rest of the DB config (see config/index.ts resolveDatabaseSsl).
+      ssl: config.database.ssl,
     });
 
     this.setupEventHandlers();

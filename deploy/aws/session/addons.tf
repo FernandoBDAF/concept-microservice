@@ -4,7 +4,7 @@
 # module allows; TODO(v5) markers flag the spots broader than ideal.
 #
 # Chart pins (recorded from `helm search repo` at implementation time,
-# 2026-07-19 — see wp1 integration notes for the evidence):
+# 2026-07-19):
 #   aws-load-balancer-controller  chart 3.4.2   (app v3.4.2)
 #   external-secrets              chart 2.8.0   (app v2.8.0)
 #   external-dns                  chart 1.21.1  (app 0.21.0)
@@ -57,6 +57,25 @@ resource "helm_release" "aws_load_balancer_controller" {
     value = module.vpc.vpc_id
   }
 
+  # Tag controller-created ALBs/SGs with the SAME keys the session provider's
+  # default_tags apply — Terraform-managed resources inherit those tags, but the
+  # ALBs/SGs the controller creates out-of-band do NOT, so without this they
+  # carry no project/ttl tags and stay invisible to the reaper + assert-clean.sh.
+  # ttl reuses the same time_static expression as the provider default_tags.
+  set {
+    name  = "defaultTags.project"
+    value = "coppice-lab"
+  }
+  set {
+    name  = "defaultTags.stack"
+    value = "session"
+  }
+  set {
+    name  = "defaultTags.ttl"
+    type  = "string" # keep the numeric epoch a string tag, not a helm-coerced number
+    value = tostring(time_static.session_start.unix + var.session_ttl_hours * 3600)
+  }
+
   depends_on = [module.eks]
 }
 
@@ -68,7 +87,7 @@ module "irsa_external_secrets" {
   role_name                      = "coppice-lab-external-secrets"
   attach_external_secrets_policy = true
 
-  # Scoped to THIS session's secrets. TODO(v5): if WP2 moves the other
+  # Scoped to THIS session's secrets. TODO(v5): if the overlay moves the other
   # self-hosted creds (rabbitmq/mongo/jwt) into Secrets Manager too, add their
   # ARNs here or the ExternalSecrets for them will get AccessDenied.
   external_secrets_secrets_manager_arns = [
@@ -160,5 +179,36 @@ resource "helm_release" "external_dns" {
     value = module.irsa_external_dns.iam_role_arn
   }
 
+  depends_on = [module.eks]
+}
+
+# ── aws-ebs-csi-driver (EKS addon) ───────────────────────────────────────────
+# BLOCKER without it: the aws overlay's default StorageClass provisions via
+# ebs.csi.aws.com, and EKS ships NO EBS CSI driver by default — every PVC would
+# stay Pending. Installed as a managed EKS addon with its own IRSA role (same
+# terraform-aws-modules/iam pattern as the controllers above). Kept as a
+# standalone aws_eks_addon (not in the eks module's `addons` block) so the addon
+# can consume this role's ARN without a module-level dependency cycle.
+module "irsa_ebs_csi" {
+  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+  version = "~> 5.0"
+
+  role_name             = "coppice-lab-ebs-csi"
+  attach_ebs_csi_policy = true # AWS managed service-role/AmazonEBSCSIDriverPolicy
+
+  oidc_providers = {
+    main = {
+      provider_arn               = module.eks.oidc_provider_arn
+      namespace_service_accounts = ["kube-system:ebs-csi-controller-sa"]
+    }
+  }
+}
+
+resource "aws_eks_addon" "ebs_csi" {
+  cluster_name             = module.eks.cluster_name
+  addon_name               = "aws-ebs-csi-driver"
+  service_account_role_arn = module.irsa_ebs_csi.iam_role_arn
+
+  # Node group must exist so the controller pods can schedule.
   depends_on = [module.eks]
 }

@@ -3,11 +3,11 @@
 # only the host changes + TLS is required. The whole `command` list is
 # replaced (atomic — no merge key) so the psql -h target moves to RDS.
 #
-# WP1 EXPECTATION: RDS must already have the databases and the auth role when
-# these Jobs run — they apply schema DDL, they do NOT CREATE DATABASE/ROLE
-# (on kind that was postgres-initdb). terraform must provision:
-#   database api_db, database auth_db, role auth_user (password=AUTH_DB_PASSWORD)
-# owning/granted auth_db. HANDOFF §5.3 calls this out.
+# EXPECTATION: RDS must already have the databases and the auth role when these
+# Jobs run — they apply schema DDL, they do NOT CREATE DATABASE/ROLE (on kind
+# that was postgres-initdb). terraform provisions only api_db (owned by the
+# master postgres); the rds-bootstrap Job creates the auth_user role and auth_db
+# database before these migrations run. HANDOFF §5.3 calls this out.
 apiVersion: batch/v1
 kind: Job
 metadata:

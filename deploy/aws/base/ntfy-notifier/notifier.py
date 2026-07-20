@@ -23,13 +23,18 @@ import urllib.request
 def _priority_and_tags(text):
     """Mirror ntfy-relay severity mapping, adapted for budget thresholds.
 
-    100% / exceeded → urgent (rotating_light); 80% → high (warning);
-    otherwise (50% / informational) → default (money_with_wings).
+    100% → urgent (rotating_light); 80% → high (warning); 50% and any lower /
+    informational breach → default (money_with_wings).
+
+    NOTE: AWS Budgets phrases EVERY ACTUAL threshold breach (50/80/100%) as
+    "...has exceeded...", so keying on the word "exceeded" alone flagged every
+    alert urgent. Key on the threshold percentage instead — check 100% before
+    80% so a 100% breach never falls through to the lower band.
     """
     low = text.lower()
-    if "100%" in low or "exceeded" in low or "forecast" in low and "100" in low:
+    if "100%" in low or "100.0%" in low:
         return "urgent", "rotating_light"
-    if "80%" in low:
+    if "80%" in low or "80.0%" in low:
         return "high", "warning"
     return "default", "money_with_wings"
 

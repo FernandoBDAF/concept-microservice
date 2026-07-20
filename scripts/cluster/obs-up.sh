@@ -8,10 +8,19 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-# OBS_LOGS=0 skips the log pipeline (OpenSearch + fluent-bit + index Job) —
+# OBS_LOGS off skips the log pipeline (OpenSearch + fluent-bit + index Job) —
 # AWS sessions opt out per drill for RAM/cost (v5 HANDOFF §7). Default on:
 # kind behavior is unchanged.
 OBS_LOGS="${OBS_LOGS:-1}"
+# Treat 0/false/no/off (any case, or empty) as OFF; anything else as ON. The
+# old `!= "0"` test wrongly enabled logs for OBS_LOGS=false. obs-down.sh uses
+# the same semantics.
+obs_logs_on() {
+  case "$(printf '%s' "$OBS_LOGS" | tr '[:upper:]' '[:lower:]')" in
+    0 | false | no | off | "") return 1 ;;
+    *) return 0 ;;
+  esac
+}
 
 # chart pins (helm search verified 2026-07-19; bump deliberately)
 KPS_VERSION=87.17.0
@@ -64,16 +73,16 @@ helm upgrade --install redis-exporter prometheus-community/prometheus-redis-expo
 step "5/6 apply deploy/obs/manifests"
 kustomize build --load-restrictor LoadRestrictionsNone deploy/obs/manifests \
   | kubectl apply -f -
-if [ "$OBS_LOGS" != "0" ]; then
+if obs_logs_on; then
   # Jobs are immutable; drop the finished/stale one so template changes re-run
   kubectl -n lab-obs delete job lab-logs-index-template --ignore-not-found >/dev/null
   kustomize build deploy/obs/manifests/logs | kubectl apply -f -
 else
-  echo "OBS_LOGS=0 — skipping OpenSearch/fluent-bit (deploy/obs/manifests/logs)"
+  echo "OBS_LOGS=$OBS_LOGS — skipping OpenSearch/fluent-bit (deploy/obs/manifests/logs)"
 fi
 
 step "6/6 wait for rollouts"
-if [ "$OBS_LOGS" != "0" ]; then
+if obs_logs_on; then
   kubectl -n lab-obs rollout status statefulset/opensearch --timeout=300s
   kubectl -n lab-obs rollout status deploy/opensearch-dashboards --timeout=300s
   kubectl -n lab-obs rollout status daemonset/fluent-bit --timeout=180s
@@ -81,7 +90,7 @@ fi
 kubectl -n lab-obs rollout status deploy/ntfy --timeout=120s
 # ntfy-relay needs localhost:5001/ntfy-relay:dev — built by `make images`
 kubectl -n lab-obs rollout status deploy/ntfy-relay --timeout=180s
-[ "$OBS_LOGS" != "0" ] && kubectl -n lab-obs wait job/lab-logs-index-template --for=condition=Complete --timeout=300s
+obs_logs_on && kubectl -n lab-obs wait job/lab-logs-index-template --for=condition=Complete --timeout=300s
 # cert-manager exists on kind only (EKS terminates TLS at the ALB with ACM) —
 # wait on Certificates only where the CRD is installed
 if kubectl get crd certificates.cert-manager.io >/dev/null 2>&1; then

@@ -1,4 +1,50 @@
+import { readFileSync } from "node:fs";
 import { env } from "./env.js";
+
+/**
+ * Postgres TLS options (a subset of pg's `ssl` config).
+ * `false` disables TLS entirely; an object enables it.
+ */
+type DatabaseSslConfig = false | { ca?: string; rejectUnauthorized: boolean };
+
+/**
+ * Resolve the pg `ssl` option from DATABASE_SSL / DATABASE_SSL_CA (WP-external,
+ * RDS force_ssl). Three branches:
+ *   - DATABASE_SSL=false                → no TLS (unchanged local/compose path).
+ *   - DATABASE_SSL=true + DATABASE_SSL_CA → verified TLS against the given CA
+ *     bundle ({ ca, rejectUnauthorized: true }). A missing/unreadable file at
+ *     that path fails fast so a mis-mounted CA never silently downgrades.
+ *   - DATABASE_SSL=true without a CA    → encrypted-but-unverified TLS
+ *     ({ rejectUnauthorized: false }) plus a one-time startup warning. The AWS
+ *     overlay always sets the CA; this branch keeps unverified TLS working
+ *     rather than falling back to rejected plaintext.
+ */
+function resolveDatabaseSsl(): DatabaseSslConfig {
+  if (!env.DATABASE_SSL) return false;
+
+  if (env.DATABASE_SSL_CA) {
+    let ca: string;
+    try {
+      ca = readFileSync(env.DATABASE_SSL_CA, "utf8");
+    } catch (error) {
+      throw new Error(
+        `DATABASE_SSL_CA is set to "${env.DATABASE_SSL_CA}" but the CA file could not be read: ${
+          (error as Error).message
+        }`
+      );
+    }
+    return { ca, rejectUnauthorized: true };
+  }
+
+  console.warn(
+    "DATABASE_SSL=true but DATABASE_SSL_CA is unset: connecting with TLS but " +
+      "NOT verifying the database server certificate. Set DATABASE_SSL_CA to a " +
+      "trusted CA bundle (e.g. the RDS global bundle) to enable verification."
+  );
+  return { rejectUnauthorized: false };
+}
+
+const databaseSsl = resolveDatabaseSsl();
 
 /**
  * Decode a JWT key env value into PEM text (ADR-009.1).
@@ -48,7 +94,8 @@ export const config = {
     user: env.DATABASE_USER,
     password: env.DATABASE_PASSWORD,
     max: env.DATABASE_POOL_MAX,
-    ssl: env.DATABASE_SSL,
+    // Fully-resolved pg `ssl` option (false | { ca?, rejectUnauthorized }).
+    ssl: databaseSsl,
   },
   jwt: {
     secret: env.JWT_SECRET,

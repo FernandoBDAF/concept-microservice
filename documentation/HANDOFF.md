@@ -7,25 +7,32 @@ don't know about them.
 
 ## TL;DR
 
-Phases v3–v8 (`documentation/phases/`) were delivered in one expedited
-pass as a **stack of six unmerged PRs**, each branch based on the previous
-one. Mid-pass, the owner cut the resource budget, so the scope was
-renegotiated: **v3 is fully implemented; v4–v8 are settled architecture +
+Phases v3–v8 (`documentation/phases/`) were originally delivered in one
+expedited pass as a **stack of six unmerged PRs**, each branch based on
+the previous one — **v3 fully implemented; v4–v8 settled architecture +
 compilable skeletons + step-by-step `vN-HANDOFF.md` execution plans**
-written so a later (possibly weaker-model) session can finish them
-mechanically without re-deriving decisions.
+written so a later session could finish them mechanically. Execution
+passes have since filled in the skeletons: v3 and v4 are merged, v5–v8
+are code-complete on their phase branches (status prose + PR table below
+track what is merged, in PR, or pending live runs).
 
 ## The PR stack
 
-Merge order is forced bottom-up (each PR's base is the previous branch;
-GitHub retargets bases as you merge). None are merged; no `lab-v*` tags
-were cut — a phase is tagged only after its exit/deferred runs pass.
+Status now: **v3 is merged and validated, tagged `lab-v3.0`** (deferred
+exit runs EXP-30..34 passed); **v4 is merged to main** (PR #3, merge
+`a4c4fa1`) with the graphrag cold-start hotfix (PR #15) on top, but its
+exit runs (EXP-4x) haven't run, so **no `lab-v4.0` tag yet**; **v5 is in
+PR (#4)** — the AWS track, target of this fix wave. The remaining v6–v8
+stack is still unmerged. Merge order is forced bottom-up (each PR's base
+is the previous branch; GitHub retargets bases as you merge). A phase is
+tagged only after its exit/deferred runs pass — so tags run `lab-v1.1`,
+`lab-v2.0`, `lab-v3.0` and stop there.
 
 | PR | Branch → base | State | Start here |
 |---|---|---|---|
-| #2 | `phase/v3-observability` → `main` | **Implemented** (obs stack, OTel end-to-end, logs, alerts→ntfy, status page + controld, HOST_CONTRACT v0 + hello-guest). Exit experiments EXP-30..34 authored, **not run** | `documentation/phases/v3-DEFERRED.md` |
-| #3 | `phase/v4` → v3 | Skeleton: broker topology as data (`deploy/rabbitmq/definitions.json`, generated), experiment YAML schema, compilable stubs (idempotency, retry tiers, outbox, JWKS, loadgen, runner) | `documentation/phases/v4-HANDOFF.md` |
-| #4 | `phase/v5` → v4 | Skeleton: Terraform (bootstrap+base ~complete, session has settled TODO blocks), aws overlay, session runbook. **Never applied; never `terraform validate`d** (tf not installed at authoring) | `documentation/phases/v5-HANDOFF.md` |
+| #2 | `phase/v3-observability` → `main` | **Merged + tagged `lab-v3.0`.** Obs stack, OTel end-to-end, logs, alerts→ntfy, status page + controld, HOST_CONTRACT v0 + hello-guest. Exit experiments EXP-30..34 **run and passed** (six defects fixed) | `documentation/phases/v3-DEFERRED.md` |
+| #3 | `phase/v4` → v3 | **Merged to main** (PR #3 + graphrag hotfix PR #15). Full implementation: broker topology as data (`deploy/rabbitmq/definitions.json`, generated), experiment YAML schema, idempotency, retry tiers, outbox, JWKS, loadgen, runner. Static battery green; **live-run validation (EXP-4x) + `lab-v4.0` tag still pending** | `documentation/phases/v4-HANDOFF.md` |
+| #4 | `phase/v5` → v4 | **In PR (#4); code-complete + review fix wave landed.** Terraform (three stacks, `terraform validate`-clean), aws overlay, session runbook, OIDC pipeline. **Never applied on AWS** — step-0 account + EXP-50..55 pending | `documentation/phases/v5-HANDOFF.md` |
 | #5 | `phase/v6` → v5 | Skeleton: `systems/` registry (usable), controld action-API contract as compiling 501 stubs | `documentation/phases/v6-HANDOFF.md` |
 | #6 | `phase/v7` → v6 | Recon + plans: real recon of both guest repos, two deployment plans, DRAFT systems entries, guest-side change specs | `documentation/phases/v7-HANDOFF.md` |
 | #7 | `phase/v8` → v7 | Skeleton: template scaffolds w/ extraction maps, the one Helm chart (lints), graduation runbook. Extraction gated on v4 execution | `documentation/phases/v8-HANDOFF.md` |

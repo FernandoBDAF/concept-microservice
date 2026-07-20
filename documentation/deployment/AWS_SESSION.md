@@ -28,8 +28,16 @@ ECR images, Route53 zone, budget, reaper) at ≈ $0/month.
 6. Pipeline (EXP-54): set GitHub repo *variables* `AWS_DEPLOY_ROLE_ARN`
    (base output `oidc_deploy_role_arn`) and `AWS_REGION`; per session, set
    `deploy_role_arn` in tfvars to that same ARN so the cluster grants the
-   CI role an access entry. `.github/workflows/deploy-aws.yml` then
-   builds+pushes on tag `lab-v*` or dispatch; deploy leg is dispatch-gated.
+   CI role an access entry. `.github/workflows/deploy-aws.yml` builds+pushes
+   on tag `lab-v*` (images published under the tag name) or
+   `workflow_dispatch`; the deploy leg is dispatch-gated, serialized via
+   `concurrency`, and runs in the `aws-lab` environment. It is
+   **image-rollout-only** — it rolls out verified ECR tags, it does *not*
+   `kubectl apply -k` the tree (CI holds no terraform state; a full apply
+   stays `make aws-deploy`). **Rollback** is a dispatch with
+   `tag_override=<prior tag>`: it **skips the build** (no rebuild or
+   clobber of image history) and verifies that tag exists in all 10 ECR
+   repos before rolling out.
 
 ## Session start (~20 min)
 
@@ -60,16 +68,48 @@ deliberately in `deploy/aws/session/addons.tf`):
 
 Smoke against the session: `curl https://api.<domain>/health` + EXP-02's
 manual steps against the ALB hosts, then the drill of the day (EXP-50..55
-catalog). NOTE: the scored runner (`make experiment E=exp-02`, v4)
-currently targets compose-local URLs — pointing it at an EKS session needs
-a base-URL override in the experiment defs (see Known gaps).
+catalog).
+
+EXP-50's burst leg: once pods are Ready, `make aws-sim-burst` runs the
+EXP-04 k6 harness (`scripts/simulate/api-load.js`, 50 VUs / 30s) against
+`https://api.<lab_domain>` + `https://auth.<lab_domain>` (hosts read from
+terraform output) — the AWS-pointed counterpart of the compose-local
+burst. Watch queue depth + latency panels and record actuals in the
+EXP-50 write-up.
+
+NOTE: the scored runner (`make experiment E=exp-02`, v4) currently targets
+compose-local URLs — pointing it at an EKS session needs a base-URL
+override in the experiment defs (see Known gaps) before EXP-51.
 
 ## Cost check (every session)
 
 Cost Explorer → filter tag `project=coppice-lab`, group by `stack`.
-Record in the session write-up: date, duration, $ actual. ~Expected:
-EKS control plane $0.10/h + 3×t3.medium ~$0.12/h + NAT ~$0.045/h + RDS
-t4g.micro ~$0.016/h ≈ **$0.65/h ≈ $5 for a long evening**.
+Record in the session write-up: date, duration, $ actual. ~Expected per
+hour: EKS control plane $0.10 + 3×t3.medium ~$0.125 + NAT ~$0.045 + RDS
+t4g.micro ~$0.016 + ALB ~$0.0225 ≈ **$0.31/h ≈ $2 for a ~6-hour
+evening** (plus S3/EBS/data-transfer pennies). The ALB line was missing
+from the earlier tally, whose four items summed to ~$0.28/h — neither
+matched the old "$0.65/h ≈ $5" headline; these are the itemized numbers.
+Replace all `~` figures with measured actuals from EXP-50.
+
+## Budget alarm test-fire (EXP-55)
+
+Prove the budget→ntfy path once, then restore — no live drill needed to
+author, but it must fire on the first real session:
+
+1. Lower the trigger below current spend: drop `budget_limit` in
+   `deploy/aws/terraform.tfvars` low enough that month-to-date already
+   exceeds 50% (or `aws budgets update-budget` the limit directly), then
+   `cd deploy/aws/base && terraform apply -var-file=../terraform.tfvars`.
+2. Wait for AWS Budgets to evaluate (can take a few hours; the 50%
+   threshold crosses first).
+3. Confirm the ntfy notification arrives. The notifier maps 50/80% →
+   `default`/`high` priority, 100% → `urgent`.
+4. Restore `budget_limit` to its real value and `terraform apply` again;
+   confirm no further alerts.
+
+Record the fire + restore in the EXP-55 write-up, alongside the reaper
+decoy proof.
 
 ## Session end
 
@@ -99,14 +139,15 @@ blockers for `make aws-up` itself:
 - **postgres-exporter is down on AWS**: `lab-obs/postgres-credentials` is
   deliberately not seeded (ExternalSecret owns postgres creds); the
   exporter needs its own ExternalSecret + RDS host wiring (follow-up).
-- **Netpols are enforced on EKS** (VPC-CNI network-policy agent is on) but
-  the base allows are kind-shaped: ALB ingress (ipBlock) + RDS/S3 egress
-  need an aws netpol patch (`patches/netpols-aws.yaml` follow-up) — if
-  traffic is unexpectedly blocked in the first session, this is why.
+- **NetworkPolicy enforcement is OFF on EKS** (decision, this wave): the
+  VPC-CNI `enableNetworkPolicy` flag was removed, so the kind-shaped
+  netpols ship *inert* on AWS — they apply but nothing enforces them, so
+  AWS traffic is not netpol-restricted this phase. Re-enabling enforcement
+  needs AWS-shaped allows (ALB ingress ipBlock + RDS/S3 egress) in a
+  `patches/netpols-aws.yaml`; both the patch and the re-enable are deferred
+  to a later phase.
 - **Auth rate limiting** (ADR-009.5) has no ALB equivalent — needs WAF
   later; dropped on AWS for now.
-- **auth-service ↔ RDS TLS**: if `rds.force_ssl` is on, the pg client may
-  need a TLS env — verify at first deploy.
 - **rabbitmq/mongo/jwt secrets** stay init-secrets-seeded on AWS
   (`SKIP_POSTGRES=1` guards the postgres one); uniform Secrets-Manager +
   ExternalSecret migration is a registered follow-up.

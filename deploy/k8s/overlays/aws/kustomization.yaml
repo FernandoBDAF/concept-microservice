@@ -27,6 +27,19 @@ resources:
   - serviceaccounts.yaml
   - external-secrets.yaml
   - rds-bootstrap.yaml
+  # grafana UI ingress; targets the lab-obs namespace + the kps-managed grafana
+  # Service, so it only resolves after `make obs-up` has run (see file header).
+  - grafana-ingress.yaml
+
+# ── RDS CA bundle → ConfigMap ──────────────────────────────────────────────────
+# The auth-service patch mounts the RDS CA trust bundle by the fixed name
+# `rds-ca` (disableNameSuffixHash so the mount reference is stable). The PEM is
+# vendored at rds-ca/global-bundle.pem (AWS RDS global-bundle.pem).
+configMapGenerator:
+  - name: rds-ca
+    files: ["global-bundle.pem=rds-ca/global-bundle.pem"]
+    options:
+      disableNameSuffixHash: true
 
 # ── 1. images → ECR ──────────────────────────────────────────────────────────
 # make aws-deploy overrides each via:
@@ -116,13 +129,13 @@ patches:
   - path: patches/ingress.yaml
 
 # ── 6. netpols ───────────────────────────────────────────────────────────────
-# The base NetworkPolicies are kept verbatim. TWO EKS caveats (see wp2 notes):
-#   (a) NetworkPolicy on EKS is INERT unless WP1 enables the VPC-CNI
-#       network-policy agent (amazon-vpc-cni ENABLE_NETWORK_POLICY=true). With
-#       it off, all the allows/denies below simply do nothing.
-#   (b) When it IS on, the base allows assume in-cluster postgres/minio and an
-#       ingress-nginx source — all now wrong on AWS: api-service/auth-service
-#       need ingress from the ALB (VPC CIDR ipBlock), and api-service/graphrag/
-#       migrate/bootstrap need EGRESS to RDS + S3 (external addresses). Those
-#       aws-specific netpol patches are a documented TODO, deliberately not
-#       added here per the "keep netpols as-is" instruction.
+# DECISION (v5): NetworkPolicy ENFORCEMENT is OFF on EKS. terraform no longer
+# enables the VPC-CNI network-policy agent (enableNetworkPolicy removed), so the
+# base NetworkPolicies — kept verbatim — ship as INERT objects: they document
+# intent but neither allow nor deny anything on this cluster.
+#
+# The kind-shaped base allows are also wrong for AWS anyway (they assume
+# in-cluster postgres/minio and an ingress-nginx source; on AWS the real needs
+# are ALB→service ingress from the VPC CIDR and EGRESS to RDS + S3). Authoring
+# AWS-shaped policies (a netpols-aws patch set) AND re-enabling enforcement in
+# terraform is DEFERRED to a later phase — not a prerequisite for this overlay.

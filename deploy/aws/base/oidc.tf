@@ -9,8 +9,8 @@
 # AWS-API access (ECR + eks:DescribeCluster → kubeconfig). Authorizing the
 # role inside the cluster requires an EKS *access entry* + access-policy
 # association on the SESSION stack (that cluster is ephemeral, so the entry
-# belongs there, not in this persistent stack). See wp4.md integration notes;
-# the session stack consumes `oidc_deploy_role_arn` (output below).
+# belongs there, not in this persistent stack). The session stack consumes
+# `oidc_deploy_role_arn` (output below) as its access-entry principal.
 
 data "aws_caller_identity" "current" {}
 
@@ -114,7 +114,7 @@ resource "aws_iam_role_policy" "deploy_eks" {
 }
 
 # Consumed by: (1) the GitHub repo variable AWS_DEPLOY_ROLE_ARN, (2) the
-# session stack's aws_eks_access_entry principal_arn (wp4.md notes).
+# session stack's aws_eks_access_entry principal_arn.
 output "oidc_deploy_role_arn" {
   value       = aws_iam_role.deploy.arn
   description = "ARN of coppice-lab-deploy — set as GitHub repo var AWS_DEPLOY_ROLE_ARN and grant an EKS access entry on the session cluster."

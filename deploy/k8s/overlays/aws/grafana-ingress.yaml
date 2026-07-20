@@ -1,0 +1,41 @@
+# Grafana ingress → ALB (patch 4 companion). The planned grafana.<domain> UI was
+# dropped from the overlay, leaving no observability UI reachable on EKS; this
+# restores it. Same ALB style as patches/ingress.yaml (className alb,
+# internet-facing, target-type ip, HTTP+HTTPS with ssl-redirect, shared
+# group.name so it joins the one coppice-lab ALB; ACM auto-discovers the
+# *.LAB_DOMAIN cert covering grafana.).
+#
+# CROSS-NAMESPACE: this Ingress lives in lab-obs, NOT in the base kustomization's
+# lab-core/lab-infra namespaces. Its backend `grafana` Service is created by the
+# kube-prometheus-stack Helm release, so `make obs-up` MUST have run first — the
+# ALB will have no healthy targets until then. Kept as a standalone resource
+# (registered in kustomization.yaml) rather than an overlay patch because the obs
+# stack is applied separately from this kustomization.
+#
+# healthcheck-path: unlike api./auth. (whose "/" returns 200), Grafana's "/"
+# redirects to the login page, so ALB target health checks must hit /api/health.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana
+  namespace: lab-obs
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/group.name: coppice-lab
+    alb.ingress.kubernetes.io/healthcheck-path: /api/health
+spec:
+  ingressClassName: alb
+  rules:
+    - host: grafana.LAB_DOMAIN_PLACEHOLDER
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: grafana # kps grafana.fullnameOverride
+                port:
+                  number: 80

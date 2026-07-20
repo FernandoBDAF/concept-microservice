@@ -12,6 +12,10 @@ terraform {
 
 variable "aws_region" { type = string }
 variable "aws_profile" { type = string }
+variable "aws_account_id" {
+  type        = string
+  description = "the dedicated lab account id; guards against applying to the wrong account (ADR-006.5)"
+}
 
 # lab_domain/budget_limit/alert_email accepted so one tfvars feeds all stacks
 variable "lab_domain" {
@@ -30,6 +34,8 @@ variable "alert_email" {
 provider "aws" {
   region  = var.aws_region
   profile = var.aws_profile
+  # Wrong-account guard (ADR-006.5): abort unless creds are the lab account.
+  allowed_account_ids = [var.aws_account_id]
 }
 
 data "aws_caller_identity" "current" {}

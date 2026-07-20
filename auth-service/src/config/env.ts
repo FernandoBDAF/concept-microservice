@@ -23,6 +23,11 @@ const envSchema = z.object({
   DATABASE_PASSWORD: z.string().min(1),
   DATABASE_POOL_MAX: z.coerce.number().default(20),
   DATABASE_SSL: booleanEnv(false),
+  // Filesystem path to a PEM CA bundle used to verify the DB server cert when
+  // DATABASE_SSL=true (e.g. the vendored RDS global bundle mounted by the aws
+  // overlay at /etc/rds-ca/global-bundle.pem). Unset → TLS is enabled but the
+  // server cert is NOT verified (see config/index.ts resolveDatabaseSsl).
+  DATABASE_SSL_CA: z.string().optional(),
   JWT_SECRET: z.string().min(32),
   JWT_ACCESS_TOKEN_EXPIRY: z.string().default("15m"),
   JWT_REFRESH_TOKEN_EXPIRY: z.string().default("7d"),

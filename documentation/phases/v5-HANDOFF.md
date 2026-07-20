@@ -17,6 +17,41 @@ file's plan: api-service (Go) and graphrag (Python) S3 clients gained an
 ambient-credential (IRSA) fallback — the static-key-only clients would
 have failed on EKS once the overlay drops the key env.
 
+**Review + fix wave (2026-07-20 — code side complete, battery green):** a
+review of PR #4 found 5 blockers + 7 majors; all landed on this branch.
+Blockers fixed: (1) api-service DSN env-order — `POSTGRES_PASSWORD` now
+precedes and expands into the DSN, which carries `sslmode=require`; (2)
+rds-bootstrap Job `GRANT auth_user TO postgres` before `CREATE DATABASE
+auth_db` (RDS PG15 master is not superuser); (3) EBS CSI driver EKS addon
++ IRSA role — PVCs can now bind (StorageClass `ebs.csi.aws.com`); (4) ALB
+teardown — new `scripts/aws/purge-ingress.sh` wired into `make aws-down`
+before terraform destroy (deletes Ingresses, waits for ALB reap, guards
+against the wrong kubectl context), and the ALB controller now stamps
+`project/stack/ttl` defaultTags so controller-created ALBs/SGs are visible
+to the reaper + assert-clean; (5) auth-service ↔ RDS TLS — `DATABASE_SSL=true`
++ new `DATABASE_SSL_CA` mounting the vendored AWS RDS global CA bundle at
+`/etc/rds-ca/global-bundle.pem` (`rds-ca` ConfigMap), verified TLS
+(`rejectUnauthorized:true`); api-service needs no CA (`lib/pq
+sslmode=require` suffices), and graphrag has no postgres client at all.
+Majors fixed: NetworkPolicy enforcement turned **OFF** on EKS (VPC-CNI
+`enableNetworkPolicy` removed; kind netpols ship inert; AWS-shaped netpols
++ re-enable deferred); terraform k8s/helm providers now pass `--profile`
+with an `allowed_account_ids` guard (new `aws_account_id` tfvar) in all
+three stacks; RDS `max_connections` → `apply_method=pending-reboot`; ECR
+`force_delete=false` + `prevent_destroy` on ECR repos and the Route53 zone;
+`.terraform.lock.hcl` files now committed (multi-platform); deploy-aws.yml
+rollback dispatch with `tag_override` skips build and verifies the tag in
+all 10 ECR repos, `lab-v*` pushes publish under the tag name, concurrency
+serialization + `aws-lab` environment added; `make aws-deploy` refuses a
+dirty kustomization (restores via trap), tfvars guard on
+aws-plan/kubeconfig/down, deterministic lambda zips; notifier lambda maps
+50/80% → default/high, 100% → urgent. Two new capabilities: `make
+aws-sim-burst` (the AWS-pointed EXP-04 burst that EXP-50 needs) and the
+restored `grafana.<domain>` ALB ingress (lab-obs, needs obs-up first).
+Truth: there are **10** ECR images/repos (api-service, auth-service,
+graphrag-service, email-worker, image-worker, profile-worker, loadgen,
+ntfy-relay, hello-guest-web, hello-guest-worker). Still nothing run on AWS.
+
 **Still open (needs the step-0 account / a live session):**
 
 1. Step 0 itself (account, `lab` profile, tfvars) — owner-manual.
@@ -24,14 +59,22 @@ have failed on EKS once the overlay drops the key env.
    → base apply → NS delegation → ECR seed (steps 1-2 below).
 3. GitHub repo vars `AWS_DEPLOY_ROLE_ARN`/`AWS_REGION`; per-session tfvar
    `deploy_role_arn` (grants the CI role its EKS access entry) — then
-   EXP-54.
-4. EXP-50..55, incl. flipping the reaper's DRY_RUN (EXP-55) and the
+   EXP-54. The CI deploy leg is image-rollout-only (rolls out verified ECR
+   tags; a full `apply` stays `make aws-deploy` — CI holds no tf state);
+   rollback = dispatch with `tag_override` (skips build, verifies the tag
+   across all 10 ECR repos).
+4. EXP-50..55, incl. flipping the reaper's DRY_RUN (EXP-55), the budget
+   alarm test-fire (EXP-55, procedure in AWS_SESSION.md), and the
    presigned-URL-under-IRSA round-trip (EXP-50).
-5. Follow-ups registered in AWS_SESSION.md "Known gaps": lab-obs
-   postgres-exporter ExternalSecret, `patches/netpols-aws.yaml` once
-   VPC-CNI enforcement is exercised, WAF for auth rate-limiting,
-   auth-service RDS TLS check, uniform Secrets-Manager migration for
-   rabbitmq/mongo/jwt.
+5. Follow-ups — the **same set** registered in AWS_SESSION.md "Known gaps"
+   (keep the two lists identical): lab-obs postgres-exporter ExternalSecret
+   + RDS wiring; AWS-shaped netpols + re-enabling NetworkPolicy enforcement
+   (turned OFF this wave); WAF for auth rate-limiting; uniform
+   Secrets-Manager migration for rabbitmq/mongo/jwt; presigned-URL-under-IRSA
+   round-trip (EXP-50); scored runner is compose-local — needs a base-URL
+   override before EXP-51; rabbitmq guest password ⇄ definitions.json
+   (ADR-008.4, carries over from kind). auth-service ↔ RDS TLS is now
+   **DONE** (this wave), so it drops off the list.
 
 The original sequencing below is kept as the record of what each step
 meant — read it with the state above in mind.

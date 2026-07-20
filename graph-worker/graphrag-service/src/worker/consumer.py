@@ -1,6 +1,6 @@
+import asyncio
 import json
 import logging
-import sys
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Optional
@@ -8,7 +8,7 @@ from typing import Any, Awaitable, Callable, Optional
 import aio_pika
 
 from src.monitoring.tracing import consumer_span
-from src.worker.errors import UnretryableError
+from src.worker.errors import TopologyMissingError, UnretryableError
 from src.worker.idempotency import (
     DEFAULT_TTL_SECONDS,
     InMemoryGuard,
@@ -17,6 +17,13 @@ from src.worker.idempotency import (
 from src.worker.retry import death_count, select_tier
 
 logger = logging.getLogger(__name__)
+
+# Reconnect backoff bounds for consume(), mirroring the Go operational-workers'
+# connect-retry loop (DefaultRetryDelay 1s, maxBackoff 30s in
+# operational-workers/internal/common/queue) so graphrag survives the same cold
+# `make up` race instead of crash-looping into Docker's restart backoff.
+INITIAL_BACKOFF_SECONDS = 1.0
+MAX_BACKOFF_SECONDS = 30.0
 
 
 def _now_iso() -> str:
@@ -35,10 +42,11 @@ class AsyncRabbitMQConsumer:
     Topology is owned by the broker (deploy/rabbitmq/definitions.json loaded
     at RabbitMQ startup, ADR-008.4). This consumer never *declares* topology:
     it PASSIVE-declares the entities it depends on to verify they exist (and
-    to obtain publish handles), and crashes with a pointed message if they do
-    not. Failure handling follows ADR-008.1 (timed retry tiers -> DLX) and
-    ADR-008.2 (idempotency guard); completion is reported on task-results
-    (ADR-008.3).
+    to obtain publish handles). If they are not present yet, connect() logs a
+    pointed message and raises TopologyMissingError; consume() retries with
+    backoff rather than crashing the process (see consume()). Failure handling
+    follows ADR-008.1 (timed retry tiers -> DLX) and ADR-008.2 (idempotency
+    guard); completion is reported on task-results (ADR-008.3).
     """
 
     def __init__(
@@ -77,9 +85,27 @@ class AsyncRabbitMQConsumer:
 
         All declares are passive (passive=True): they assert the entity exists
         without creating or mutating it. A missing entity means definitions.json
-        was not loaded into the broker — we log a pointed message and exit
-        non-zero rather than limping on against absent topology.
+        has not been loaded into the broker yet — we log a pointed message and
+        raise TopologyMissingError so consume()'s reconnect loop retries with
+        backoff (on a cold start this is usually a race with definitions.json
+        being imported, not a real misconfiguration). Connection failures
+        (broker not reachable yet) raise naturally from connect_robust; both are
+        handled by the reconnect loop, never by exiting the process.
         """
+        # Reconnect hygiene: drop a connection left over from a previous failed
+        # attempt (e.g. a topology-missing race that opened the connection but
+        # had its channel closed) before redialing, so retries don't leak it.
+        if self.connection is not None:
+            try:
+                if not self.connection.is_closed:
+                    await self.connection.close()
+            except Exception:  # pragma: no cover - best-effort cleanup
+                logger.debug(
+                    "closing stale connection before reconnect failed",
+                    exc_info=True,
+                )
+            self.connection = None
+
         url = self.config.get("url")
         if url:
             self.connection = await aio_pika.connect_robust(url)
@@ -117,7 +143,9 @@ class AsyncRabbitMQConsumer:
                 "(passive declare failed for the document-tasks topology: %s)",
                 exc,
             )
-            sys.exit(1)
+            raise TopologyMissingError(
+                "document-tasks topology not present (passive declare failed)"
+            ) from exc
 
         logger.info(
             "Connected to RabbitMQ (passive topology verified)",
@@ -126,14 +154,49 @@ class AsyncRabbitMQConsumer:
         return queue
 
     async def consume(self, handler: Callable[[dict], Awaitable[Any]]) -> None:
-        """Start consuming messages with async handler."""
-        queue = await self.connect()
+        """Consume messages, reconnecting with capped backoff on failure.
 
-        async with queue.iterator() as queue_iter:
-            async for message in queue_iter:
+        The worker process — and the :8081 metrics server base_worker started
+        before calling this — STAYS ALIVE across transient RabbitMQ failures
+        (broker not reachable yet, or the passive topology not imported yet on a
+        cold `make up`), retrying with exponential backoff instead of exiting
+        non-zero into Docker's restart backoff. This mirrors the Go
+        operational-workers' reconnect loop
+        (operational-workers/internal/common/queue/consumer.go), which is why
+        those three survive the same cold-start race that used to crash-loop
+        graphrag. A genuinely-missing topology now surfaces as "connected,
+        metrics up, not consuming, loud repeating log" — observable and
+        alertable — rather than a crash-loop. Clean shutdown
+        (self._shutdown / CancelledError) exits the loop without error.
+        """
+        backoff = INITIAL_BACKOFF_SECONDS
+        while not self._shutdown:
+            try:
+                queue = await self.connect()
+                # Reset backoff after every successful (re)connect.
+                backoff = INITIAL_BACKOFF_SECONDS
+                async with queue.iterator() as queue_iter:
+                    async for message in queue_iter:
+                        if self._shutdown:
+                            break
+                        await self._handle_delivery(message, handler)
+            except asyncio.CancelledError:
+                # Cooperative shutdown (base_worker cancels the consume task);
+                # propagate so start() can close the connection cleanly.
+                raise
+            except (TopologyMissingError, aio_pika.exceptions.AMQPError, OSError) as exc:
                 if self._shutdown:
                     break
-                await self._handle_delivery(message, handler)
+                logger.warning(
+                    "RabbitMQ connection/topology unavailable; retrying after backoff",
+                    extra={"error": str(exc), "backoff_seconds": backoff},
+                )
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, MAX_BACKOFF_SECONDS)
+                continue
+            # Reached only when the consume block exited without raising: a
+            # clean shutdown (we broke out of the async-for). Exit the loop.
+            break
 
     async def _handle_delivery(
         self,

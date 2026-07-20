@@ -21,6 +21,10 @@ terraform {
 
 variable "aws_region" { type = string }
 variable "aws_profile" { type = string }
+variable "aws_account_id" {
+  type        = string
+  description = "the dedicated lab account id; guards against applying to the wrong account (ADR-006.5)"
+}
 variable "lab_domain" { type = string }
 variable "budget_limit" { type = number }
 variable "alert_email" { type = string }
@@ -37,6 +41,8 @@ variable "ntfy_topic_url" {
 provider "aws" {
   region  = var.aws_region
   profile = var.aws_profile
+  # Wrong-account guard (ADR-006.5): abort unless creds are the lab account.
+  allowed_account_ids = [var.aws_account_id]
   default_tags {
     tags = { project = "coppice-lab", stack = "base" }
   }
@@ -56,7 +62,13 @@ resource "aws_ecr_repository" "svc" {
   for_each             = toset(local.images)
   name                 = "coppice-lab/${each.key}"
   image_tag_mutability = "MUTABLE" # dev tags; sessions pin by digest/tag
-  force_delete         = true
+  # PERSISTENT stack: images must survive. force_delete=false refuses to drop a
+  # repo that still holds images; prevent_destroy blocks accidental teardown.
+  force_delete = false
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_ecr_lifecycle_policy" "svc" {
@@ -81,6 +93,11 @@ resource "aws_ecr_lifecycle_policy" "svc" {
 resource "aws_route53_zone" "lab" {
   name    = var.lab_domain
   comment = "coppice lab (ADR-006.6); survives sessions"
+
+  # PERSISTENT: destroying the zone changes the NS delegation — guard it.
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # ── Budget + alarms (ADR-006.4): 50/80/100% notifications ───────────────────

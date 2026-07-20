@@ -112,7 +112,27 @@ jobs:
       - run: pip install pyyaml
       - run: make up
       - run: for e in exp-01 exp-02 exp-05; do make experiment E=$e || exit 1; done
+      # Diagnostics on a scored failure: without these, a red run only prints
+      # "actual N" with no way to tell WHICH target/service is at fault (this
+      # gap once left a graphrag cold-start crash-loop undiagnosable). Dump
+      # container health, the down scrape targets, and the logs of anything not
+      # running/healthy.
+      - name: diagnostics on failure
+        if: failure()
+        run: |
+          echo "── docker compose ps ──"; docker compose ps || true
+          echo "── prometheus targets with up==0 (queried from host) ──"
+          # Query the mapped host port with curl rather than exec-ing wget into
+          # the prometheus container: no dependency on wget being present in that
+          # image, and it still works when prometheus itself is the unhealthy one.
+          curl -s 'http://localhost:9090/api/v1/query?query=up==0' || true
+          echo "── logs of non-running/unhealthy containers ──"
+          for c in $(docker compose ps -a --format '{{.Name}} {{.State}} {{.Health}}' \
+            | awk '$2!="running" || ($3!="" && $3!="healthy") {print $1}'); do
+            echo "==== $c ===="; docker logs --tail 60 "$c" 2>&1 || true
+          done
       - run: make down
+        if: always()
       - uses: actions/upload-artifact@v4
         if: always()
         with:

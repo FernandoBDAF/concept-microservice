@@ -32,7 +32,10 @@ services, cost control, real DNS/TLS, and the OIDC deploy pipeline.
 1. **Terraform skeleton (ADR-006.1):** `deploy/aws/` — remote state
    (S3+DynamoDB), modules/envs split; `make aws-plan/aws-up/aws-down`
    wrapping plan/apply/destroy with explicit confirmation.
-2. **Persistent base stack (near-$0):** ECR repos (7 images), Route53 zone
+2. **Persistent base stack (near-$0):** ECR repos (10 images: api-service,
+   auth-service, graphrag-service, email-worker, image-worker,
+   profile-worker, loadgen, ntfy-relay, hello-guest-web, hello-guest-worker),
+   Route53 zone
    for the lab domain (ADR-006.6), budget+alarms, the reaper (EventBridge →
    Lambda deleting `ttl`-tagged expired resources; aws-nuke rejected in favor
    of scoped reaper since the account is dedicated — revisit if cruft wins).
@@ -50,8 +53,12 @@ services, cost control, real DNS/TLS, and the OIDC deploy pipeline.
    ntfy keeps working from anywhere.
 6. **Image pipeline (ADR-006.7):** first sessions push from laptop
    (`make images REGISTRY=<ecr>`); then GitHub Actions OIDC role →
-   build+push to ECR → `kubectl apply -k` deploy job (manual trigger +
-   on-tag), keeping make as fallback. CI phase 3 (ADR-010.2).
+   build+push to ECR → an **image-rollout** deploy job (rolls out verified
+   ECR tags via `kubectl set image`/rollout, not a full `kubectl apply -k`
+   — CI holds no terraform state, so a full apply stays `make aws-deploy`),
+   manual trigger + on-tag, keeping make as fallback. Rollback is a
+   dispatch with `tag_override` (skips the build, verifies the tag across
+   all ECR repos). CI phase 3 (ADR-010.2).
 7. **Session runbook:** `documentation/deployment/AWS_SESSION.md` — start
    (aws-up ~20 min, checkpoints), verify (smoke experiments), cost check
    (Cost Explorer tags query), end (aws-down + verify $0 residuals). Every

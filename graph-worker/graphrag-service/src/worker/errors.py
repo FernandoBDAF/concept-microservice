@@ -18,3 +18,21 @@ class UnretryableError(Exception):
     it; JSON parse failures are classified as unretryable directly in the
     consumer without needing this type.
     """
+
+
+class TopologyMissingError(Exception):
+    """Raised by connect() when a passive topology declare fails.
+
+    Topology is owned by the broker (deploy/rabbitmq/definitions.json loaded
+    at RabbitMQ startup, ADR-008.4); the consumer only PASSIVE-declares to
+    verify it exists. A passive declare that fails means the topology is not
+    present yet. On a cold `make up` this is almost always a RACE — graphrag
+    connected after the broker opened its port but before definitions.json
+    finished importing — not a real misconfiguration.
+
+    connect() raises this (instead of exiting the process) so the reconnect
+    loop in consume() retries with backoff, keeping the process and its :8081
+    metrics server alive. This mirrors the Go operational-workers, whose
+    in-process reconnect loop lets them survive the same cold-start race
+    (operational-workers/internal/common/queue/consumer.go).
+    """

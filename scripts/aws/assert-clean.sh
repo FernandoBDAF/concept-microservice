@@ -86,7 +86,7 @@ ALLOW = [
     r":iam::[^:]*:role/coppice-lab-reaper$",
     r":iam::[^:]*:role/coppice-lab-ntfy-notifier$",
     r":iam::[^:]*:oidc-provider/",                       # GitHub OIDC provider
-    r":iam::[^:]*:role/coppice-lab-github",              # OIDC deploy role (base/oidc.tf)
+    r":iam::[^:]*:role/coppice-lab-deploy",              # OIDC deploy role (base/oidc.tf)
 ]
 allow_re = [re.compile(p) for p in ALLOW]
 
