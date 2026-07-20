@@ -5,7 +5,6 @@ export class UserEntity implements User {
     public readonly id: string,
     public readonly email: string,
     public readonly hashedPassword: string,
-    public readonly salt: string,
     public readonly role: UserRole,
     public readonly isActive: boolean,
     public readonly failedAttempts: number,
@@ -39,7 +38,6 @@ export class UserEntity implements User {
       row.id,
       row.email,
       row.hashed_password,
-      row.salt,
       row.role as UserRole,
       row.is_active,
       row.failed_attempts,
@@ -54,7 +52,6 @@ export interface UserRow {
   id: string;
   email: string;
   hashed_password: string;
-  salt: string;
   role: string;
   is_active: boolean;
   failed_attempts: number;

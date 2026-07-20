@@ -74,3 +74,38 @@ All messages must use this standard envelope:
   }
 }
 ```
+
+## Task Result (`task.result`)
+
+Published by workers and graphrag-service after ack-worthy processing to
+exchange `task-results` (routing key `task.result`); consumed by
+api-service to advance document status (ADR-008.3). Standard envelope, with:
+
+```json
+{
+  "id": "<new uuid>",
+  "type": "task.result",
+  "timestamp": "2026-01-30T12:35:10Z",
+  "payload": {
+    "task_id": "id of the processed task",
+    "task_type": "document.process",
+    "status": "completed",
+    "error": "only present when status is failed",
+    "envelope_id": "id of the originating task envelope",
+    "document_id": "doc-123"
+  },
+  "metadata": {
+    "source": "graphrag-service"
+  }
+}
+```
+
+- `id`: NEW UUID for the result message itself (not the task's id)
+- `payload.status`: `"completed"` or `"failed"`
+- `payload.error`: failure reason; only when `status` is `"failed"`
+- `payload.envelope_id`: `id` of the originating task envelope (dedupe key —
+  relay re-publishes are tolerated by design, consumers dedupe on it)
+- `payload.document_id`: only for document-processing results; api-service
+  uses it to advance the document `processing → completed/failed`
+- `metadata.source`: producing service (e.g. `email-worker`,
+  `graphrag-service`)

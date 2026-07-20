@@ -87,6 +87,19 @@ spec:
           podSelector:
             matchLabels:
               app: api-service
+        # workers + graphrag use redis for the idempotency guard (ADR-008.2)
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-core
+          podSelector:
+            matchLabels:
+              lab.local/role: worker
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-core
+          podSelector:
+            matchLabels:
+              app: graphrag-service
         # redis-exporter (lab-obs, ADR-003.5)
         - namespaceSelector:
             matchLabels:

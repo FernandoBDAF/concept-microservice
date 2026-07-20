@@ -77,6 +77,11 @@ spec:
             - name: config
               mountPath: /etc/rabbitmq/conf.d/20-lab.conf
               subPath: rabbitmq.conf
+            # broker-owned topology (ADR-008.4) — rabbitmq.conf's
+            # definitions.local.path points here (parity with the compose mount)
+            - name: config
+              mountPath: /etc/rabbitmq/definitions.json
+              subPath: definitions.json
           # Probe economics (found live, EXP-20): rabbitmq-diagnostics spawns
           # an Erlang VM per call — >10s under a tight CPU limit, so
           # status/check_port_connectivity probes put the broker in a

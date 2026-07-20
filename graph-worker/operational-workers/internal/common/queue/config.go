@@ -17,13 +17,20 @@ type Config struct {
 	Exclusive  bool
 	NoWait     bool
 
-	// Dead-letter topology. These MUST stay argument-identical to whatever
-	// the publisher (api-service) declares for the same routing key, or
-	// RabbitMQ raises a 406 PRECONDITION_FAILED channel error on redeclare.
-	// DLX is always "<Exchange>.dlx" and DLQ is always "<Queue>.dlq".
-	MessageTTL    time.Duration // x-message-ttl on the main queue
-	DeadLetterTTL time.Duration // x-message-ttl on the .dlq queue
-	MaxRetries    int           // x-max-retries (informational, mirrors publisher)
+	// WorkerType names the owning worker (email/image/profile) for per-worker
+	// metric names (<type>_retries_total, <type>_dlq_total). Empty falls back
+	// to "worker".
+	WorkerType string
+
+	// Dead-letter topology metadata. Since ADR-008.4 the broker owns all
+	// queue args (definitions.json) and services only verify passively, so
+	// these fields are informational — retained for observability/config
+	// symmetry with the api-service publisher, not used to declare anything.
+	// DLX is always "<Exchange>.dlx", the retry exchange "<Exchange>.retry",
+	// and the DLQ "<Queue>.dlq".
+	MessageTTL    time.Duration // main-queue staleness TTL (broker-owned)
+	DeadLetterTTL time.Duration // .dlq TTL (broker-owned)
+	MaxRetries    int           // retry-tier count (broker-owned; == len(RetryTiers))
 
 	// Consumer Settings
 	PrefetchCount int

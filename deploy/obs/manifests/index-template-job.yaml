@@ -43,6 +43,7 @@ spec:
                     "properties": {
                       "@timestamp": { "type": "date" },
                       "time":       { "type": "date" },
+                      "ts":         { "type": "keyword" },
                       "level":      { "type": "keyword" },
                       "msg":        { "type": "text" },
                       "message":    { "type": "text" },
@@ -62,6 +63,19 @@ spec:
               }
               EOF
               echo "lab-logs index template installed"
+              # The template PUT races fluent-bit's first successful bulk
+              # (both wait on opensearch readiness); an index created before
+              # the template wins carries guessed mappings — zap's float `ts`
+              # then rejects every ISO-`ts` doc (mapper_parsing_exception)
+              # and fluent-bit drops whole chunks. Lab logs are disposable
+              # (ADR-003.3): drop any pre-template index so the next bulk
+              # recreates it under the template. Caught live by EXP-31.
+              for idx in $(curl -sf 'http://opensearch:9200/_cat/indices/lab-logs-*?h=index'); do
+                if ! curl -sf "http://opensearch:9200/$idx/_mapping" | grep -q '"ts":{"type":"keyword"}'; then
+                  echo "deleting pre-template index $idx"
+                  curl -sf -XDELETE "http://opensearch:9200/$idx" >/dev/null
+                fi
+              done
           resources:
             requests:
               cpu: 10m

@@ -23,6 +23,7 @@ type Router struct {
 func NewRouter(
 	cfg *config.Config,
 	authClient *auth.Client,
+	jwksVerifier *auth.JWKSVerifier,
 	profileService *profile.Service,
 	taskService *task.Service,
 	documentService *document.Service,
@@ -47,7 +48,16 @@ func NewRouter(
 	engine.GET("/ready", healthHandler.Readiness)
 
 	v1 := engine.Group("/api/v1")
-	v1.Use(middleware.AuthMiddleware(authClient, logger))
+	// ADR-009.1: local JWKS verification is the default auth path;
+	// API_AUTH_STRICT_INTROSPECTION=true switches back to per-request HTTP
+	// introspection (breaker path kept intact for EXP-43).
+	if cfg.Auth.StrictIntrospection {
+		logger.Info("auth: strict introspection mode (per-request auth-service validation)")
+		v1.Use(middleware.AuthMiddleware(authClient, logger))
+	} else {
+		logger.Info("auth: local JWKS verification mode")
+		v1.Use(middleware.LocalAuthMiddleware(jwksVerifier, logger))
+	}
 	{
 		profileHandler := handlers.NewProfileHandler(profileService)
 		taskHandler := handlers.NewTaskHandler(taskService)

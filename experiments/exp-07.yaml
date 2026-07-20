@@ -1,0 +1,31 @@
+# EXP-07 · Consumer scale-out. Prose companion: EXPERIMENTS.md §EXP-07.
+# The headline claim ("~3x steeper drain with 3 replicas") is a comparative
+# TIMING measurement across two runs — a judgment call, left in `watch`. What is
+# mechanically checkable is that the scaled fleet forms (consumers=3) and drains.
+id: exp-07
+title: Consumer scale-out
+needs: [compose]
+steps:
+  # baseline: single consumer drains a 300-message flood.
+  - run: docker compose stop email-worker && python3 scripts/simulate/publish.py flood --routing-key email.send --count 300 && docker compose start email-worker
+  - run: make queues
+  # scale out and repeat the same flood.
+  - run: make scale S=email-worker N=3
+  - run: python3 scripts/simulate/publish.py flood --routing-key email.send --count 300
+  - run: make queues
+watch:
+  - "Lab Overview → Queue depth drain slopes: ~3x steeper with 3 replicas (prefetch 5 each)"
+  - "Worker throughput panel UNDERCOUNTS now — Prometheus scrapes email-worker:8080 as ONE static target; replicas behind the same DNS name are sampled arbitrarily (the argument for real service discovery, arriving with k8s in v2)"
+assertions:
+  # competing-consumers: the queue now has 3 consumers.
+  - type: cli
+    run: docker compose exec -T rabbitmq rabbitmqctl list_queues name consumers | awk '$1=="email-processing"{ok=($2==3)} END{exit ok?0:1}'
+    timeout: 30s
+  # the scaled fleet drains the flood.
+  - type: promql
+    query: rabbitmq_queue_messages{queue="email-processing"}
+    op: "=="
+    value: 0
+    timeout: 180s
+cleanup:
+  - run: make scale S=email-worker N=1

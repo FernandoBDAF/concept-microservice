@@ -58,7 +58,7 @@ WIN="${SLO_DURATION}"
   echo ""
   echo '```'
   echo "-- API latency quantiles (s, over the run window) --"
-  for Q in 0.5 0.95 0.99; do
+  for Q in 0.50 0.95 0.99; do
     printf "p%s " "${Q#0.}"
     q "histogram_quantile(${Q}, sum by (le) (rate(api_http_request_duration_seconds_bucket[${WIN}])))"
   done

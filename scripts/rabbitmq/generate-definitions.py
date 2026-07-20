@@ -42,14 +42,32 @@ ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 OUT_DIR = os.path.join(ROOT, "deploy", "rabbitmq")
 
 
-def guest_password_hash() -> str:
-    # rabbit_password_hashing_sha256: base64(salt + sha256(salt + password)).
-    # Fixed salt so the file is reproducible; lab-only credentials (guest).
-    salt = bytes.fromhex("cafebabe")
-    return base64.b64encode(salt + hashlib.sha256(salt + b"guest").digest()).decode()
+GUEST_SALT = bytes.fromhex("cafebabe")  # fixed → committed definitions.json is reproducible
 
 
-def build():
+def password_hash(password: str, salt: bytes | None = None) -> str:
+    """RabbitMQ ``rabbit_password_hashing_sha256`` hash for *password*.
+
+    Algorithm: ``base64(salt + sha256(salt + utf8(password)))`` with a 4-byte
+    salt. Pass an explicit *salt* for a reproducible value; ``None`` draws a
+    fresh 4-byte random salt (used when hashing a rotated password on kind).
+
+    >>> password_hash("guest", bytes.fromhex("cafebabe"))
+    'yv66vmXEgsNmsRvzj9HEqCuJmRcNVMyyo7lqSeHce+VyRjxH'
+    >>> raw = base64.b64decode(password_hash("s3cr3t", bytes.fromhex("01020304")))
+    >>> raw[:4] == bytes.fromhex("01020304")  # 4-byte salt is prepended
+    True
+    >>> raw[4:] == hashlib.sha256(bytes.fromhex("01020304") + b"s3cr3t").digest()
+    True
+    >>> len(base64.b64decode(password_hash("x")))  # random-salt path: 4 + 32 bytes
+    36
+    """
+    if salt is None:
+        salt = os.urandom(4)
+    return base64.b64encode(salt + hashlib.sha256(salt + password.encode("utf-8")).digest()).decode()
+
+
+def build(password: str = "guest"):
     exchanges, queues, bindings = [], [], []
 
     def exchange(name):
@@ -107,8 +125,13 @@ def build():
         "rabbit_version": "3.12.0",
         "vhosts": [{"name": "/"}],
         # load_definitions at boot skips default-user creation, so guest must
-        # be declared here (lab-only credential, matches compose/cluster)
-        "users": [{"name": "guest", "password_hash": guest_password_hash(),
+        # be declared here (lab-only credential, matches compose/cluster). The
+        # committed file carries the guest/guest hash; on kind init-secrets
+        # rotates RABBITMQ_PASSWORD — regenerate with `--password` so this hash
+        # and the Secret agree (see the --password help + init-secrets.sh note).
+        "users": [{"name": "guest",
+                   "password_hash": password_hash(
+                       password, GUEST_SALT if password == "guest" else None),
                    "hashing_algorithm": "rabbit_password_hashing_sha256",
                    "tags": ["administrator"]}],
         "permissions": [{"user": "guest", "vhost": "/",
@@ -150,8 +173,21 @@ def routing_table_md(defs):
 
 
 def main():
+    import argparse
+
+    ap = argparse.ArgumentParser(
+        description="Generate deploy/rabbitmq/definitions.json + "
+                    "ROUTING_KEYS.generated.md (ADR-008.4).")
+    ap.add_argument(
+        "--password", default="guest",
+        help="password hashed into the guest user (default: guest — the compose "
+             "credential; committed file uses a fixed salt so it stays "
+             "reproducible). On kind init-secrets rotates RABBITMQ_PASSWORD; "
+             "regenerate with the rotated value so load_definitions matches the "
+             "Secret (this path uses a random salt and is NOT committed).")
+    args = ap.parse_args()
     os.makedirs(OUT_DIR, exist_ok=True)
-    defs = build()
+    defs = build(args.password)
     with open(os.path.join(OUT_DIR, "definitions.json"), "w") as f:
         json.dump(defs, f, indent=2, sort_keys=False)
         f.write("\n")

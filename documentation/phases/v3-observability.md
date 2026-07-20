@@ -1,8 +1,10 @@
 # Phase v3 — Observability depth (+ status page + hello-guest)
 
-**Status:** implemented (expedited 2026-07-19; exit experiments authored but
-not yet run — ledger in [v3-DEFERRED.md](v3-DEFERRED.md)) · **Depends on:**
-v2 · **Exit tag:** `lab-v3.0` (tag after the deferred runs pass) ·
+**Status:** implemented and **validated** (expedited 2026-07-19; deferred
+runs executed same day — EXP-30..34 all pass, six defects found and fixed;
+ledger closed in [v3-DEFERRED.md](v3-DEFERRED.md), evidence in
+[2026-07-19-v3-obs-exit-runs.md](../experiments/2026-07-19-v3-obs-exit-runs.md))
+· **Depends on:** v2 · **Exit tag:** `lab-v3.0` (tag at merge) ·
 **Decisions in force:** ADR-003 (all), ADR-001.3 (status page), ADR-001.4
 (hello-guest), ADR-005.1/.2 seeds, ADR-007.1/.2 (contract draft)
 
@@ -83,9 +85,10 @@ messaging/auth changes (v4), AWS (v5).
 
 ## Acceptance
 
-- [ ] EXP-30..34 pass and are written up
-- [ ] Every EXPERIMENTS.md drill's "Watch" achievable without terminal access
-      (spot-check three)
-- [ ] Status page shows live truth for both compose and kind targets
-- [ ] HOST_CONTRACT.md v0 exists, proven by hello-guest
-- [ ] Tag `lab-v3.0`
+- [x] EXP-30..34 pass and are written up (2026-07-19 exit runs)
+- [x] Every EXPERIMENTS.md drill's "Watch" achievable without terminal access
+      (spot-checked EXP-04/05/06 against live Lab Overview panels)
+- [x] Status page shows live truth for both compose and kind targets
+- [x] HOST_CONTRACT.md v0 exists, proven by hello-guest (incl. the netpol
+      and crash-lever fixes the proof demanded)
+- [ ] Tag `lab-v3.0` (at merge — owner's call)

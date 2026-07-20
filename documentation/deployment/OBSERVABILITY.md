@@ -81,8 +81,9 @@ The triage loop, terminal-free:
 ## Alerts (ADR-003.4)
 
 `PrometheusRule lab-alerts`: QueueDepthSustained, DLQGrowth,
-AuthBreakerOpen, APIP99OverSLO (placeholder 500ms until
-`documentation/experiments/SLO-BASELINE.md` lands — ADR-003.6),
+AuthBreakerOpen, APIP99OverSLO (3 s) and APIAvailabilityBelowSLO (99.5%
+non-5xx) — both calibrated 2026-07-19 per
+`documentation/experiments/SLO-BASELINE.md` (ADR-003.6),
 ScrapeTargetDown; node-pressure comes from the chart's default rule set.
 Every alert carries a `runbook_url` into the matching EXPERIMENTS.md drill.
 

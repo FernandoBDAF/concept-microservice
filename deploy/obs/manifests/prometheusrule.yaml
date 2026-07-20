@@ -16,6 +16,11 @@ spec:
     - name: lab.rules
       rules:
         - alert: QueueDepthSustained
+          # Calibrated 2026-07-19 and deliberately kept at 500: steady-state
+          # peak was 6, but the worksheet's peak-x2 formula (12) would page on
+          # every intentional flood drill (EXP-04/32 push 300-600 by design).
+          # 500 held for 5m separates "consumers stuck" from "drill running";
+          # EXP-32 proved the full fire->page->resolve loop at this value.
           expr: rabbitmq_queue_messages{queue=~".*-processing"} > 500
           for: 5m
           labels:
@@ -53,19 +58,35 @@ spec:
               rate-limit path.
             runbook_url: https://github.com/FernandoBDAF/coppice/blob/main/EXPERIMENTS.md#exp-08--incident-reproduction-rate-limit--breaker--outage
         - alert: APIP99OverSLO
-          # 0.5s is a PLACEHOLDER until the v3 calibration run writes
-          # documentation/experiments/SLO-BASELINE.md (ADR-003.6); update the
-          # threshold to baseline+margin from that doc when it lands.
-          expr: histogram_quantile(0.99, sum by (le) (rate(api_http_request_duration_seconds_bucket[5m]))) > 0.5
+          # SLO from the 2026-07-19 calibration (SLO-BASELINE.md): measured
+          # p99 0.97s at 10 VUs through the TLS ingress on the reference
+          # laptop cluster; SLO = baseline x3 margin = 3s (ADR-003.6).
+          expr: histogram_quantile(0.99, sum by (le) (rate(api_http_request_duration_seconds_bucket[5m]))) > 3
           for: 5m
           labels:
             severity: warning
           annotations:
-            summary: "API p99 latency over SLO (placeholder 500ms)"
+            summary: "API p99 latency over SLO (3s, calibrated 2026-07-19)"
             description: >-
               p99 across all API routes is {{ $value }}s, over the SLO
               threshold. Check saturation (CPU throttling, queue backlogs,
               DB pool) before blaming the network.
+            runbook_url: https://github.com/FernandoBDAF/coppice/blob/main/EXPERIMENTS.md#exp-03--steady-load
+        - alert: APIAvailabilityBelowSLO
+          # SLO from the 2026-07-19 calibration (SLO-BASELINE.md): measured
+          # 5xx ratio 0 over the run; SLO = 99.5% non-5xx (baseline -0.5pp,
+          # ADR-003.6). Empty result (no 5xx at all) means healthy: the
+          # ratio only exists once 5xx series appear.
+          expr: sum(rate(api_http_requests_total{status=~"5.."}[5m])) / sum(rate(api_http_requests_total[5m])) > 0.005
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "API 5xx ratio over SLO (99.5% non-5xx, calibrated 2026-07-19)"
+            description: >-
+              {{ $value | humanizePercentage }} of API requests are 5xx over
+              the last 5 minutes — the availability SLO is 99.5%. Find the
+              failing route/dependency before it becomes an outage.
             runbook_url: https://github.com/FernandoBDAF/coppice/blob/main/EXPERIMENTS.md#exp-03--steady-load
         - alert: ScrapeTargetDown
           expr: up == 0

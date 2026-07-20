@@ -30,6 +30,8 @@ exist everywhere).
 container) push notifications; Alertmanager (bundled with 003.1 anyway)
 remains available for later routing practice. **Consequences:** alerts feel
 real on your phone/desktop; drills get a "did you get paged?" dimension.
+**Superseded by ADR-003.7** (2026-07-19): the rules engine shipped
+Prometheus-native; ntfy as the push surface is unchanged.
 
 ## 003.5 Exporters: postgres + redis only
 **Context:** each exporter costs pods/RAM; drills interrogate DB pools and
@@ -44,3 +46,17 @@ something on this hardware. **Decision:** v3 runs a calibration experiment
 (steady-state measurements), sets SLO = baseline + margin, records both in a
 doc the assertions reference. **Consequences:** honest thresholds; recalibrate
 when hardware or architecture changes.
+
+## 003.7 Alert rules are Prometheus-native, push still ntfy (2026-07-19)
+**Supersedes ADR-003.4.** **Context:** v3 shipped the alert set as a
+PrometheusRule beside the scrape config, routed Alertmanager → ntfy-relay →
+ntfy, and EXP-32 validated the whole fire→page→resolve loop there; one
+alerting path is easier to drill than two. 003.4 had put the rules in
+Grafana with Alertmanager reserved "for later" — reality inverted that
+order. **Decision:** alert rules live in PrometheusRule CRDs evaluated by
+Prometheus; Alertmanager owns routing to ntfy (severity→priority in
+ntfy-relay); Grafana stays the viewing surface, its managed alerting now
+the "later practice" option. **Consequences:** rules version with the
+manifests and load with `make obs-up`; the "did you get paged?" dimension
+is unchanged. First registered as a v3-DEFERRED caveat, promoted here to
+the decision trail.

@@ -89,6 +89,10 @@ spec:
                   key: RABBITMQ_PASSWORD
             - name: API_AUTH_URL
               value: http://auth-service:3000
+            # JWKS local verify by default (ADR-009.1); true → HTTP introspection
+            # via the breaker (EXP-43 cascade comparison)
+            - name: API_AUTH_STRICT_INTROSPECTION
+              value: "false"
             - name: MINIO_ENDPOINT
               value: minio.lab-infra:9000
             - name: MINIO_ACCESS_KEY

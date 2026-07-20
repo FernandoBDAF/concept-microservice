@@ -1,0 +1,37 @@
+# EXP-09 · Broker outage (partial degradation). Prose companion: EXPERIMENTS.md §EXP-09.
+# The scored part is the DEGRADATION BOUNDARY while the broker is down. Recovery
+# (start rabbitmq + email-worker, backlog survives and drains) happens in cleanup
+# and is watched, not scored — the runner's steps→assert→cleanup ordering can't
+# interleave "assert down, then restart, then assert recovered" in one pass.
+id: exp-09
+title: Broker outage (partial degradation)
+needs: [compose]
+steps:
+  # leave a durable backlog behind before killing the broker.
+  - run: docker compose stop email-worker && python3 scripts/simulate/publish.py flood --routing-key email.send --count 50
+  - run: docker compose stop rabbitmq
+watch:
+  - "profile CRUD still returns 200 (Postgres/Redis path) — async task submissions FAIL (publish path)"
+  - "make logs S=profile-worker — reconnect attempts with growing backoff"
+  - "after restart: workers reconnect unaided; the 50-message backlog SURVIVED the broker restart (durable queues) and drains"
+assertions:
+  # readiness degrades and names the broker as the failed dependency.
+  - type: http
+    url: http://localhost:8080/ready
+    status: 503
+    json_path: checks.rabbitmq
+    json_equals: down
+    timeout: 60s
+  # the sync half stays alive — liveness keeps returning 200 (partial, not total).
+  - type: http
+    url: http://localhost:8080/health
+    status: 200
+    timeout: 30s
+  # Prometheus sees the rabbitmq scrape target go down (the "broker is gone" signal).
+  - type: promql
+    query: up{job="rabbitmq"}
+    op: "=="
+    value: 0
+    timeout: 60s
+cleanup:
+  - run: docker compose start rabbitmq && docker compose start email-worker

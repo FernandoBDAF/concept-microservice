@@ -16,12 +16,14 @@ PROFILE    ?= single
 	monitoring queues sim-smoke sim-load sim-burst sim-poison sim-outage scale demo-document \
 	images init-secrets cluster-up cluster-down cluster-status cluster-logs cluster-queues \
 	cluster-scale cluster-sim-smoke cluster-sim-load cluster-sim-burst drift-check \
-	obs-up obs-down controld status-page guest-up guest-down guest-status
+	obs-up obs-down controld status-page guest-up guest-down guest-status \
+	chaos-up chaos-down routing-keys experiment experiments
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 up: ## Build and start the full stack (infra + all services)
+	bash scripts/compose/gen-jwt-keys.sh
 	docker compose up -d --build
 
 infra: ## Start infrastructure only (postgres, redis, rabbitmq, mongodb, minio + init jobs)
@@ -109,10 +111,12 @@ images: ## Build + push all service images to the local registry (TAG=dev)
 	docker build -t $(REGISTRY)/email-worker:$(TAG) -f graph-worker/operational-workers/Dockerfile.email graph-worker/operational-workers
 	docker build -t $(REGISTRY)/image-worker:$(TAG) -f graph-worker/operational-workers/Dockerfile.image graph-worker/operational-workers
 	docker build -t $(REGISTRY)/profile-worker:$(TAG) -f graph-worker/operational-workers/Dockerfile.profile graph-worker/operational-workers
+	# loadgen: the flood generator (ADR-004.4); Dockerfile.loadgen ships with the workers
+	docker build -t $(REGISTRY)/loadgen:$(TAG) -f graph-worker/operational-workers/Dockerfile.loadgen graph-worker/operational-workers
 	docker build -t $(REGISTRY)/ntfy-relay:$(TAG) scripts/obs/ntfy-relay
 	docker build -t $(REGISTRY)/hello-guest-web:$(TAG) --build-arg CMD=web guests/hello-guest
 	docker build -t $(REGISTRY)/hello-guest-worker:$(TAG) --build-arg CMD=worker guests/hello-guest
-	for i in api-service auth-service graphrag-service email-worker image-worker profile-worker ntfy-relay hello-guest-web hello-guest-worker; do \
+	for i in api-service auth-service graphrag-service email-worker image-worker profile-worker loadgen ntfy-relay hello-guest-web hello-guest-worker; do \
 		docker push $(REGISTRY)/$$i:$(TAG) || exit 1; done
 
 init-secrets: ## Generate lab credentials -> k8s Secrets (ADR-009.3; FORCE=1 rotates)
@@ -160,6 +164,31 @@ obs-up: ## Observability stack into lab-obs (kps+tempo+exporters+logs+ntfy)
 
 obs-down: ## Remove the observability stack (namespace and CRDs stay)
 	bash scripts/cluster/obs-down.sh
+
+# ── Chaos engineering (PRD v4, ADR-004.3) ─────────────────────────────────────
+
+chaos-up: ## Install Chaos Mesh into the chaos-mesh namespace (pinned; ADR-004.3)
+	bash scripts/cluster/chaos-up.sh
+
+chaos-down: ## Remove Chaos Mesh (CRDs stay; CRs deleted first)
+	bash scripts/cluster/chaos-down.sh
+
+# ── Scored experiments (PRD v4, ADR-004.1/.4) ─────────────────────────────────
+
+routing-keys: ## Regenerate RabbitMQ definitions.json + routing-key contract tables
+	python3 scripts/rabbitmq/generate-definitions.py
+	@printf '%s\n%s\n\n' \
+	  '<!-- GENERATED — do not edit here. Edit scripts/rabbitmq/generate-definitions.py,' \
+	  '     then run `make routing-keys`. Source of truth: deploy/rabbitmq/definitions.json. -->' \
+	  > graph-worker/shared/contracts/ROUTING_KEYS.md
+	@cat deploy/rabbitmq/ROUTING_KEYS.generated.md >> graph-worker/shared/contracts/ROUTING_KEYS.md
+	@echo "routing-keys: regenerated definitions + generated md + contract mirror"
+
+experiment: ## Run a scored experiment (E=exp-02)
+	python3 scripts/experiments/run.py $(E)
+
+experiments: ## List scored experiments
+	python3 scripts/experiments/run.py --list
 
 # ── Mission Control seed (PRD v3→v6, ADR-001.3/ADR-005) ──────────────────────
 

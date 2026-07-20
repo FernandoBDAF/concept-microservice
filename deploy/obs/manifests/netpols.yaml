@@ -109,6 +109,17 @@ spec:
       ports:
         - protocol: TCP
           port: 15692
+    # Guests (HOST_CONTRACT §2): every guest namespace is labeled
+    # lab.local/tier: guest and components serve /metrics on :8080 (§1.3
+    # component ports). Without this egress the guest-side allow is moot —
+    # zero-trust cuts both ends. Caught live by EXP-34 (targets "down").
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              lab.local/tier: guest
+      ports:
+        - protocol: TCP
+          port: 8080
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

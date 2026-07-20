@@ -15,12 +15,19 @@ import (
 // and logs coherently so behavior is observable end-to-end.
 type EmailProcessor struct {
 	metrics *utils.ProcessorMetrics
+
+	// failFirstN is the FAIL_FIRST_N_ATTEMPTS test hook (A3/EXP-40): while a
+	// message's attempt count is below this value the simulated send fails
+	// (retryably), letting the retry tiers be exercised without Chaos Mesh; at
+	// attempt >= N it succeeds ("dependency recovered"). 0 disables the hook.
+	failFirstN int
 }
 
 // NewEmailProcessor creates a new email processor
 func NewEmailProcessor() *EmailProcessor {
 	return &EmailProcessor{
-		metrics: utils.NewProcessorMetrics("email"),
+		metrics:    utils.NewProcessorMetrics("email"),
+		failFirstN: utils.GetEnvIntOrDefault("FAIL_FIRST_N_ATTEMPTS", 0),
 	}
 }
 
@@ -39,6 +46,16 @@ func (p *EmailProcessor) Process(ctx context.Context, msg *queue.Message) error 
 	if err := emailMsg.Validate(); err != nil {
 		p.metrics.RecordProcessingError()
 		return err
+	}
+
+	// FAIL_FIRST_N_ATTEMPTS test hook (inert unless set): simulate a flaky
+	// downstream that fails the first N attempts, then recovers. The returned
+	// error is a plain (retryable) error, so the consumer routes it through the
+	// 5s/30s/2m retry tiers (ADR-008.1); msg.Attempt is the x-death count the
+	// consumer threaded onto the message.
+	if p.failFirstN > 0 && msg.Attempt < p.failFirstN {
+		p.metrics.RecordProcessingError()
+		return fmt.Errorf("simulated transient failure (FAIL_FIRST_N_ATTEMPTS=%d, attempt=%d)", p.failFirstN, msg.Attempt)
 	}
 
 	if err := p.sendEmail(ctx, emailMsg); err != nil {

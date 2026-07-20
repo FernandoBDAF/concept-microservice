@@ -59,12 +59,15 @@ func Init(ctx context.Context, serviceName string) (func(context.Context) error,
 		return nil, fmt.Errorf("failed to create OTLP trace exporter: %w", err)
 	}
 
+	// resource.Default() carries the SDK's own semconv schema URL; merging a
+	// resource pinned to a different schema version returns
+	// ErrSchemaURLConflict (this crashed every Go service at startup when the
+	// SDK moved to schema 1.41.0 while this file pinned semconv/v1.26.0). A
+	// schemaless resource adopts Default's schema on merge, and service.name
+	// is stable across schema versions.
 	res, err := resource.Merge(
 		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
-			semconv.ServiceName(serviceName),
-		),
+		resource.NewSchemaless(semconv.ServiceName(serviceName)),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build OTel resource: %w", err)

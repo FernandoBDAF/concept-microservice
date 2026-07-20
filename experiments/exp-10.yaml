@@ -1,0 +1,54 @@
+# EXP-10 · Message-TTL expiry (work-loss semantics). Prose companion:
+# EXPERIMENTS.md §EXP-10.
+#
+# v4 semantics (ADR-008.5, A2): the old DLQ ambiguity is RETIRED. The
+# email-processing queue dead-letters on expiry with routing key `email.expired`
+# (verified in deploy/rabbitmq/definitions.json: x-dead-letter-routing-key
+# "email.expired"), which the email-tasks.dlx binds to the DISTINCT `email-expired`
+# queue. Poison instead reaches `email-processing.dlq` (rk `email.send`, reason
+# "rejected"). So expiry and poison are now separable by QUEUE — the mechanical
+# proof below — where before they were indistinguishable in one DLQ.
+#
+# The x-death `reason` field ("expired" vs "rejected") is a message-header
+# inspection (RabbitMQ UI → Get Message), not a PromQL series, so it stays in
+# `watch`; the queue split IS the falsifiable encoding of the semantics.
+#
+# Requires the v4 definitions.json loaded (A1). Without it, expiry falls back to
+# email-processing.dlq and the email-expired assertion fails — that failure is
+# faithful to the contract (the feature must be live for the experiment to pass).
+id: exp-10
+title: Message-TTL expiry (work-loss semantics)
+needs: [compose]
+steps:
+  - run: docker compose stop email-worker
+  # 20 messages with a 10s per-message TTL (the queue's own 1h staleness TTL is
+  # too slow to demo); with no consumer they all expire.
+  - run: python3 scripts/simulate/publish.py flood --routing-key email.send --count 20 --expiration-ms 10000
+watch:
+  - "Lab Overview → Queue depth vs Dead-letter queues across ~15s: email-processing 20 → 0 while email-expired +20, with ZERO worker activity"
+  - "RabbitMQ UI → Get Message on email-expired: x-death reason: expired (vs poison's reason: rejected in email-processing.dlq) — the distinction the v4 policy makes explicit"
+  - "Discussion: these were valid emails; production behavior would be 'users silently never got mail' (OQ-M5)"
+assertions:
+  # expiry lands in the DISTINCT email-expired queue (via rk email.expired).
+  # email-expired has its own 24h retention TTL, so the 20 persist (>= tolerates
+  # residue from an earlier run).
+  - type: promql
+    query: rabbitmq_queue_messages{queue="email-expired"}
+    op: ">="
+    value: 20
+    timeout: 120s
+  # the ambiguity is retired: expiry does NOT touch the poison DLQ (assumes a
+  # clean email DLQ baseline — EXP-05 cleanup purges it, or run on a fresh stack).
+  - type: promql
+    query: rabbitmq_queue_messages{queue="email-processing.dlq"}
+    op: "=="
+    value: 0
+    timeout: 30s
+  # all 20 expired OUT of the work queue with nobody consuming.
+  - type: promql
+    query: rabbitmq_queue_messages{queue="email-processing"}
+    op: "=="
+    value: 0
+    timeout: 120s
+cleanup:
+  - run: docker compose start email-worker

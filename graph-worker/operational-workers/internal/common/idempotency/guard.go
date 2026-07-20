@@ -11,6 +11,7 @@ package idempotency
 import (
 	"context"
 	"errors"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -23,6 +24,17 @@ const DefaultTTL = 24 * time.Hour
 // by two different queues (fanout future) doesn't collide.
 func KeyFor(queue, envelopeID string) string {
 	return "idem:" + queue + ":" + envelopeID
+}
+
+// KeyForAttempt scopes KeyFor by the retry attempt (x-death count). This lets
+// the guard dedupe a genuine duplicate delivery (same attempt redelivered —
+// e.g. a crash between process and ack, where x-death is unchanged) while
+// still admitting an intentional retry (ADR-008.1 republish increments the
+// attempt), which must be reprocessed rather than silently deduped.
+// Key shape: idem:<queue>:<envelopeID>:<attempt>. The Python graphrag consumer
+// mirrors this exact shape.
+func KeyForAttempt(queue, envelopeID string, attempt int) string {
+	return KeyFor(queue, envelopeID) + ":" + strconv.Itoa(attempt)
 }
 
 // Guard is the seam BaseWorker will call around processing.
