@@ -34,6 +34,19 @@ assertions:
     op: "=="
     value: 0
     timeout: 120s
+  # Every work queue has a live consumer attached. This is the ONLY gate that
+  # exercises consumption: count(up==1) proves a worker's :8081 metrics server
+  # is up, but the graphrag cold-start fix (survive the RabbitMQ race instead of
+  # crash-looping) means a worker can now be "up, metrics green, but silently
+  # NOT consuming" — a state up==1 cannot see. min(consumers) over the 4 work
+  # queues (document-/email-/profile-/…-processing; retry/DLQ queues don't end
+  # in -processing) fails if any worker booted but never attached. run.py reads
+  # a missing series as 0, so "no consumer" fails rather than silently passing.
+  - type: promql
+    query: min(rabbitmq_queue_consumers{queue=~".*-processing"})
+    op: ">="
+    value: 1
+    timeout: 300s
   # DLQs empty on a cold stack.
   - type: promql
     query: sum(rabbitmq_queue_messages{queue=~".+\\.dlq"})
