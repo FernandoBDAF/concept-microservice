@@ -1,0 +1,90 @@
+# Minimal kustomize base for the example worker. Conventions match the lab's
+# deploy/k8s/base/services/*: named `http` port, `app:` selector/labels,
+# runAsNonRoot + dropped capabilities, startup/readiness/liveness probes, and
+# request/limit resources. Set namespace + image tag in an overlay.
+apiVersion: v1
+kind: Service
+metadata:
+  name: example-worker
+  labels:
+    app: example-worker
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+  selector:
+    app: example-worker
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: example-worker
+  labels:
+    app: example-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: example-worker
+  template:
+    metadata:
+      labels:
+        app: example-worker
+        lab.local/role: worker
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      # runAsNonRoot only — the image defines its own non-root UID (10001);
+      # forcing a UID here can break images with a --user layout.
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: worker
+          image: localhost:5001/example-worker:dev
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: RABBITMQ_URL
+              value: amqp://guest:guest@rabbitmq:5672/
+            # idempotency guard (ADR-008.2)
+            - name: REDIS_ADDR
+              value: redis:6379
+            # OpenTelemetry (ADR-003.2): unset/empty → tracing off. Point at an
+            # OTLP/http collector to enable.
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: ""
+            - name: OTEL_SERVICE_NAME
+              value: example-worker
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 300m
+              memory: 128Mi

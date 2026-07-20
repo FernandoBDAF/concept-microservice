@@ -1,0 +1,46 @@
+# Template CI — runnable as-is in a consuming repo (v8-HANDOFF §5). Build +
+# vet + test the Go module and lint the generated topology fragment. The
+# compose smoke (test/bootstrap.sh) needs a Docker daemon and is left to the
+# consuming repo's integration lane / the lab's `templates` job.
+name: worker-go-ci
+
+on:
+  push:
+    paths:
+      - "**"
+  pull_request:
+    paths:
+      - "**"
+  workflow_dispatch: {}
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+      - name: build
+        run: go build ./...
+      - name: vet
+        run: go vet ./...
+      - name: test
+        run: go test ./...
+
+  topology:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: generator doctest
+        run: python3 -m doctest scripts/generate-definitions.py
+      - name: fragment is valid JSON
+        run: |
+          python3 scripts/generate-definitions.py --pipeline example:example.task \
+            | python3 -c "import json,sys; d=json.load(sys.stdin); \
+                assert d['queues'], 'no queues generated'; \
+                print('ok:', len(d['exchanges']), 'exchanges', len(d['queues']), 'queues')"
