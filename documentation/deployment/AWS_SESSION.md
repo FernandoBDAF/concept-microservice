@@ -58,9 +58,11 @@ deliberately in `deploy/aws/session/addons.tf`):
 
 ## Verify
 
-Scored smoke against the session: `make experiment E=exp-02` (API_URL
-override per experiment needs — HANDOFF §7), then the drill of the day
-(EXP-50..55 catalog).
+Smoke against the session: `curl https://api.<domain>/health` + EXP-02's
+manual steps against the ALB hosts, then the drill of the day (EXP-50..55
+catalog). NOTE: the scored runner (`make experiment E=exp-02`, v4)
+currently targets compose-local URLs — pointing it at an EKS session needs
+a base-URL override in the experiment defs (see Known gaps).
 
 ## Cost check (every session)
 
@@ -108,3 +110,12 @@ blockers for `make aws-up` itself:
 - **rabbitmq/mongo/jwt secrets** stay init-secrets-seeded on AWS
   (`SKIP_POSTGRES=1` guards the postgres one); uniform Secrets-Manager +
   ExternalSecret migration is a registered follow-up.
+- **Scored runner is compose-local** (v4): experiment YAMLs hardcode
+  `http://localhost:8080`-style URLs and `scripts/experiments/run.py` has
+  no base-URL override — EXP-51 ("catalog on EKS") needs one added (env,
+  e.g. `EXPERIMENT_BASE_URL`, rewriting hosts per def) before the scored
+  subset can run against `api.<domain>`.
+- **rabbitmq guest password ⇄ definitions.json** (v4 deferral, ADR-008.4):
+  applies unchanged on EKS — the broker boots from the committed
+  definitions with guest/guest until definitions are regenerated with the
+  rotated password; same caveat, same fix path as kind.

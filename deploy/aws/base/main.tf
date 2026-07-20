@@ -42,11 +42,12 @@ provider "aws" {
   }
 }
 
-# ── ECR: one repo per image `make images` pushes (incl. v3 additions) ────────
+# ── ECR: one repo per image `make images` pushes (incl. v3/v4 additions) ─────
 locals {
   images = [
     "api-service", "auth-service", "graphrag-service",
     "email-worker", "image-worker", "profile-worker",
+    "loadgen", # v4 flood generator (ADR-004.4) — EXP-51 drills need it on EKS
     "ntfy-relay", "hello-guest-web", "hello-guest-worker",
   ]
 }
