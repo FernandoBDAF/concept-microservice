@@ -11,6 +11,14 @@ and bootstrap-test contract), pattern-doc outlines
 
 Order: 1 → 2 → 3 (extraction, hardest first is auth) → 4 → 5 → 6 → 7.
 
+> **Execution state (2026-07-19, `feat/v8-execution`):** §§1–5 done —
+> templates cut from post-v4 `main` (`07bd8bd`; the phase branch's own
+> service trees predate the v4 merge), all unit gates green, pattern docs
+> written, bootstrap tests + template CI authored. §§6–7 and the v4
+> live-run precondition (owner-approved deviation: extraction proceeded
+> with "authored; live run pending" citations) are tracked in
+> [v8-DEFERRED.md](v8-DEFERRED.md).
+
 ## 1–3 — Cut the three templates
 For each of auth-service / worker-go / api-publisher, follow its README's
 "Extract from + Trim" lists against the POST-v4 code. Method: copy the

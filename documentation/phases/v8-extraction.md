@@ -1,7 +1,9 @@
 # Phase v8 — Extraction & reuse
 
-**Status:** scaffolds + handoff landed (expedited 2026-07-19; extraction
-itself gated on v4 execution) — execute via [v8-HANDOFF.md](v8-HANDOFF.md)
+**Status:** extraction executed (2026-07-19, `feat/v8-execution` —
+v8-HANDOFF §§1–5: three templates cut + tested, pattern docs written,
+bootstrap tests + template CI authored); exit runs EXP-80..82 and the v4
+live-run precondition tracked in [v8-DEFERRED.md](v8-DEFERRED.md)
 · **Depends on:** v4 (hardened patterns), ideally v7
 (patterns proven against real guests) · **Exit tag:** `lab-v8.0` ·
 **Decisions in force:** ADR-010.3 (in-repo templates), ADR-002.1 (the one

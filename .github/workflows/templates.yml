@@ -1,0 +1,59 @@
+# CI for templates/ (v8 — the EXP-81 harness): runs only when templates
+# change. Layer 1 mirrors each template's own in-template ci.yml natively
+# (fast signal); layer 2 runs the three compose bootstrap smokes — the
+# regression net that must catch a deliberately-broken copy (EXP-81).
+# Note: the in-template .github/workflows/ci.yml files are inert here
+# (GitHub only reads root workflows); they activate in a consuming repo.
+name: templates
+
+on:
+  push:
+    branches: [main]
+    paths: ["templates/**"]
+  pull_request:
+    paths: ["templates/**"]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: |
+            templates/worker-go/go.sum
+            templates/api-publisher/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: templates/auth-service/package-lock.json
+      - name: worker-go — build + vet + test
+        run: cd templates/worker-go && go build ./... && go vet ./... && go test ./...
+      - name: worker-go — topology fragment generator
+        run: |
+          cd templates/worker-go
+          python3 -m doctest scripts/generate-definitions.py
+          python3 scripts/generate-definitions.py --pipeline example:example.task \
+            | python3 -c "import json,sys; d=json.load(sys.stdin); assert d['queues']"
+      - name: api-publisher — build + vet + test
+        run: cd templates/api-publisher && go build ./... && go vet ./... && go test ./...
+      - name: auth-service — install + typecheck + build + test
+        run: cd templates/auth-service && npm ci && npm run typecheck && npm run build && npm test
+      - name: helm lint (the one chart, ADR-002.1)
+        run: helm lint templates/worker-go/chart
+
+  bootstrap:
+    # EXP-81's live half: each template's compose smoke on a real docker
+    # daemon. First-ever execution of these scripts happens here (authoring
+    # env had no daemon — see documentation/phases/v8-DEFERRED.md D2).
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        template: [auth-service, worker-go, api-publisher]
+    steps:
+      - uses: actions/checkout@v4
+      - name: bootstrap smoke — ${{ matrix.template }}
+        run: cd templates/${{ matrix.template }} && ./test/bootstrap.sh
