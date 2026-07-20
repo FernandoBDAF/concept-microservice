@@ -24,9 +24,11 @@ assertions:               # polled (interval 5s) until pass or timeout
     op: "<="              # == != < <= > >=
     value: 0
     timeout: 300s         # keep polling until this deadline
-  - type: http            # status (+ optional jq-path equality)
+  - type: http            # status (+ optional json_path == json_equals)
     url: http://localhost:8080/ready
     status: 200
+    json_path: checks.rabbitmq   # optional: dot-path into the JSON body
+    json_equals: ok              # optional: required together with json_path
     timeout: 30s
   - type: cli             # exit code 0 == pass; retried like the others
     run: docker compose ps --status running --services | grep -q email-worker
@@ -39,11 +41,22 @@ Conventions: every assertion needs `timeout`; `promql` needs the stack's
 Prometheus (`PROM_URL`, default http://localhost:9090); ids are kebab-case
 `exp-NN`. The runner treats an empty `assertions` list as a config error —
 a scored experiment must be falsifiable (EXP-45 proves the runner rejects
-rubber stamps).
+rubber stamps). A `promql` query returning an empty vector reads as `0`
+(absence of a queue/counter series = zero), so drain-to-zero assertions stay
+robust while positive thresholds still fail.
+
+Runner CLI (`scripts/experiments/run.py`): `<id>` runs a scored experiment,
+`--list` prints ids/titles/needs, `--validate` schema-checks every file with no
+stack needed. Runs append to `documentation/experiments/RUNS.md` and emit junit
+XML to `.experiment-results/<id>-<timestamp>.xml` at the repo root (created
+lazily, gitignored; override the dir with `$EXPERIMENT_REPORT_DIR`). Pure
+assertion logic is unit-tested in `scripts/experiments/test_run.py`.
+Regenerate the EXPERIMENTS.md index after adding/renaming a file:
+`python3 scripts/experiments/gen-index.py` (`--check` fails on drift, for CI).
 
 ## Status
 
 - [x] schema drafted (this file) · [x] first migration: `exp-02.yaml`
-- [ ] runner implementation — `scripts/experiments/run.py` (HANDOFF §B2)
-- [ ] migrate EXP-01..12 (HANDOFF §B1 has the per-experiment notes)
-- [ ] EXPERIMENTS.md generated index (HANDOFF §B1)
+- [x] runner implementation — `scripts/experiments/run.py` (HANDOFF §B2)
+- [x] migrate EXP-01..12 (HANDOFF §B1 has the per-experiment notes)
+- [x] EXPERIMENTS.md generated index — `scripts/experiments/gen-index.py` (HANDOFF §B1)

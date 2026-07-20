@@ -38,15 +38,20 @@ k8s self-healing.
      | grep -v '"value":\[[0-9.]*,"0"\]'
    ```
    (non-zero rate ⇒ the guest burst is visible host-side).
-4. Kill the worker mid-flight:
+4. Crash the worker mid-flight — from *inside*, so the restart policy sees
+   a failure, not an operator stop (`docker kill`/`stop` mark the container
+   manually stopped and `unless-stopped` then deliberately does NOT revive
+   it — calibrated 2026-07-19, the run caught the original `docker kill`
+   step never coming back):
    ```bash
-   docker kill hello-guest-worker-1
+   docker exec hello-guest-worker-1 kill 1
    ```
 5. Within ~30 s, verify the flatline *and* the recovery:
    ```bash
-   # jobs counter stops increasing while the container is down:
+   # jobs counter stops increasing while the container is down (the series
+   # goes stale/empty until the target returns):
    curl -s 'http://localhost:9090/api/v1/query?query=rate(hello_guest_jobs_total[1m])'
-   # restart: unless-stopped brings it back — expect "Up" again:
+   # restart: unless-stopped revives the crashed container — expect "Up":
    docker compose -f guests/hello-guest/docker-compose.yml ps worker
    ```
 

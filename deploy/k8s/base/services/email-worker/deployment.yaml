@@ -59,6 +59,10 @@ spec:
                   key: RABBITMQ_PASSWORD
             - name: RABBITMQ_URL
               value: amqp://guest:$(RABBITMQ_PASSWORD)@rabbitmq.lab-infra:5672/
+            # idempotency guard (ADR-008.2); netpol egress allow lives in
+            # netpols/lab-core.yaml (workers → redis)
+            - name: REDIS_ADDR
+              value: redis.lab-infra:6379
             # OpenTelemetry (ADR-003.2): OTLP/http to tempo in lab-obs —
             # netpol egress allow lives in netpols/lab-core.yaml
             - name: OTEL_EXPORTER_OTLP_ENDPOINT

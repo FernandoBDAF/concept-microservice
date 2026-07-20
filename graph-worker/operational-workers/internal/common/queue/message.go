@@ -12,6 +12,14 @@ type Message struct {
 	Payload   json.RawMessage   `json:"payload"`
 	Timestamp time.Time         `json:"timestamp"`
 	Metadata  map[string]string `json:"metadata,omitempty"`
+
+	// Attempt is the retry-cycle count derived from the delivery's x-death
+	// header (0 on first delivery), set by the consumer before dispatch. It is
+	// transport metadata, not part of the frozen envelope contract, so it is
+	// never (de)serialised — the tag keeps MarshalJSON/UnmarshalJSON clean.
+	// Consumers use it to scope the idempotency key per attempt (so retries
+	// aren't deduped) and processors use it for attempt-aware test hooks.
+	Attempt int `json:"-"`
 }
 
 // MessageHandler processes one delivered message. The context carries the

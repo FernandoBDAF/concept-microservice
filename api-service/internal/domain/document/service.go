@@ -18,23 +18,27 @@ type MinIOClient interface {
 	BucketName() string
 }
 
-type TaskPublisher interface {
-	PublishDocumentTask(ctx context.Context, documentID, profileID, userID uuid.UUID, storagePath, bucket, fileType string) (string, error)
+// TaskBuilder produces the serialized document.process envelope for the
+// upload transaction (satisfied by task.DocumentTaskBuilder). The envelope
+// is built up front so the document INSERT and the outbox INSERT commit in
+// ONE transaction (ADR-008.3) — publishing is the relay's job.
+type TaskBuilder interface {
+	BuildDocumentTask(ctx context.Context, documentID, profileID, userID uuid.UUID, storagePath, bucket, fileType string) (taskID, routingKey string, envelope []byte, err error)
 }
 
 type Service struct {
-	repo      Repository
-	minio     MinIOClient
-	publisher TaskPublisher
-	logger    *zap.Logger
+	repo   Repository
+	minio  MinIOClient
+	tasks  TaskBuilder
+	logger *zap.Logger
 }
 
-func NewService(repo Repository, minio MinIOClient, publisher TaskPublisher, logger *zap.Logger) *Service {
+func NewService(repo Repository, minio MinIOClient, tasks TaskBuilder, logger *zap.Logger) *Service {
 	return &Service{
-		repo:      repo,
-		minio:     minio,
-		publisher: publisher,
-		logger:    logger.Named("document_service"),
+		repo:   repo,
+		minio:  minio,
+		tasks:  tasks,
+		logger: logger.Named("document_service"),
 	}
 }
 
@@ -81,21 +85,27 @@ func (s *Service) Upload(ctx context.Context, userID, profileID uuid.UUID, filen
 		Metadata:         make(JSONMap),
 	}
 
-	if err := s.repo.Create(ctx, doc); err != nil {
+	// Build the envelope first, then commit document + outbox event in one
+	// transaction (ADR-008.3). The old swallowed direct publish is gone: a
+	// committed document ALWAYS has its task queued, and the relay gets it
+	// to the broker (EXP-42).
+	taskID, routingKey, envelope, err := s.tasks.BuildDocumentTask(ctx, doc.ID, doc.ProfileID, doc.UserID, doc.StoragePath, doc.StorageBucket, doc.FileType)
+	if err != nil {
+		_ = s.minio.Delete(ctx, storagePath)
+		s.logger.Error("Failed to build document task envelope",
+			zap.Error(err),
+			zap.String("document_id", docID.String()),
+		)
+		return nil, "", fmt.Errorf("failed to build document task: %w", err)
+	}
+
+	if err := s.repo.CreateWithTask(ctx, doc, routingKey, envelope); err != nil {
 		_ = s.minio.Delete(ctx, storagePath)
 		s.logger.Error("Failed to create document record",
 			zap.Error(err),
 			zap.String("document_id", docID.String()),
 		)
 		return nil, "", fmt.Errorf("failed to create document record: %w", err)
-	}
-
-	taskID, err := s.publisher.PublishDocumentTask(ctx, doc.ID, doc.ProfileID, doc.UserID, doc.StoragePath, doc.StorageBucket, doc.FileType)
-	if err != nil {
-		s.logger.Warn("Failed to publish document task, document will need manual processing",
-			zap.Error(err),
-			zap.String("document_id", docID.String()),
-		)
 	}
 
 	s.logger.Info("Document uploaded successfully",
@@ -183,4 +193,45 @@ func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
 
 func (s *Service) UpdateStatus(ctx context.Context, id uuid.UUID, status DocumentStatus, errorMsg *string) error {
 	return s.repo.UpdateStatus(ctx, id, status, errorMsg)
+}
+
+// ApplyTaskResult advances the document lifecycle from a task.result
+// message (ADR-008.3): processing → completed/failed. It is idempotent —
+// duplicate results (the relay may re-publish by design, deduped only
+// best-effort downstream) and results for already-terminal documents are
+// skipped, and an unknown document is dropped rather than redelivered
+// forever. Only transient errors (e.g. DB down) are returned.
+func (s *Service) ApplyTaskResult(ctx context.Context, id uuid.UUID, status string, errorMsg *string) error {
+	doc, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if doc == nil {
+		s.logger.Warn("task result for unknown document, dropping",
+			zap.String("document_id", id.String()),
+			zap.String("status", status),
+		)
+		return nil
+	}
+	if doc.Status == StatusCompleted || doc.Status == StatusFailed {
+		s.logger.Debug("task result for already-terminal document, skipping",
+			zap.String("document_id", id.String()),
+			zap.String("current_status", string(doc.Status)),
+			zap.String("result_status", status),
+		)
+		return nil
+	}
+
+	switch status {
+	case "completed":
+		return s.repo.UpdateProcessingCompleted(ctx, id)
+	case "failed":
+		return s.repo.UpdateStatus(ctx, id, StatusFailed, errorMsg)
+	default:
+		s.logger.Warn("task result with unknown status, dropping",
+			zap.String("document_id", id.String()),
+			zap.String("status", status),
+		)
+		return nil
+	}
 }

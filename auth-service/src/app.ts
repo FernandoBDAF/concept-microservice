@@ -2,6 +2,7 @@ import express from "express";
 import helmet from "helmet";
 import { config } from "./config/index.js";
 import { registerRoutes } from "./api/routes/index.js";
+import jwksRoutes from "./api/routes/jwks.routes.js";
 import { errorHandler, notFoundHandler } from "./api/middleware/error.middleware.js";
 import { globalRateLimit } from "./api/middleware/rateLimit.middleware.js";
 import { requestIdMiddleware } from "./api/middleware/requestId.middleware.js";
@@ -19,6 +20,10 @@ export const createApp = () => {
     ? { contentSecurityPolicy: false }
     : {};
   app.use(helmet(helmetOptions));
+
+  // JWKS is public infrastructure (ADR-009.1): mounted before the global rate
+  // limiter and any auth so verification keys are always reachable.
+  app.use(jwksRoutes);
 
   app.use(globalRateLimit);
   app.use(requestIdMiddleware);

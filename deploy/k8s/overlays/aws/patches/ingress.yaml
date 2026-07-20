@@ -1,0 +1,66 @@
+# Ingress → ALB + ACM (patch 4). Swaps ingress-nginx/cert-manager for the AWS
+# Load Balancer Controller: className alb, internet-facing, target-type ip,
+# HTTP+HTTPS listeners with ssl-redirect. No certificate-arn annotation — the
+# controller auto-discovers the ACM cert whose SANs cover these hosts (the
+# wildcard *.LAB_DOMAIN cert from WP1 §5.5 matches api./auth.). Both ingresses
+# share one ALB via group.name (one LB, less cost). cert-manager + nginx
+# annotations are removed (set null); spec.tls is dropped (ALB terminates).
+# external-dns manages the api./auth. records from these hosts (WP1 §5.5).
+#
+# NOTE: nginx per-IP rate limiting (ADR-009.5) has no ALB annotation
+# equivalent — it needs AWS WAF, deferred. Tracked in wp2 notes.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: api-service
+  namespace: lab-core
+  annotations:
+    cert-manager.io/cluster-issuer: null
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/group.name: coppice-lab
+spec:
+  ingressClassName: alb
+  tls: null
+  rules:
+    - host: api.LAB_DOMAIN_PLACEHOLDER
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api-service
+                port:
+                  name: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: auth-service
+  namespace: lab-core
+  annotations:
+    cert-manager.io/cluster-issuer: null
+    nginx.ingress.kubernetes.io/limit-rps: null
+    nginx.ingress.kubernetes.io/limit-connections: null
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/group.name: coppice-lab
+spec:
+  ingressClassName: alb
+  tls: null
+  rules:
+    - host: auth.LAB_DOMAIN_PLACEHOLDER
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: auth-service
+                port:
+                  name: http

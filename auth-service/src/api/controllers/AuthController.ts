@@ -2,8 +2,15 @@ import type { Request, Response } from "express";
 import { AuthService } from "../../domain/services/AuthService.js";
 import { tokenService } from "../../domain/services/TokenService.js";
 import { userRepository } from "../../domain/repositories/UserRepository.js";
+import { sessionRepository } from "../../domain/repositories/SessionRepository.js";
+import { auditLogRepository } from "../../domain/repositories/AuditLogRepository.js";
 
-const authService = new AuthService(userRepository, tokenService);
+const authService = new AuthService(
+  userRepository,
+  tokenService,
+  sessionRepository,
+  auditLogRepository
+);
 
 // eslint-disable-next-line @typescript-eslint/no-extraneous-class
 export class AuthController {
@@ -77,10 +84,10 @@ export class AuthController {
     });
   }
 
-  static logout(req: Request, res: Response): void {
+  static async logout(req: Request, res: Response): Promise<void> {
     const token = req.headers.authorization?.split(" ")[1];
     if (token) {
-      authService.logout(token);
+      await authService.logout(token);
     }
 
     res.json({

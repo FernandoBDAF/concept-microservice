@@ -19,6 +19,7 @@ import (
 	"github.com/fernandobarroso/microservices/api-service/internal/domain/task"
 	"github.com/fernandobarroso/microservices/api-service/internal/infrastructure/auth"
 	minioInfra "github.com/fernandobarroso/microservices/api-service/internal/infrastructure/minio"
+	"github.com/fernandobarroso/microservices/api-service/internal/infrastructure/outbox"
 	"github.com/fernandobarroso/microservices/api-service/internal/infrastructure/postgres"
 	"github.com/fernandobarroso/microservices/api-service/internal/infrastructure/rabbitmq"
 	redisInfra "github.com/fernandobarroso/microservices/api-service/internal/infrastructure/redis"
@@ -93,7 +94,17 @@ func main() {
 		log.Info("MinIO client initialized", zap.String("bucket", cfg.MinIO.BucketName))
 	}
 
+	// Background workers (outbox relay, results consumer, JWKS refresher)
+	// share one lifecycle context, canceled during graceful shutdown.
+	workerCtx, workerCancel := context.WithCancel(context.Background())
+	defer workerCancel()
+
 	authClient := auth.NewClient(cfg.Auth, cfg.CircuitBreaker)
+	// ADR-009.1: local JWKS verification is the default auth path; the
+	// introspection client above stays as the strict-mode escape hatch.
+	jwksVerifier := auth.NewJWKSVerifier(cfg.Auth, log)
+	go jwksVerifier.Start(workerCtx)
+
 	profileRepo := postgres.NewProfileRepository(db, log)
 
 	var cache profile.Cache
@@ -102,19 +113,37 @@ func main() {
 	}
 	profileService := profile.NewService(profileRepo, cache, redisInfra.ErrCacheMiss)
 
+	// ADR-008.3: every task publish goes through the transactional outbox;
+	// the relay is the only writer to the broker (confirm-mode).
+	outboxStore := outbox.NewStore(db)
+	taskService := task.NewService(outboxStore)
+
 	publisher := rabbitmq.NewPublisher(rmqClient)
-	taskService := task.NewService(publisher)
+	go func() {
+		if err := outbox.Relay(workerCtx, outboxStore, publisher, outbox.DefaultInterval); err != nil {
+			log.Error("outbox relay exited", zap.Error(err))
+		}
+	}()
 
 	var documentService *document.Service
 	if minioClient != nil {
-		documentRepo := postgres.NewDocumentRepository(db, log)
-		documentPublisher := task.NewDocumentTaskPublisher(taskService)
-		documentService = document.NewService(documentRepo, minioClient, documentPublisher, log)
+		documentRepo := postgres.NewDocumentRepository(db, outboxStore, log)
+		documentService = document.NewService(documentRepo, minioClient, task.NewDocumentTaskBuilder(), log)
 		log.Info("Document service initialized")
 	}
 
+	// task-results consumer (ADR-008.3): workers/graphrag publish
+	// completion/failure; document status advances processing→completed/failed.
+	var docUpdater task.DocumentStatusUpdater
+	if documentService != nil {
+		docUpdater = documentService
+	}
+	resultHandler := task.NewResultHandler(docUpdater, log)
+	resultsConsumer := rabbitmq.NewResultsConsumer(rmqClient, resultHandler.Handle, log)
+	go resultsConsumer.Start(workerCtx)
+
 	healthHandler := handlers.NewHealthHandler(db, redisClient, rmqClient)
-	router := api.NewRouter(cfg, authClient, profileService, taskService, documentService, healthHandler, log)
+	router := api.NewRouter(cfg, authClient, jwksVerifier, profileService, taskService, documentService, healthHandler, log)
 
 	server := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Server.HTTPPort),
@@ -160,6 +189,11 @@ func main() {
 			log.Error("failed to shutdown metrics server", zap.Error(err))
 		}
 	}
+
+	// Stop background workers (outbox relay, results consumer, JWKS
+	// refresher) after the HTTP surface is drained; unsent outbox rows are
+	// simply picked up on next start — that is the whole point of the design.
+	workerCancel()
 
 	log.Info("server shutdown complete")
 	time.Sleep(100 * time.Millisecond)

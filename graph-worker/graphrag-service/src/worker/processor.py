@@ -6,6 +6,7 @@ import tempfile
 from typing import Any, Dict, Optional
 
 from minio import Minio
+from minio.credentials import IamAwsProvider
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +38,37 @@ class DocumentProcessor:
 
     def _init_minio(self) -> Minio:
         minio_cfg = self.config["minio"]
+        access_key = minio_cfg["access_key"]
+        secret_key = minio_cfg["secret_key"]
+        secure = minio_cfg.get("use_ssl", False)
+
+        # Credential mode selection:
+        #   - static:      both keys set (compose / kind / self-hosted MinIO).
+        #   - ambient/IRSA: keys absent -> fall back to the AWS credential chain.
+        # A partial config (only one key) is a misconfiguration and fails fast.
+        if access_key and secret_key:
+            logger.info("MinIO credential mode: static")
+            return Minio(
+                minio_cfg["endpoint"],
+                access_key=access_key,
+                secret_key=secret_key,
+                secure=secure,
+            )
+        if access_key or secret_key:
+            raise ValueError(
+                "MINIO_ACCESS_KEY and MINIO_SECRET_KEY must both be set (static creds) "
+                "or both be empty (ambient/IRSA creds)"
+            )
+
+        # Ambient credentials. IamAwsProvider resolves EKS IRSA via the
+        # web-identity path: it reads AWS_WEB_IDENTITY_TOKEN_FILE + AWS_ROLE_ARN
+        # (injected by EKS) and exchanges the projected SA token with STS. It
+        # also covers the EC2/ECS metadata providers.
+        logger.info("MinIO credential mode: ambient/IRSA")
         return Minio(
             minio_cfg["endpoint"],
-            access_key=minio_cfg["access_key"],
-            secret_key=minio_cfg["secret_key"],
-            secure=minio_cfg.get("use_ssl", False),
+            secure=secure,
+            credentials=IamAwsProvider(),
         )
 
     def validate(self, message: dict) -> bool:

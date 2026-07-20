@@ -2,17 +2,27 @@ package queue
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
+// Publisher publishes envelopes to a single exchange with publisher confirms.
+// The confirm listener is registered once per channel (not per publish) and
+// PublishMessage is safe for concurrent use: publishes and their confirmations
+// are serialised under mu so a confirmation is never mismatched to the wrong
+// publish.
 type Publisher struct {
 	conn    *amqp.Connection
 	channel *amqp.Channel
 	config  *Config
 	logger  *Logger
 	done    chan struct{}
+
+	mu       sync.Mutex
+	confirms chan amqp.Confirmation
 }
 
 func NewPublisher(config *Config) (*Publisher, error) {
@@ -34,6 +44,7 @@ func NewPublisher(config *Config) (*Publisher, error) {
 	return p, nil
 }
 
+// connect must be called with p.mu held (or before the publisher is shared).
 func (p *Publisher) connect() error {
 	var err error
 	p.conn, err = amqp.DialConfig(p.config.URL, amqp.Config{
@@ -49,43 +60,46 @@ func (p *Publisher) connect() error {
 		return ErrChannelFailed
 	}
 
-	// Declare exchange
-	err = p.channel.ExchangeDeclare(
+	// Topology is broker-owned (ADR-008.4); verify passively, never declare.
+	if err := p.channel.ExchangeDeclarePassive(
 		p.config.Exchange,
-		"direct", // type
+		"direct",
 		p.config.Durable,
 		p.config.AutoDelete,
 		false, // internal
 		p.config.NoWait,
-		nil, // arguments
-	)
-	if err != nil {
-		return err
+		nil,
+	); err != nil {
+		return fmt.Errorf("verify exchange %q (is definitions.json loaded?): %w", p.config.Exchange, err)
 	}
 
-	// Enable publisher confirms
-	err = p.channel.Confirm(false)
-	if err != nil {
+	// Enable publisher confirms and register the confirm listener ONCE for this
+	// channel. Re-registering per publish (the previous bug) leaks channels and
+	// fans each confirmation out to stale listeners.
+	if err := p.channel.Confirm(false); err != nil {
 		return err
 	}
+	p.confirms = p.channel.NotifyPublish(make(chan amqp.Confirmation, 1))
 
 	return nil
 }
 
 func (p *Publisher) PublishMessage(ctx context.Context, msg *Message) error {
+	body, err := msg.MarshalJSON()
+	if err != nil {
+		return ErrInvalidMessage
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	if p.conn == nil || p.conn.IsClosed() {
 		if err := p.connect(); err != nil {
 			return err
 		}
 	}
 
-	body, err := msg.MarshalJSON()
-	if err != nil {
-		return ErrInvalidMessage
-	}
-
-	// Publish with confirmation
-	err = p.channel.PublishWithContext(ctx,
+	if err := p.channel.PublishWithContext(ctx,
 		p.config.Exchange,
 		p.config.RoutingKey,
 		p.config.Mandatory,
@@ -96,15 +110,17 @@ func (p *Publisher) PublishMessage(ctx context.Context, msg *Message) error {
 			DeliveryMode: amqp.Persistent,
 			Timestamp:    time.Now(),
 		},
-	)
-	if err != nil {
+	); err != nil {
 		incrementPublishErrors(p.config.Exchange, p.config.RoutingKey, err.Error())
 		return ErrPublishFailed
 	}
 
-	// Wait for confirmation
 	select {
-	case confirm := <-p.channel.NotifyPublish(make(chan amqp.Confirmation, 1)):
+	case confirm, ok := <-p.confirms:
+		if !ok {
+			incrementPublishErrors(p.config.Exchange, p.config.RoutingKey, "confirm channel closed")
+			return ErrPublishFailed
+		}
 		if !confirm.Ack {
 			incrementPublishErrors(p.config.Exchange, p.config.RoutingKey, "publish not acknowledged")
 			return ErrPublishFailed
@@ -119,6 +135,8 @@ func (p *Publisher) PublishMessage(ctx context.Context, msg *Message) error {
 }
 
 func (p *Publisher) Close() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if p.channel != nil {
 		p.channel.Close()
 	}

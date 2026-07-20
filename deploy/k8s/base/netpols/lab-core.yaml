@@ -173,7 +173,8 @@ spec:
 ---
 # workers: consume from rabbitmq; the only ingress path is prometheus
 # scraping :8080 (health probes come from the kubelet, which NetworkPolicy
-# does not gate). Spans go to tempo (lab-obs, OTLP).
+# does not gate). Spans go to tempo (lab-obs, OTLP); redis for the
+# idempotency guard (ADR-008.2).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -216,9 +217,19 @@ spec:
       ports:
         - protocol: TCP
           port: 4318
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-infra
+          podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
 ---
-# graphrag: rabbitmq + mongodb + minio + tempo (lab-obs, OTLP); prometheus
-# scrapes :8081.
+# graphrag: rabbitmq + mongodb + minio + tempo (lab-obs, OTLP) + redis
+# (idempotency guard, ADR-008.2); prometheus scrapes :8081.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -271,6 +282,16 @@ spec:
       ports:
         - protocol: TCP
           port: 27017
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-infra
+          podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
     - to:
         - namespaceSelector:
             matchLabels:

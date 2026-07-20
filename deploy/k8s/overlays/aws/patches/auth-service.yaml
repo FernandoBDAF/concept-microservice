@@ -1,0 +1,20 @@
+# auth-service (patch 3): repoint the DB host at RDS. auth-service reads
+# discrete DATABASE_* env (not a single DSN); DATABASE_PASSWORD still comes
+# from the postgres-credentials Secret (key AUTH_DB_PASSWORD) unchanged.
+#
+# TODO (WP-external): RDS may enforce TLS (rds.force_ssl). auth-service's pg
+# client env for TLS is unknown from the overlay — verify it connects with
+# sslmode/ssl enabled, add the relevant env if the code supports it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: lab-core
+spec:
+  template:
+    spec:
+      containers:
+        - name: auth-service
+          env:
+            - name: DATABASE_HOST
+              value: RDS_ADDRESS_PLACEHOLDER

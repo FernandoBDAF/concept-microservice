@@ -1,0 +1,51 @@
+# EXP-01 · Cold start & baseline. Prose companion: EXPERIMENTS.md §EXP-01.
+# `needs` is intentionally empty: this experiment BRINGS the compose stack up
+# from nothing (`make nuke && make up`), so it cannot pre-require compose to be
+# already running — it is the cold-start that establishes the baseline.
+id: exp-01
+title: Cold start & baseline
+needs: []
+steps:
+  - run: make nuke && make up
+  - run: make queues
+watch:
+  - "docker compose ps — 13 containers, infra (healthy), no restarts"
+  - "Prometheus → Targets: 8/8 up (also asserted below via `up`)"
+  - "Lab Overview panels render (flat/empty is correct — nothing has happened)"
+assertions:
+  # 8 core scrape targets healthy (prometheus, api, auth, graphrag, 3 workers,
+  # rabbitmq). hello-guest targets are down when no guest runs, so count(up==1)
+  # — not min(up) — is the robust form.
+  - type: promql
+    query: count(up == 1)
+    op: ">="
+    value: 8
+    timeout: 300s
+  # v4 topology (definitions.json) declares 22 queues: 4 work + 4 DLQ + 12 retry
+  # (3 tiers x 4) + email-expired + task-results. A1 accept: "22 queues visible".
+  - type: promql
+    query: count(rabbitmq_queue_messages)
+    op: ">="
+    value: 22
+    timeout: 120s
+  # The 4 work queues exist and are empty on a cold stack.
+  - type: promql
+    query: sum(rabbitmq_queue_messages{queue=~".*-processing"})
+    op: "=="
+    value: 0
+    timeout: 120s
+  # DLQs empty on a cold stack.
+  - type: promql
+    query: sum(rabbitmq_queue_messages{queue=~".+\\.dlq"})
+    op: "=="
+    value: 0
+    timeout: 60s
+  # Readiness is 200 only when postgres AND rabbitmq AND redis all ping ok
+  # (handler returns 503 otherwise) — encodes "postgres/rabbitmq/redis: ok".
+  - type: http
+    url: http://localhost:8080/ready
+    status: 200
+    json_path: status
+    json_equals: ok
+    timeout: 120s
+cleanup: []

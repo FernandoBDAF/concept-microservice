@@ -28,8 +28,26 @@ type Client struct {
 }
 
 func NewClient(cfg Config, logger *zap.Logger) (*Client, error) {
+	// Credential mode selection:
+	//   - static:       both access key and secret key are set (compose/kind/MinIO).
+	//   - ambient/IRSA:  keys are absent -> fall back to the AWS credential chain.
+	// credentials.NewIAM("") resolves EKS IRSA via the web-identity path: it reads
+	// AWS_WEB_IDENTITY_TOKEN_FILE + AWS_ROLE_ARN (injected by EKS) and exchanges the
+	// projected service-account token with STS. It also covers the EC2/ECS metadata
+	// providers, so it is the correct single "ambient" provider here.
+	// NOTE: presigned URLs generated with temporary (IRSA) creds embed the STS session
+	// token as a query param; the round-trip under IRSA is verified live in EXP-50.
+	var creds *credentials.Credentials
+	if cfg.AccessKeyID != "" && cfg.SecretAccessKey != "" {
+		creds = credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretAccessKey, "")
+		logger.Info("MinIO credential mode: static")
+	} else {
+		creds = credentials.NewIAM("")
+		logger.Info("MinIO credential mode: ambient/IRSA")
+	}
+
 	client, err := minio.New(cfg.Endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
+		Creds:  creds,
 		Secure: cfg.UseSSL,
 	})
 	if err != nil {

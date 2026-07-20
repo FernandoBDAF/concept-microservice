@@ -6,6 +6,7 @@ import { shutdownTracing } from "./infrastructure/tracing/otel.js";
 import { createApp } from "./app.js";
 import { config } from "./config/index.js";
 import { migrationService } from "./infrastructure/database/migrations.js";
+import { seedAdmin } from "./infrastructure/bootstrap/seedAdmin.js";
 import { logger } from "./infrastructure/logging/logger.js";
 import { db } from "./infrastructure/database/connection.js";
 
@@ -15,6 +16,7 @@ async function startServer() {
   try {
     logger.info("Initializing database...");
     await migrationService.runMigrations();
+    await seedAdmin();
 
     const server = app.listen(config.server.port, () => {
       logger.info(

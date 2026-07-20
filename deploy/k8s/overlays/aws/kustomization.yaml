@@ -1,25 +1,128 @@
-# AWS overlay (phase v5) — SKELETON. v2's kustomize tree is the deployment
-# unit; this overlay swaps the kind-isms for EKS realities. It renders today
-# (CI-checkable) but the TODO patches below are the v5 handoff work
-# (documentation/phases/v5-HANDOFF.md §6):
+# AWS overlay (phase v5). v2's kustomize tree is the deployment unit; this
+# overlay swaps the kind-isms for EKS realities. Renders CI-checkable; the six
+# patches below are the v5 handoff work (documentation/phases/v5-HANDOFF.md §6).
+# Session-specific values are clearly-marked *_PLACEHOLDER tokens that
+# `make aws-deploy` substitutes from terraform outputs — see the integration
+# notes for the exact commands.
 #
-#  1. images: localhost:5001/* → <ecr_registry>/coppice-lab/*:<tag>
-#     (kustomize `images:` transformer; tag from the deploy pipeline)
-#  2. MinIO env → S3: api-service MINIO_ENDPOINT dropped, IRSA
-#     ServiceAccount annotation (eks.amazonaws.com/role-arn), bucket name
-#     from session outputs; minio/minio-init/mongodb? — minio Statefulset
-#     REMOVED via patchesStrategicMerge $patch: delete (mongo/redis/rabbitmq
-#     stay self-hosted, ADR-006.3)
-#  3. DSNs from Secrets Manager via external-secrets (ADR-009.3):
-#     ExternalSecret CRs replacing init-secrets.sh Secrets, same Secret
-#     names/keys so deployments don't change
-#  4. ingress: className alb + ACM annotations, hosts api.<domain>,
-#     grafana.<domain>; cert-manager/lab-ca patches removed
-#  5. storage classes: gp3 for any PVCs (rabbitmq/mongo/postgres-replaced)
-#  6. netpols: kept as-is (VPC CNI needs the network-policy agent enabled —
-#     HANDOFF flags the EKS addon config)
+#  1. images: localhost:5001/<svc> → <ecr>/coppice-lab/<svc>:<tag>
+#     (base names stay localhost:5001/<svc> so `kustomize edit set image` and
+#     WP4's deploy workflow match; placeholders below are the render-time
+#     default before set-image runs).
+#  2. MinIO → S3: minio Service/StatefulSet/init Job deleted; api-service &
+#     graphrag-service env repointed at S3 + IRSA ServiceAccounts.
+#  3. Secrets: postgres-credentials via external-secrets (ExternalSecret CRs,
+#     same name/keys); other creds flagged in notes (WP1 IRSA scope).
+#  4. ingress: className alb + ACM auto-discovery, hosts api./auth.<domain>;
+#     cert-manager (ClusterIssuers/Certificate) + nginx bits removed.
+#  5. storage: in-cluster postgres removed (→ RDS) + rds-bootstrap Job;
+#     migration Jobs repointed at RDS; gp3 StorageClass for rabbitmq/mongo PVCs.
+#  6. netpols: kept as-is (see the enforcement note at the bottom).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
   - ../../base
+  - storageclass.yaml
+  - serviceaccounts.yaml
+  - external-secrets.yaml
+  - rds-bootstrap.yaml
+
+# ── 1. images → ECR ──────────────────────────────────────────────────────────
+# make aws-deploy overrides each via:
+#   kustomize edit set image localhost:5001/<svc>=<ecr>/coppice-lab/<svc>:<tag>
+images:
+  - name: localhost:5001/api-service
+    newName: ECR_REGISTRY_PLACEHOLDER/coppice-lab/api-service
+    newTag: ECR_TAG_PLACEHOLDER
+  - name: localhost:5001/auth-service
+    newName: ECR_REGISTRY_PLACEHOLDER/coppice-lab/auth-service
+    newTag: ECR_TAG_PLACEHOLDER
+  - name: localhost:5001/graphrag-service
+    newName: ECR_REGISTRY_PLACEHOLDER/coppice-lab/graphrag-service
+    newTag: ECR_TAG_PLACEHOLDER
+  - name: localhost:5001/email-worker
+    newName: ECR_REGISTRY_PLACEHOLDER/coppice-lab/email-worker
+    newTag: ECR_TAG_PLACEHOLDER
+  - name: localhost:5001/image-worker
+    newName: ECR_REGISTRY_PLACEHOLDER/coppice-lab/image-worker
+    newTag: ECR_TAG_PLACEHOLDER
+  - name: localhost:5001/profile-worker
+    newName: ECR_REGISTRY_PLACEHOLDER/coppice-lab/profile-worker
+    newTag: ECR_TAG_PLACEHOLDER
+
+patches:
+  # ── 2. remove MinIO (S3 replaces it) ───────────────────────────────────────
+  - target: { kind: Service, name: minio, namespace: lab-infra }
+    patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata: { name: minio, namespace: lab-infra }
+  - target: { kind: StatefulSet, name: minio, namespace: lab-infra }
+    patch: |
+      $patch: delete
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata: { name: minio, namespace: lab-infra }
+  - target: { kind: Job, name: minio-bucket-init, namespace: lab-infra }
+    patch: |
+      $patch: delete
+      apiVersion: batch/v1
+      kind: Job
+      metadata: { name: minio-bucket-init, namespace: lab-infra }
+
+  # ── 5. remove in-cluster postgres (RDS replaces it) ────────────────────────
+  - target: { kind: Service, name: postgres, namespace: lab-infra }
+    patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata: { name: postgres, namespace: lab-infra }
+  - target: { kind: StatefulSet, name: postgres, namespace: lab-infra }
+    patch: |
+      $patch: delete
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata: { name: postgres, namespace: lab-infra }
+
+  # ── 4. remove cert-manager issuers/certs (ALB+ACM replaces TLS) ────────────
+  - target: { kind: ClusterIssuer, name: selfsigned }
+    patch: |
+      $patch: delete
+      apiVersion: cert-manager.io/v1
+      kind: ClusterIssuer
+      metadata: { name: selfsigned }
+  - target: { kind: ClusterIssuer, name: lab-ca }
+    patch: |
+      $patch: delete
+      apiVersion: cert-manager.io/v1
+      kind: ClusterIssuer
+      metadata: { name: lab-ca }
+  - target: { kind: Certificate, name: lab-root-ca, namespace: cert-manager }
+    patch: |
+      $patch: delete
+      apiVersion: cert-manager.io/v1
+      kind: Certificate
+      metadata: { name: lab-root-ca, namespace: cert-manager }
+
+  # ── 2/3/5 workload repoints ────────────────────────────────────────────────
+  - path: patches/api-service.yaml
+  - path: patches/graphrag-service.yaml
+  - path: patches/auth-service.yaml
+  - path: patches/migrations.yaml
+  - path: patches/storage.yaml
+  # ── 4. ingress → ALB ───────────────────────────────────────────────────────
+  - path: patches/ingress.yaml
+
+# ── 6. netpols ───────────────────────────────────────────────────────────────
+# The base NetworkPolicies are kept verbatim. TWO EKS caveats (see wp2 notes):
+#   (a) NetworkPolicy on EKS is INERT unless WP1 enables the VPC-CNI
+#       network-policy agent (amazon-vpc-cni ENABLE_NETWORK_POLICY=true). With
+#       it off, all the allows/denies below simply do nothing.
+#   (b) When it IS on, the base allows assume in-cluster postgres/minio and an
+#       ingress-nginx source — all now wrong on AWS: api-service/auth-service
+#       need ingress from the ALB (VPC CIDR ipBlock), and api-service/graphrag/
+#       migrate/bootstrap need EGRESS to RDS + S3 (external addresses). Those
+#       aws-specific netpol patches are a documented TODO, deliberately not
+#       added here per the "keep netpols as-is" instruction.

@@ -1,0 +1,34 @@
+# PVCs → gp3 (patch 5). volumeClaimTemplates is an atomic list under strategic
+# merge, so each entry is restated in full with storageClassName added. Only
+# rabbitmq + mongodb keep local disk on AWS (postgres→RDS, minio→S3 removed).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: rabbitmq
+  namespace: lab-infra
+spec:
+  volumeClaimTemplates:
+    - metadata:
+        name: rabbitmqdata
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: gp3
+        resources:
+          requests:
+            storage: 1Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongodb
+  namespace: lab-infra
+spec:
+  volumeClaimTemplates:
+    - metadata:
+        name: mongodata
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: gp3
+        resources:
+          requests:
+            storage: 1Gi

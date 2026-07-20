@@ -13,6 +13,7 @@ aio-pika>=9.4.0,<10.0.0              # async RabbitMQ client
 prometheus-client>=0.20.0,<1.0.0     # /metrics
 flask>=3.0.0,<4.0.0                  # /health, /ready
 minio>=7.2.0,<8.0.0                  # document download from MinIO
+redis>=5.0.0,<6.0.0                  # idempotency guard SETNX (redis.asyncio); ADR-008.2
 python-json-logger>=2.0.0,<4.0.0     # structured JSON logs
 pydantic>=2.7.0,<3.0.0
 pydantic-settings>=2.2.0,<3.0.0

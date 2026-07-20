@@ -37,16 +37,56 @@ After a calibration run, fill this in and update the PrometheusRule:
 
 | SLO | Baseline (measured) | Margin | SLO value | Encoded at |
 |---|---|---|---|---|
-| API p99 latency | _pending calibration_ | ×3 | _pending_ | `APIP99OverSLO` threshold |
-| API availability (non-5xx) | _pending_ | −0.5pp | _pending_ | (rule TBD) |
-| Queue depth sustained | _pending peak_ | ×2 | _pending_ | `QueueDepthSustained` threshold |
-| Email drain rate | _pending_ | ÷2 | _pending_ | runbook context only |
+| API p99 latency | 0.966 s (10 VU, TLS ingress) | ×3 | **3 s** | `APIP99OverSLO` threshold |
+| API availability (non-5xx) | 100% (zero 5xx in run) | −0.5pp | **99.5%** | `APIAvailabilityBelowSLO` (ratio > 0.005) |
+| Queue depth sustained | peak 6 | ×2 → 12, **overridden: 500** | **500 for 5m** | `QueueDepthSustained` threshold |
+| Email drain rate | 7.6 msg/s (1 replica) | ÷2 | 3.8 msg/s | runbook context only |
 
-> **Status:** no calibration run recorded yet. The alert rules ship with
-> placeholder thresholds (p99 > 500ms, depth > 500 for 5m) marked as such.
-> Running EXP-33 replaces them with measured values — see
-> `documentation/phases/v3-DEFERRED.md`.
+> **Status:** calibrated 2026-07-19 (block below); thresholds encoded in
+> `deploy/obs/manifests/prometheusrule.yaml`. The queue-depth override is
+> deliberate: the peak-×2 formula assumed a load-test peak in the hundreds,
+> but steady-state peaked at 6 — a threshold of 12 would page on every
+> intentional flood drill (EXP-04/32 push 300–600 by design). 500-for-5m
+> separates "consumers stuck" from "drill running", and EXP-32 proved the
+> full fire→page→resolve loop at that value.
 
 ---
 
 <!-- calibration results are appended below this line; do not edit by hand -->
+
+## Calibration run — 2026-07-19 20:47–20:58Z
+
+Conditions: target=cluster, VUs=10, duration=10m, host=fbarrosoaw.
+Snapshot note: the in-run port-forward died before the snapshot; these
+are the same instant queries re-evaluated at 20:57:50Z (&time=) over
+the [10m] run window — numerically equivalent, repair documented in
+the exit-runs write-up. Reading the block: `p5` is the script's old
+quantile-label artifact for **p50** (generator fixed for future runs);
+the empty `5xx ratio` section is an empty query result — zero 5xx series
+in the window, the worksheet's 100%; the lone unlabeled drain-rate value
+is the email worker's (the write-up's 7.6 msg/s figure).
+
+```
+-- API latency quantiles (s, over the run window) --
+p5 value: 0.0181
+p95 value: 0.2198
+p99 value: 0.9655
+-- API request rate (req/s) --
+value: 30.8374
+-- API 5xx ratio --
+-- Worker drain rates (msg/s) --
+value: 7.6345
+-- Peak work-queue depth --
+email-processing: 6.0000
+image-processing: 0.0000
+profile-processing: 6.0000
+document-processing: 0.0000
+-- Pod memory working set (bytes, lab-core) --
+api-service-6d965dc9d7-nc8fm: 19664896.0000
+api-service-6d965dc9d7-nqwrf: 23121920.0000
+auth-service-75445dbf85-kl7xh: 94158848.0000
+graphrag-service-66d5b45fb9-5bh68: 52908032.0000
+image-worker-747744f8-s5wh2: 11382784.0000
+profile-worker-7457c696c4-zk7kc: 20557824.0000
+email-worker-dc7c9d464-htvnb: 12095488.0000
+```

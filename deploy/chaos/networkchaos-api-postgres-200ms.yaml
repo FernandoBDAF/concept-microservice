@@ -1,0 +1,32 @@
+# NetworkChaos: inject 200ms latency on api-service → postgres traffic
+# (lab-core → lab-infra), EXP-44. direction=to with a target selector delays
+# only egress toward postgres, leaving the rest of api-service's traffic clean,
+# so the drill isolates the connection-pool / p99 response. duration bounds the
+# blast; delete the CR (or `make chaos-down`) to recover early. Requires
+# `make chaos-up`. Selectors use the repo's app: labels.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: api-postgres-delay-200ms
+  namespace: chaos-mesh
+spec:
+  action: delay
+  mode: all
+  selector:
+    namespaces:
+      - lab-core
+    labelSelectors:
+      app: api-service
+  direction: to
+  target:
+    mode: all
+    selector:
+      namespaces:
+        - lab-infra
+      labelSelectors:
+        app: postgres
+  delay:
+    latency: "200ms"
+    correlation: "0"
+    jitter: "0ms"
+  duration: "5m"

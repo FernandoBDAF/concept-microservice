@@ -41,6 +41,9 @@ services:
       - rabbitmqdata:/var/lib/rabbitmq
       - ./scripts/compose/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
       - ./scripts/compose/rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/20-lab.conf:ro
+      # broker-owned topology loaded at boot (ADR-008.4); rabbitmq.conf points
+      # definitions.local.path here. Single-sourced into kind via configMapGenerator.
+      - ./deploy/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
     healthcheck:
       # check_port_connectivity (not ping): the node answers ping before the
       # AMQP listener accepts, so dependents crash-loop at boot (EXP-01 run)
@@ -139,6 +142,14 @@ services:
       DATABASE_USER: auth_user
       DATABASE_PASSWORD: auth_password
       JWT_SECRET: ${JWT_SECRET:-local-dev-jwt-secret-change-me-32chars!!}
+      # RS256 keypair (base64(PEM), single line) seeded into .env by
+      # scripts/compose/gen-jwt-keys.sh — `make up` runs it first. Empty → auth
+      # falls back to HS256 with JWT_SECRET (designed). ADR-009.1.
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:-}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:-}
+      # dev admin bootstrap (ADR-009.7); cluster values come from init-secrets
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@lab.local}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-admin-dev-password}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       # api-service introspects the token once per authenticated request, so
       # validate-endpoint throttling becomes a full API outage via the breaker
@@ -167,6 +178,9 @@ services:
       API_RABBITMQ_HOSTS: rabbitmq:5672
       API_RABBITMQ_PASSWORD: guest
       API_AUTH_URL: http://auth-service:3000
+      # JWKS local verify by default (ADR-009.1); true → HTTP introspection via
+      # the breaker (EXP-43 cascade comparison)
+      API_AUTH_STRICT_INTROSPECTION: ${API_AUTH_STRICT_INTROSPECTION:-false}
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
@@ -197,6 +211,8 @@ services:
     build: ./graph-worker/graphrag-service
     environment:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      # idempotency guard (ADR-008.2), same key shape as the Go workers
+      REDIS_ADDR: redis:6379
       MONGODB_URI: mongodb://admin:password@mongodb:27017
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
@@ -222,6 +238,8 @@ services:
       dockerfile: Dockerfile.email
     environment:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      # idempotency guard (ADR-008.2); empty → in-memory guard + warn
+      REDIS_ADDR: redis:6379
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
       OTEL_SERVICE_NAME: email-worker
@@ -236,6 +254,8 @@ services:
       dockerfile: Dockerfile.image
     environment:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      # idempotency guard (ADR-008.2); empty → in-memory guard + warn
+      REDIS_ADDR: redis:6379
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
       OTEL_SERVICE_NAME: image-worker
@@ -250,6 +270,8 @@ services:
       dockerfile: Dockerfile.profile
     environment:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      # idempotency guard (ADR-008.2); empty → in-memory guard + warn
+      REDIS_ADDR: redis:6379
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
       OTEL_SERVICE_NAME: profile-worker

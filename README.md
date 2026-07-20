@@ -51,6 +51,50 @@ Infrastructure: PostgreSQL 15 (`api_db` + `auth_db`), Redis 7, RabbitMQ 3.12
 (console :9001). Observability: **Prometheus :9090** and **Grafana :3001**
 (admin/admin) with a provisioned *Lab Overview* dashboard.
 
+## Dependencies
+
+What a fresh machine needs to run the lab (compose stack **and** the kind
+cluster lab). Versions below were verified working on 2026-07-19; the commands
+that use them live in [Quick start](#quick-start) and [Deployment](#deployment).
+
+| Tool | Version verified | Used for |
+|---|---|---|
+| Docker + `docker compose` v2 | Docker Desktop 28.x | every stack (compose services + kind nodes) |
+| kind | v0.32.0 | cluster `lab` (node image `kindest/node:v1.36.1`, kind's bundled default) |
+| kubectl | v1.36.2 (client) | cluster ops |
+| kustomize (standalone) | v5.8.1 | scripts call `kustomize build --load-restrictor LoadRestrictionsNone` (not `kubectl kustomize`) |
+| GNU make · bash · jq · openssl · curl | make 4.x | Makefile targets, scripts, CI |
+| Go | 1.25+ | api-service, workers (`make verify`) |
+| Node · npm | 20+ | auth-service, status page |
+| Python 3 | 3.11+ | simulators, drift check (stdlib only — no pip installs) |
+
+- **helm** v3.21+ becomes required from **phase v3** on (`make obs-up` installs
+  pinned charts); not needed for the v2-era targets on `main`.
+- **k6** is *not* installed locally — the `sim-*` / `cluster-sim-*` targets run it
+  via the `grafana/k6:0.54.0` image. **gh** CLI is optional (PR workflows).
+- Go: `main`'s `go.mod` targets 1.24, later phases pin 1.25 — install 1.25+, or
+  set `GOTOOLCHAIN=auto` and older Go fetches the toolchain on demand.
+
+### Windows / WSL2
+
+Proven on Windows 11 with Docker Desktop's WSL2 integration:
+
+- **WSL2 Ubuntu is the operator box.** Run all `make` and cluster/lab targets
+  inside the distro; the Windows side needs only Go/Node/Python for `make verify`.
+  Docker Desktop symlinks an *old* `kubectl` into `/usr/local/bin` and the symlink
+  target is read-only — install a current kubectl into `/usr/local/sbin` (earlier
+  in root's `PATH`, so it shadows the old one) rather than overwriting the symlink.
+- **Check out with LF.** Set `git config core.autocrlf false` before cloning (or
+  re-smudge: `git rm --cached -r . && git reset --hard`). CRLF in the
+  Makefile/scripts breaks make and bash under WSL.
+- **Give WSL2 memory.** The full v3 stack (kind app+obs + compose in parallel)
+  needs `%UserProfile%\.wslconfig` with `[wsl2]` / `memory=12GB` — the ~50%-of-RAM
+  default was not enough on a 16 GB host. Restart WSL + Docker Desktop after editing.
+- **Hostnames.** Add the `*.lab.local` names to the distro's `/etc/hosts` →
+  `127.0.0.1` (or rely on `curl --resolve`, as scripts/CI do). v3 list: `api`,
+  `auth`, `grafana`, `prometheus`, `alertmanager`, `opensearch`, `ntfy`,
+  `hello-guest`.
+
 ## Quick start
 
 ```bash

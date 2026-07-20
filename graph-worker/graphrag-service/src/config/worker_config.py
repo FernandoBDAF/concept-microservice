@@ -35,11 +35,20 @@ class Settings(BaseSettings):
     # installed.
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
 
-    # MinIO. Defaults match the documented local-dev compose credentials.
+    # MinIO / S3. The local-dev compose stack and the k8s base overlay set
+    # MINIO_ACCESS_KEY / MINIO_SECRET_KEY explicitly (minioadmin). The AWS
+    # overlay deletes them so pods authenticate via IRSA; the keys default to
+    # empty here so an unset env selects the ambient AWS credential chain in
+    # processor._init_minio (see there). Both-set -> static, both-empty ->
+    # ambient/IRSA; a partial config is rejected below.
     minio_endpoint: str = Field(default="minio:9000", alias="MINIO_ENDPOINT")
-    minio_access_key: str = Field(default="minioadmin", alias="MINIO_ACCESS_KEY")
-    minio_secret_key: str = Field(default="minioadmin", alias="MINIO_SECRET_KEY")
+    minio_access_key: str = Field(default="", alias="MINIO_ACCESS_KEY")
+    minio_secret_key: str = Field(default="", alias="MINIO_SECRET_KEY")
     minio_use_ssl: bool = Field(default=False, alias="MINIO_USE_SSL")
+
+    # Redis (idempotency guard, ADR-008.2). host:port, e.g. redis:6379.
+    # Empty -> in-process dedupe fallback (single-replica only) + warning.
+    redis_addr: str = Field(default="", alias="REDIS_ADDR")
 
     # Worker
     health_port: int = Field(default=8080, alias="HEALTH_PORT")
@@ -62,7 +71,13 @@ def load_config() -> Dict[str, Any]:
             "queue": "document-processing",
             "routing_key": "document.process",
             "prefetch_count": 1,
+            # Retry/DLX exchanges follow the `<exchange>.retry` / `<exchange>.dlx`
+            # convention in deploy/rabbitmq/definitions.json; task-results is the
+            # shared completion channel (ADR-008.3). All are passive-declared.
+            "results_exchange": "task-results",
+            "results_routing_key": "task.result",
         },
+        "redis_addr": settings.redis_addr,
         "mongodb": {
             "uri": settings.mongodb_uri,
             "database": settings.mongodb_database,

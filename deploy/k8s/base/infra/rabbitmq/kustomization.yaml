@@ -9,3 +9,6 @@ configMapGenerator:
       # single source with compose (ADR-002.4); requires LoadRestrictionsNone
       - ../../../../../scripts/compose/rabbitmq/enabled_plugins
       - rabbitmq.conf=../../../../../scripts/compose/rabbitmq/rabbitmq.conf
+      # broker-owned topology (ADR-008.4), single-sourced from the generator
+      # output; the StatefulSet mounts it at definitions.local.path
+      - definitions.json=../../../../rabbitmq/definitions.json

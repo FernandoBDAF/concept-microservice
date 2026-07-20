@@ -1,0 +1,33 @@
+# EXP-03 · Steady load. Prose companion: EXPERIMENTS.md §EXP-03.
+id: exp-03
+title: Steady load
+needs: [compose]
+steps:
+  # k6 enforces its own thresholds (http_req_failed<0.05, p95<800ms); a passing
+  # `make sim-load` step already proves "checks pass, latency in budget".
+  - run: make sim-load
+watch:
+  - "Lab Overview → API latency (p95 low and FLAT — upward drift = saturation/leak)"
+  - "Lab Overview → Queue depth (sawtooth near 0)"
+  - "Lab Overview → Worker throughput (steady, ~input rate ÷ 2)"
+  - "docker stats --no-stream mid-run for a memory snapshot (optional)"
+assertions:
+  # p95 well under the 800ms budget (calibration: 50 VUs ≈ 44ms on a laptop).
+  - type: promql
+    query: histogram_quantile(0.95, sum by (le) (rate(api_http_request_duration_seconds_bucket[5m])))
+    op: "<"
+    value: 0.8
+    timeout: 60s
+  # queues drain to 0 shortly after the run (consumption matched production).
+  - type: promql
+    query: sum(rabbitmq_queue_messages{queue=~".*-processing"})
+    op: "<="
+    value: 0
+    timeout: 120s
+  # steady load is not failure — DLQs stay flat.
+  - type: promql
+    query: sum(rabbitmq_queue_messages{queue=~".+\\.dlq"})
+    op: "=="
+    value: 0
+    timeout: 30s
+cleanup: []

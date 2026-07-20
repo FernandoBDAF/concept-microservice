@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "rimraf dist *.tsbuildinfo && tsc -p tsconfig.build.json",
+    "build": "rimraf --glob dist *.tsbuildinfo && tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
@@ -14,7 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "clean": "rimraf dist coverage *.tsbuildinfo"
+    "clean": "rimraf --glob dist coverage *.tsbuildinfo"
   },
   "author": "",
   "license": "ISC",

@@ -88,6 +88,30 @@ spec:
                 secretKeyRef:
                   name: auth-service-secrets
                   key: JWT_SECRET
+            # RS256 keypair (ADR-009.1), base64(PEM) single line — generated
+            # into Secret auth-service-keys by init-secrets.sh; empty/absent →
+            # HS256 fallback with JWT_SECRET
+            - name: JWT_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: auth-service-keys
+                  key: JWT_PRIVATE_KEY
+            - name: JWT_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: auth-service-keys
+                  key: JWT_PUBLIC_KEY
+            # admin bootstrap (ADR-009.7) — init-secrets seeds the auth Secret
+            - name: SEED_ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: auth-service-secrets
+                  key: SEED_ADMIN_EMAIL
+            - name: SEED_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: auth-service-secrets
+                  key: SEED_ADMIN_PASSWORD
             - name: LOG_LEVEL
               value: info
             # lab-sized app limits (compose parity); the per-IP edge limit

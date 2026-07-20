@@ -10,14 +10,13 @@ kind: Kustomization
 resources:
   - servicemonitors.yaml
   - prometheusrule.yaml
-  - opensearch.yaml
-  - opensearch-dashboards.yaml
-  - fluent-bit.yaml
-  - index-template-job.yaml
   - ntfy.yaml
   - ntfy-relay.yaml
   - ingress.yaml
   - netpols.yaml
+# The log pipeline (OpenSearch + fluent-bit + index-template Job) lives in
+# logs/ as its own kustomization: AWS sessions may skip it (OBS_LOGS=0,
+# v5 HANDOFF §7). obs-up.sh applies both; kind behavior is unchanged.
 
 # Lab Overview dashboard, single-sourced from deploy/obs/dashboards/ (needs
 # LoadRestrictionsNone, same as the base tree). The grafana_dashboard label

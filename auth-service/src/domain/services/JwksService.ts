@@ -1,23 +1,23 @@
 /**
- * JwksService (ADR-009.1) — SKELETON for the v4 handoff.
+ * JwksService (ADR-009.1).
  *
- * Target state: auth-service signs with RS256 (kid header), serves
- * GET /.well-known/jwks.json, and api-service verifies locally with a
- * cached JWKS (introspection stays available behind a strict-mode flag).
+ * auth-service signs with RS256 (kid header) and serves GET
+ * /.well-known/jwks.json so api-service can verify locally with a cached JWKS
+ * (introspection stays available behind a strict-mode flag).
  *
- * Implementation plan lives in documentation/phases/v4-HANDOFF.md §A6:
- *   - keypair source: PEM via env/secret (init-secrets.sh grows an
- *     RS256 keypair; k8s Secret auth-service-keys)
+ *   - keypair source: PEM via env/secret (Secret auth-service-keys; compose
+ *     .env) decoded by the config loader — see config/index.ts
  *   - kid = first 8 bytes of SHA-256 of the DER SPKI, hex
- *   - TokenService signs RS256 when a keypair is configured (HS256 stays
- *     as a fallback during migration, controlled by JWT_ALGORITHM env)
+ *   - TokenService signs RS256 when a keypair is configured (HS256 stays the
+ *     keyless fallback during migration, controlled by JWT_ALGORITHM)
  *   - JWKS shape: { keys: [{ kty:"RSA", use:"sig", alg:"RS256", kid, n, e }] }
- *   - rotation: KEYS array, newest signs, all published until expiry
+ *   - rotation: publicKeys array, newest signs, all published until expiry
  *
- * This stub compiles and is intentionally unused until wired; no new npm
- * deps are required (node:crypto covers RSA + JWK export).
+ * No new npm deps are required (node:crypto covers RSA + JWK export). In HS256
+ * fallback mode there are no public keys, so jwks() returns { keys: [] }.
  */
 import { createPublicKey, createHash, type KeyObject } from "node:crypto";
+import { config } from "../../config/index.js";
 
 export interface JsonWebKey {
   kty: string;
@@ -31,7 +31,7 @@ export interface JsonWebKey {
 export class JwksService {
   private readonly publicKeys: KeyObject[];
 
-  constructor(publicKeyPems: string[]) {
+  constructor(publicKeyPems: readonly string[]) {
     this.publicKeys = publicKeyPems.map((pem) => createPublicKey(pem));
   }
 
@@ -41,7 +41,7 @@ export class JwksService {
     return createHash("sha256").update(der).digest("hex").slice(0, 16);
   }
 
-  /** The /.well-known/jwks.json document. TODO(v4): route + controller. */
+  /** The /.well-known/jwks.json document. Empty in HS256 fallback mode. */
   jwks(): { keys: JsonWebKey[] } {
     return {
       keys: this.publicKeys.map((key) => {
@@ -58,3 +58,6 @@ export class JwksService {
     };
   }
 }
+
+/** Singleton over the configured public key(s) (RS256 mode); empty in HS256. */
+export const jwksService = new JwksService(config.jwt.publicKeys);

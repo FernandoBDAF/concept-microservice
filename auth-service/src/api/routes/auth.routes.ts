@@ -42,8 +42,8 @@ router.post(
 
 router.post(
   "/logout",
-  asyncHandler((req, res) => {
-    AuthController.logout(req, res);
+  asyncHandler(async (req, res) => {
+    await AuthController.logout(req, res);
   })
 );
 

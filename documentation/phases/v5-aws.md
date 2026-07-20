@@ -1,7 +1,8 @@
 # Phase v5 — AWS track
 
-**Status:** architecture + terraform skeleton landed (expedited 2026-07-19;
-never applied — no AWS account wired) — execute via
+**Status:** code-complete (execution pass 2026-07-19: stacks, overlay,
+guardrails, pipeline implemented + statically verified; **never applied**
+— step-0 account + EXP-50..55 remain) — state ledger in
 [v5-HANDOFF.md](v5-HANDOFF.md) · **Depends on:** v4 (deploys the hardened
 lab) ·
 **Exit tag:** `lab-v5.0` · **Decisions in force:** ADR-006 (all), ADR-009.3

@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -16,11 +17,12 @@ import (
 	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
-// Consumer connects to RabbitMQ, declares its topology idempotently, and
-// consumes a single queue with automatic reconnect on connection/channel
-// loss. Poison messages (unparseable or handler-rejected) are nack'd
-// without requeue so they land on the dead-letter queue instead of being
-// redelivered forever.
+// Consumer connects to RabbitMQ, verifies the broker-owned topology
+// (definitions.json, ADR-008.4) passively, and consumes a single queue with
+// automatic reconnect on connection/channel loss. On a handler error the
+// message is republished to the next retry wait-queue (ADR-008.1) or, when
+// retries are exhausted or the error is unretryable, to the DLX — always
+// followed by an ACK. The consumer never nack-requeues.
 type Consumer struct {
 	config *Config
 	logger *Logger
@@ -28,6 +30,12 @@ type Consumer struct {
 	mu      sync.Mutex
 	conn    *amqp.Connection
 	channel *amqp.Channel
+
+	// Dedicated confirm-mode channel for retry/DLX republishing, kept separate
+	// from the consume channel so publisher confirms and consumer acks never
+	// interleave. pubConfirms is registered once per channel (in connect).
+	pubChannel  *amqp.Channel
+	pubConfirms chan amqp.Confirmation
 
 	done      chan struct{}
 	closeOnce sync.Once
@@ -47,10 +55,13 @@ func NewConsumer(config *Config) (*Consumer, error) {
 	}, nil
 }
 
-// connect (re)establishes the connection/channel as needed and declares
-// the full topology idempotently: main exchange, dead-letter exchange,
-// main queue (with DLX args), dead-letter queue, and both bindings. All
-// declarations must match the publisher's args exactly (see Config docs).
+// connect (re)establishes the connection/channels as needed and verifies the
+// broker-owned topology passively (ADR-008.4): the exchanges and queues this
+// consumer depends on must already exist, authored from definitions.json.
+// Services never declare topology. A missing entity is a fatal
+// misconfiguration (definitions.json not loaded) that no reconnect can fix, so
+// it crashes with a pointed message; a transient connection loss returns an
+// error and lets the reconnect loop retry.
 func (c *Consumer) connect() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -71,93 +82,20 @@ func (c *Consumer) connect() error {
 		return fmt.Errorf("%w: %v", ErrChannelFailed, err)
 	}
 
-	dlxName := c.config.Exchange + ".dlx"
-	dlqName := c.config.Queue + ".dlq"
-
-	// Main exchange (direct, durable) — matches the publisher's declaration.
-	if err := ch.ExchangeDeclare(
-		c.config.Exchange,
-		"direct",
-		c.config.Durable,
-		c.config.AutoDelete,
-		false, // internal
-		c.config.NoWait,
-		nil,
-	); err != nil {
+	if err := c.verifyTopology(ch); err != nil {
 		_ = ch.Close()
-		return fmt.Errorf("declare exchange %s: %w", c.config.Exchange, err)
-	}
-
-	// Dead-letter exchange.
-	if err := ch.ExchangeDeclare(
-		dlxName,
-		"direct",
-		c.config.Durable,
-		c.config.AutoDelete,
-		false,
-		c.config.NoWait,
-		nil,
-	); err != nil {
-		_ = ch.Close()
-		return fmt.Errorf("declare dlx %s: %w", dlxName, err)
-	}
-
-	// Main queue: args must be byte-for-byte equivalent to the publisher's
-	// ensureTopology() or RabbitMQ rejects the redeclare.
-	queueArgs := amqp.Table{
-		"x-dead-letter-exchange":    dlxName,
-		"x-dead-letter-routing-key": c.config.RoutingKey,
-		"x-message-ttl":             int32(c.config.MessageTTL.Milliseconds()),
-		"x-max-retries":             c.config.MaxRetries,
-	}
-	if _, err := ch.QueueDeclare(
-		c.config.Queue,
-		c.config.Durable,
-		c.config.AutoDelete,
-		c.config.Exclusive,
-		c.config.NoWait,
-		queueArgs,
-	); err != nil {
-		_ = ch.Close()
-		return fmt.Errorf("declare queue %s: %w", c.config.Queue, err)
-	}
-
-	if err := ch.QueueBind(
-		c.config.Queue,
-		c.config.RoutingKey,
-		c.config.Exchange,
-		c.config.NoWait,
-		nil,
-	); err != nil {
-		_ = ch.Close()
-		return fmt.Errorf("bind queue %s: %w", c.config.Queue, err)
-	}
-
-	// Dead-letter queue.
-	dlqArgs := amqp.Table{
-		"x-message-ttl": int32(c.config.DeadLetterTTL.Milliseconds()),
-	}
-	if _, err := ch.QueueDeclare(
-		dlqName,
-		c.config.Durable,
-		c.config.AutoDelete,
-		c.config.Exclusive,
-		c.config.NoWait,
-		dlqArgs,
-	); err != nil {
-		_ = ch.Close()
-		return fmt.Errorf("declare dlq %s: %w", dlqName, err)
-	}
-
-	if err := ch.QueueBind(
-		dlqName,
-		c.config.RoutingKey,
-		dlxName,
-		c.config.NoWait,
-		nil,
-	); err != nil {
-		_ = ch.Close()
-		return fmt.Errorf("bind dlq %s: %w", dlqName, err)
+		var amqpErr *amqp.Error
+		if errors.As(err, &amqpErr) && amqpErr.Code == amqp.NotFound {
+			// The broker is reachable but the entity is absent: fail loud.
+			c.logger.Fatal("broker topology missing — is definitions.json loaded?",
+				zap.Error(err),
+				zap.String("queue", c.config.Queue),
+				zap.String("exchange", c.config.Exchange))
+			// unreachable: Fatal exits the process.
+		}
+		// Not a missing-entity error (e.g. the channel dropped mid-verify):
+		// let the reconnect loop handle it.
+		return fmt.Errorf("verify topology: %w", err)
 	}
 
 	if err := ch.Qos(c.config.PrefetchCount, c.config.PrefetchSize, c.config.Global); err != nil {
@@ -165,11 +103,60 @@ func (c *Consumer) connect() error {
 		return fmt.Errorf("set qos: %w", err)
 	}
 
+	// Dedicated confirm-mode channel for retry/DLX republishing. The confirm
+	// listener is registered exactly once here (per channel), not per publish.
+	pubCh, err := c.conn.Channel()
+	if err != nil {
+		_ = ch.Close()
+		return fmt.Errorf("%w: %v", ErrChannelFailed, err)
+	}
+	if err := pubCh.Confirm(false); err != nil {
+		_ = ch.Close()
+		_ = pubCh.Close()
+		return fmt.Errorf("enable publisher confirms: %w", err)
+	}
+	pubConfirms := pubCh.NotifyPublish(make(chan amqp.Confirmation, 1))
+
 	if c.channel != nil {
 		_ = c.channel.Close()
 	}
+	if c.pubChannel != nil {
+		_ = c.pubChannel.Close()
+	}
 	c.channel = ch
+	c.pubChannel = pubCh
+	c.pubConfirms = pubConfirms
 
+	return nil
+}
+
+// verifyTopology passively declares (existence-checks) every exchange and
+// queue this consumer publishes to or consumes from. A passive declare against
+// a missing entity raises a 404 NOT_FOUND channel exception, which connect()
+// turns into a pointed crash. Bindings cannot be checked passively and are
+// trusted to definitions.json.
+func (c *Consumer) verifyTopology(ch *amqp.Channel) error {
+	exchanges := []string{
+		c.config.Exchange,                // main work exchange
+		RetryExchange(c.config.Exchange), // <exchange>.retry
+		DLXExchange(c.config.Exchange),   // <exchange>.dlx
+		TaskResultsExchange,              // shared task-results (ADR-008.3)
+	}
+	for _, ex := range exchanges {
+		if err := ch.ExchangeDeclarePassive(ex, "direct", c.config.Durable, c.config.AutoDelete, false, false, nil); err != nil {
+			return fmt.Errorf("exchange %q: %w", ex, err)
+		}
+	}
+
+	queues := []string{c.config.Queue, c.config.Queue + ".dlq"}
+	for _, tier := range RetryTiers {
+		queues = append(queues, c.config.Queue+".retry."+tier)
+	}
+	for _, q := range queues {
+		if _, err := ch.QueueDeclarePassive(q, c.config.Durable, c.config.AutoDelete, c.config.Exclusive, false, nil); err != nil {
+			return fmt.Errorf("queue %q: %w", q, err)
+		}
+	}
 	return nil
 }
 
@@ -301,14 +288,20 @@ func (c *Consumer) handleDelivery(delivery amqp.Delivery, handler MessageHandler
 
 	var msg Message
 	if err := json.Unmarshal(delivery.Body, &msg); err != nil {
-		c.logger.Error("failed to unmarshal message; dropping to DLQ",
+		// An unparseable envelope is unretryable poison: route it explicitly
+		// to the DLQ (via the DLX) and ack. Never nack-requeue.
+		c.logger.Error("failed to unmarshal message; routing to DLQ",
 			zap.Error(err), zap.String("queue", c.config.Queue))
 		incrementConsumeErrors(c.config.Queue, "unmarshal_error")
-		if nackErr := delivery.Nack(false, false); nackErr != nil {
-			c.logger.Error("failed to nack unparseable message", zap.Error(nackErr))
-		}
+		c.deadLetterAndAck(delivery)
 		return
 	}
+
+	// Attempt = how many retry cycles this envelope already went through
+	// (x-death count for our retry wait-queues). Threaded onto the message so
+	// BaseWorker can scope the idempotency key per attempt (retries must not be
+	// deduped) and processors can drive attempt-aware test hooks off it.
+	msg.Attempt = DeathCount(delivery.Headers, c.config.Queue)
 
 	// Continue the trace started by the publisher: the parent span context
 	// arrives in the AMQP headers (traceparent, injected from envelope
@@ -324,6 +317,7 @@ func (c *Consumer) handleDelivery(delivery amqp.Delivery, handler MessageHandler
 			attribute.String("messaging.operation", "process"),
 			attribute.String("messaging.destination.name", c.config.Queue),
 			attribute.String("messaging.message.id", msg.ID),
+			attribute.Int("messaging.rabbitmq.delivery.attempt", msg.Attempt),
 		),
 	)
 	defer span.End()
@@ -331,17 +325,12 @@ func (c *Consumer) handleDelivery(delivery amqp.Delivery, handler MessageHandler
 	if err := handler(ctx, &msg); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "message processing failed")
-		c.logger.Error("failed to process message; dropping to DLQ",
-			zap.Error(err),
-			zap.String("queue", c.config.Queue),
-			zap.String("message_id", msg.ID))
 		incrementConsumeErrors(c.config.Queue, "handler_error")
-		// No requeue: a message that fails processing is either poison or
-		// will keep failing. Requeueing would spin it forever; the DLQ
-		// (bound via x-dead-letter-exchange) is where it belongs.
-		if nackErr := delivery.Nack(false, false); nackErr != nil {
-			c.logger.Error("failed to nack failed message", zap.Error(nackErr))
-		}
+		// trace_id on the failure-path logs preserves the EXP-31 triage
+		// pivot (DLQ panel -> log line -> every log line of the same trace)
+		// across v4's retry/DLX routing. The span is always valid here
+		// (extracted parent or a fresh root).
+		c.routeFailure(delivery, &msg, err, span.SpanContext().TraceID().String())
 		return
 	}
 
@@ -356,6 +345,149 @@ func (c *Consumer) handleDelivery(delivery amqp.Delivery, handler MessageHandler
 
 	incrementMessagesConsumed(c.config.Queue)
 	observeProcessingTime(c.config.Queue, time.Since(startTime).Seconds())
+	// Ack-worthy processing done → publish the terminal "completed" result
+	// (ADR-008.3). A deduped delivery also lands here (handler returned nil):
+	// re-emitting "completed" is correct (the task IS complete) and idempotent
+	// at api-service, which dedupes results on envelope_id.
+	c.emitResult(&msg, statusCompleted, "")
+}
+
+// routeFailure implements the ADR-008.1 handler-error path. A retryable error
+// with a tier still available is republished to the next retry wait-queue (body
+// unchanged, headers copied so x-death survives) then acked, with NO task.result
+// (not a terminal outcome). Unretryable errors or exhausted tiers go to the DLQ
+// via the DLX, are acked, and emit a "failed" task.result. It never
+// nack-requeues on the normal path; only a publish-infra failure requeues (see
+// requeueOnPublishFailure).
+func (c *Consumer) routeFailure(delivery amqp.Delivery, msg *Message, err error, traceID string) {
+	if classifyOutcome(err, msg.Attempt) == outcomeRetry {
+		tier, _ := NextRetryTier(msg.Attempt)
+		c.logger.Warn("retryable error; scheduling retry",
+			zap.Error(err), zap.String("queue", c.config.Queue),
+			zap.String("message_id", msg.ID), zap.Int("attempt", msg.Attempt), zap.String("tier", tier),
+			zap.String("trace_id", traceID))
+
+		exchange := RetryExchange(c.config.Exchange)
+		rk := RetryRoutingKey(c.config.RoutingKey, tier)
+		if perr := c.publishConfirmed(exchange, rk, copyHeaders(delivery.Headers), delivery.Body); perr != nil {
+			c.requeueOnPublishFailure(delivery, "retry", perr)
+			return
+		}
+		incrementRetries(c.config.WorkerType, tier)
+		if aerr := delivery.Ack(false); aerr != nil {
+			c.logger.Error("failed to ack after scheduling retry",
+				zap.Error(aerr), zap.String("queue", c.config.Queue), zap.String("message_id", msg.ID))
+			incrementConsumeErrors(c.config.Queue, "ack_error")
+		}
+		return
+	}
+
+	// Terminal: unretryable or exhausted → DLQ.
+	if errors.Is(err, ErrUnretryable) {
+		c.logger.Warn("unretryable error; routing to DLQ",
+			zap.Error(err), zap.String("queue", c.config.Queue), zap.String("message_id", msg.ID),
+			zap.String("trace_id", traceID))
+	} else {
+		c.logger.Warn("retries exhausted; routing to DLQ",
+			zap.Error(err), zap.String("queue", c.config.Queue),
+			zap.String("message_id", msg.ID), zap.Int("attempt", msg.Attempt),
+			zap.String("trace_id", traceID))
+	}
+	if c.deadLetterAndAck(delivery) {
+		// Only a genuine terminal dead-letter yields a "failed" result; a
+		// requeued publish-infra failure will be retried, so no result yet.
+		c.emitResult(msg, statusFailed, err.Error())
+	}
+}
+
+// deadLetterAndAck publishes the delivery to the DLX (poison path) and acks,
+// returning true when the message was terminally dead-lettered. On a publish
+// failure it requeues (see requeueOnPublishFailure) and returns false — the
+// message is not terminally failed, so the caller emits no task.result.
+func (c *Consumer) deadLetterAndAck(delivery amqp.Delivery) bool {
+	exchange := DLXExchange(c.config.Exchange)
+	if err := c.publishConfirmed(exchange, c.config.RoutingKey, copyHeaders(delivery.Headers), delivery.Body); err != nil {
+		c.requeueOnPublishFailure(delivery, "dlx", err)
+		return false
+	}
+	incrementDLQ(c.config.WorkerType)
+	if err := delivery.Ack(false); err != nil {
+		c.logger.Error("failed to ack after dead-lettering",
+			zap.Error(err), zap.String("queue", c.config.Queue))
+		incrementConsumeErrors(c.config.Queue, "ack_error")
+	}
+	return true
+}
+
+// requeueOnPublishFailure handles a failed retry/DLX republish. A publish-infra
+// failure is NOT poison, so we Nack WITH requeue: this preserves at-least-once
+// delivery, the cadence is paced by the confirm timeout, and on broker recovery
+// the redelivery re-enters routeFailure and routes correctly. We deliberately
+// do NOT Nack(requeue=false) here — that would dead-letter via the queue's
+// x-dead-letter-routing-key (for email-processing that is email.expired, which
+// would masquerade as staleness expiry; other queues would DLQ a message that
+// still had retry tiers left).
+func (c *Consumer) requeueOnPublishFailure(delivery amqp.Delivery, kind string, cause error) {
+	c.logger.Error("failed to publish "+kind+"; nacking WITH requeue (publish-infra failure, not poison)",
+		zap.Error(cause), zap.String("queue", c.config.Queue))
+	incrementConsumeErrors(c.config.Queue, kind+"_publish_error")
+	if nerr := delivery.Nack(false, true); nerr != nil {
+		c.logger.Error("fallback requeue nack failed", zap.Error(nerr))
+	}
+}
+
+// publishConfirmed publishes body persistently on the dedicated confirm-mode
+// channel and blocks for the broker confirmation. It is called only from the
+// (single-goroutine) consume loop, so publishes and their confirmations stay
+// strictly ordered on pubConfirms.
+func (c *Consumer) publishConfirmed(exchange, routingKey string, headers amqp.Table, body []byte) error {
+	c.mu.Lock()
+	pubCh := c.pubChannel
+	confirms := c.pubConfirms
+	c.mu.Unlock()
+	if pubCh == nil {
+		return ErrChannelFailed
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := pubCh.PublishWithContext(ctx, exchange, routingKey,
+		false, // mandatory: broker-owned bindings verified at connect
+		false, // immediate
+		amqp.Publishing{
+			ContentType:  "application/json",
+			DeliveryMode: amqp.Persistent,
+			Timestamp:    time.Now(),
+			Headers:      headers,
+			Body:         body,
+		},
+	); err != nil {
+		return fmt.Errorf("%w: %v", ErrPublishFailed, err)
+	}
+
+	select {
+	case confirm, ok := <-confirms:
+		if !ok {
+			return ErrConnectionClosed
+		}
+		if !confirm.Ack {
+			return ErrPublishFailed
+		}
+		return nil
+	case <-time.After(5 * time.Second):
+		return ErrPublishTimeout
+	}
+}
+
+// copyHeaders clones a delivery's headers so the x-death chain (and any trace
+// headers) survives a republish without aliasing the original table.
+func copyHeaders(h amqp.Table) amqp.Table {
+	out := make(amqp.Table, len(h))
+	for k, v := range h {
+		out[k] = v
+	}
+	return out
 }
 
 // Close signals shutdown, waits for the in-flight delivery (if any) and the
@@ -368,8 +500,13 @@ func (c *Consumer) Close() error {
 	defer c.mu.Unlock()
 
 	var firstErr error
+	if c.pubChannel != nil {
+		if err := c.pubChannel.Close(); err != nil && err != amqp.ErrClosed {
+			firstErr = err
+		}
+	}
 	if c.channel != nil {
-		if err := c.channel.Close(); err != nil && err != amqp.ErrClosed {
+		if err := c.channel.Close(); err != nil && err != amqp.ErrClosed && firstErr == nil {
 			firstErr = err
 		}
 	}

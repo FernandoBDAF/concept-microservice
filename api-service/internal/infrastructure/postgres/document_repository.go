@@ -12,17 +12,20 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/fernandobarroso/microservices/api-service/internal/domain/document"
+	"github.com/fernandobarroso/microservices/api-service/internal/infrastructure/outbox"
 )
 
 type DocumentRepository struct {
-	db  *sqlx.DB
-	log *zap.Logger
+	db     *sqlx.DB
+	outbox *outbox.Store
+	log    *zap.Logger
 }
 
-func NewDocumentRepository(db *sqlx.DB, log *zap.Logger) *DocumentRepository {
+func NewDocumentRepository(db *sqlx.DB, outboxStore *outbox.Store, log *zap.Logger) *DocumentRepository {
 	return &DocumentRepository{
-		db:  db,
-		log: log.Named("document_repository"),
+		db:     db,
+		outbox: outboxStore,
+		log:    log.Named("document_repository"),
 	}
 }
 
@@ -52,6 +55,62 @@ func (r *DocumentRepository) Create(ctx context.Context, doc *document.Document)
 		return fmt.Errorf("error creating document: %w", err)
 	}
 
+	return nil
+}
+
+// CreateWithTask is the transactional-outbox upload path (ADR-008.3): the
+// document INSERT, its document.process outbox envelope, and the
+// pending→processing transition commit atomically. Either the document
+// exists WITH its queued task, or nothing was written — the EXP-42 crash
+// window (row committed, publish lost) cannot occur.
+func (r *DocumentRepository) CreateWithTask(ctx context.Context, doc *document.Document, routingKey string, envelope []byte) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("error starting upload transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }() // no-op after commit
+
+	insert := `
+		INSERT INTO documents (
+			id, profile_id, user_id, filename, original_filename, file_type,
+			file_size, storage_path, storage_bucket, mime_type, status, metadata
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		RETURNING created_at, updated_at`
+
+	if err := tx.QueryRowxContext(ctx, insert,
+		doc.ID,
+		doc.ProfileID,
+		doc.UserID,
+		doc.Filename,
+		doc.OriginalFilename,
+		doc.FileType,
+		doc.FileSize,
+		doc.StoragePath,
+		doc.StorageBucket,
+		doc.MimeType,
+		doc.Status,
+		doc.Metadata,
+	).Scan(&doc.CreatedAt, &doc.UpdatedAt); err != nil {
+		return fmt.Errorf("error creating document: %w", err)
+	}
+
+	if err := r.outbox.Add(ctx, tx, routingKey, envelope); err != nil {
+		return fmt.Errorf("error adding outbox envelope: %w", err)
+	}
+
+	// The task is now (transactionally) queued: pending → processing.
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE documents SET status = $1 WHERE id = $2`,
+		document.StatusProcessing, doc.ID,
+	); err != nil {
+		return fmt.Errorf("error advancing document to processing: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("error committing upload transaction: %w", err)
+	}
+
+	doc.Status = document.StatusProcessing
 	return nil
 }
 
