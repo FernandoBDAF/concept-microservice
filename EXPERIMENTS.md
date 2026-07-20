@@ -593,6 +593,129 @@ G=hello-guest` leaves no residue.
 
 ---
 
+## Mission Control experiments (v6)
+
+These run from the **cockpit**, not the terminal: `make controld` +
+`make status-page`, then http://127.0.0.1:4901 in a browser. They exercise
+the control plane end-to-end (UI → `lab-controld` → `make`) against a running
+compose or kind stack. Setup and the API surface:
+[mission-control/README.md](mission-control/README.md). Authored this pass
+but **not yet run** (needs a live stack + a browser) — ledger in
+[v6-DEFERRED.md](documentation/phases/v6-DEFERRED.md).
+
+---
+
+## EXP-60 · Terminal-free session
+
+**Goal:** run a whole practice session — launch, guided experiment, fault
+diagnosis, write-up — from the browser alone, touching no terminal after the
+daemon is up. The recorded session artifact **is** the write-up.
+**Validates:** ADR-005.1/.2 — the cockpit as a complete operator surface;
+session recorder (v6-HANDOFF §6); guided-mode Watch embedding.
+
+**Steps**
+1. Start a session from the session bar (`POST /api/sessions {title}`).
+2. Target switcher → **kind**; on the lab card press **Up**. Watch the action
+   modal: the resolved `make cluster-up` command shows, stdout streams live.
+3. Experiment library → **EXP-04** in guided mode. Follow the steps inline;
+   watch the embedded **Queue depth** panel (Grafana deep link from the
+   system's `links`) climb and drain; the assertion table goes green.
+4. Induce a fault — pick any v4 chaos drill (e.g. scale a worker to 0 from its
+   card, or run a poison flood) — and diagnose it from the panels + run
+   stream, no `kubectl`.
+5. Add a note or two (`PATCH /api/sessions/{id}`), then **Stop** the session.
+
+**Expect:** `GET /api/sessions/{id}/summary` renders a paste-ready markdown
+timeline (actions with exit codes, the experiment outcome, your notes); it
+saves under `documentation/experiments/`; the runs panel shows every step was
+a `make` invocation. Zero terminal commands after `make controld` /
+`make status-page`.
+**Cleanup:** lab card → **Down** (confirm dialog); stop the session.
+
+---
+
+## EXP-61 · Target parity
+
+**Goal:** the same system card drives compose and kind identically, shows AWS
+state when a session is up, streams real output — and a failing make surfaces
+as a **failed action, not a silent success**.
+**Validates:** ADR-005.2 — one control path across targets; the exec loop's
+exit-code fidelity (v6-HANDOFF §2); the aws availability probe.
+
+**Steps**
+1. Target **compose** → lab card **Up**, confirm state goes healthy, then
+   **Down**. Repeat on target **kind**. Same card, same buttons.
+2. Watch each action modal: the resolved command differs per target
+   (`make up` vs `make cluster-up`) and stdout streams line-by-line, not in a
+   final dump.
+3. AWS chip: with no session it is present-but-disabled (the probe returns
+   `available:false`, note "session check pending v5 integration"); it enables
+   and shows correct state only once a v5 session is up (deferred — see
+   v6-DEFERRED.md).
+4. Force a failure: run a scored experiment whose runner exits non-zero (on
+   this branch every scored run does — the v4 runner is still the skeleton
+   that exits 3), or trigger any make target that fails. Watch the action.
+
+**Expect:** compose and kind reach the same states via the same card; a
+non-zero make exit ends the action `state:failed` with the exit code visible
+in the modal and the runs log — never reported as success. (The failing-run
+case is expected today by design: v6-HANDOFF §3.)
+**Cleanup:** ensure both targets are **Down**.
+
+---
+
+## EXP-62 · Library round-trip
+
+**Goal:** a scored experiment run from the UI agrees with the CLI — same
+pass/fail for the same id — and the outcome is captured.
+**Validates:** ADR-005.3 / ADR-004.2 — the UI renders and invokes the YAML
+runner, never reimplements scoring; outcome recording (v6-HANDOFF §3).
+
+**Steps**
+1. Experiment library → pick a scored experiment (e.g. `exp-02`), run it from
+   the UI; the action runs `make experiment E=exp-02` and streams the runner.
+2. In parallel truth-check, `make experiment E=exp-02` from a shell (allowed —
+   this is the oracle, not the session under test).
+3. Compare: UI pass/fail == CLI exit 0/1 for the same id and assertions.
+4. Record the outcome via the UI form (`POST /api/experiments/{id}/outcome`):
+   a structured entry + free notes.
+
+**Expect:** identical pass/fail both ways; the outcome (structured entry +
+notes) lands under `documentation/experiments/`. **Today, honestly:** the v4
+runner isn't merged into this stack, so both legs *fail* the same way (exit 3)
+— parity holds on failure; real pass/fail parity is confirmed on the v4
+reconcile (v6-DEFERRED.md).
+**Cleanup:** none (outcome record is the artifact).
+
+---
+
+## EXP-63 · Control-plane safety
+
+**Goal:** the control plane refuses what it must — remote connections on the
+localhost bind, and requests with a wrong token when the auth gate is on —
+and logs the refusal.
+**Validates:** ADR-005.4 — localhost-only default; token + TLS gate before any
+remote reach (v6-HANDOFF §5); the audit log line.
+
+**Steps**
+1. Default mode: `make controld` (binds `127.0.0.1:4900`, no auth). From
+   another host on the LAN, try to reach `http://<lab-ip>:4900/api/targets`.
+2. Gate mode: restart with `CONTROLD_TOKEN=secret CONTROLD_ENABLE_AWS=1
+   CONTROLD_TLS_CERT=… CONTROLD_TLS_KEY=…` (with aws enabled the daemon
+   refuses to boot without both a token and TLS).
+3. `curl -k https://127.0.0.1:4900/api/targets` with **no** / a **wrong**
+   Bearer token; then with the right one.
+4. `curl -k 'https://127.0.0.1:4900/api/actions/<id>/stream?token=wrong'`
+   (SSE carries the token as a query param — `EventSource` can't set headers).
+
+**Expect:** the localhost bind is unreachable from another host (connection
+refused/timeout — it never listened off-loopback). With the gate on, missing
+or wrong token → **401 and an audit log line**; the correct token → 200.
+Booting `CONTROLD_ENABLE_AWS=1` without a token or TLS fails fast at startup.
+**Cleanup:** stop the gated daemon; restart in the default localhost mode.
+
+---
+
 ## Adding an experiment
 
 Copy this skeleton; keep Watch concrete (panel names, PromQL, commands) and

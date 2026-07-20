@@ -1,32 +1,103 @@
-# Mission Control (v3 seed)
+# Mission Control (v6)
 
-The v3 observability phase's thin status page (ADR-001.3) and the first
-read-only sliver of `lab-controld` (ADR-005.1/.2). This is the seed of the
-v6 Mission Control cockpit: the API shapes are built to grow, the
-implementation is deliberately thin.
+The lab's cockpit: one browser surface to **control and see the whole lab** —
+launch/stop systems, scale components, run experiments from the library with
+their dashboards beside them, across compose / kind / AWS targets, a full
+practice session without touching a terminal. It grows from the v3 thin status
+page (ADR-001.3) and wraps `make` — it never replaces it (ADR-005.2: make is
+the single source of truth).
 
-## What's here
+> **Status (2026-07-19):** control plane + cockpit landed and unit-tested;
+> exit runs EXP-60..63 are deferred — see
+> [documentation/phases/v6-DEFERRED.md](../documentation/phases/v6-DEFERRED.md).
+
+## Architecture
+
+```
+browser (status-page, Next.js)
+    │  GET status/systems/experiments/runs · POST actions/outcomes/sessions
+    │  SSE  /api/actions/{id}/stream
+    ▼
+lab-controld (Go, 127.0.0.1:4900)
+    │  resolveCommand: request → registry command (the ONLY path to exec)
+    │  exec.CommandContext("sh","-c", cmd)  from repo root
+    ▼
+make targets  ·  scripts/experiments/run.py  ·  kubectl (guest verbs)
+```
+
+The daemon holds **no logic of its own** about how to run the lab: every
+action is a command drawn verbatim from the systems registry
+(`systems/*.yaml`), which doubles as the action whitelist — nothing outside it
+is ever invokable (ADR-005.2). The UI shows the resolved `make` command next
+to the live stream for every action (the teaching surface).
 
 | Component | Path | Port | Stack |
 |---|---|---|---|
-| `controld` | `mission-control/controld/` | `127.0.0.1:4900` | Go 1.24, stdlib only |
+| `controld` | `mission-control/controld/` | `127.0.0.1:4900` | Go 1.24, stdlib + `gopkg.in/yaml.v3` |
 | `status-page` | `mission-control/status-page/` | `127.0.0.1:4901` | Next.js (App Router, TypeScript), plain CSS |
 
-`controld` observes the two lab targets by shelling out to the same tools
-you use by hand (`docker compose`, `kubectl`, `kind`) and summarizes the
-results as JSON. The status page polls it every 5 s and renders a
-terminal-style console: target switcher, service cards with
-state/health badges, health probe results, and per-target links.
+The systems model is defined in [systems/README.md](../systems/README.md)
+(schema v0); `lab.yaml` and `hello-guest.yaml` ship. Guests onboard by
+dropping a YAML file there — v7's real guests become config, not code.
 
-## Read-only guarantee
+## API
 
-This phase performs **no control actions of any kind**. `controld` only
-runs read-only commands (`docker compose ls/ps`, `kubectl get pods`,
-`kind get clusters`) and HTTP GET health probes. There are no endpoints
-that start, stop, restart, scale, or mutate anything. Both processes bind
-`127.0.0.1` only, with no auth, per ADR-005.4 (localhost-only until remote
-targets arrive). CORS is restricted to the status page's origin
-(`127.0.0.1:4901` / `localhost:4901`).
+Read endpoints (from v3, shapes unchanged):
+
+| Method · Path | Returns |
+|---|---|
+| `GET /healthz` | liveness, plain `ok` |
+| `GET /api/targets` | `[{name, available}]` for `compose`, `kind`, `aws`; probed + cached ~5 s. `aws` is stubbed `available:false` ("session check pending v5 integration") until v5 lands |
+| `GET /api/status?target=` | per-service `{name,state,health,image}` (compose) / workload `{namespace,name,ready,status}` (kind) |
+| `GET /api/health?target=` | HTTP health probes (compose) / pod-readiness derived (kind) |
+| `GET /api/links?target=` | static per-target deep-links map |
+
+Control endpoints (v6):
+
+| Method · Path | Purpose |
+|---|---|
+| `GET /api/systems` | the parsed registry (`[]System`); reloaded on SIGHUP |
+| `POST /api/actions` | start an action; `202 {id}`. Body: `{system,target,verb,params}` |
+| `GET /api/actions/{id}` | `ActionRecord` — `state` (pending/running/succeeded/failed) + `exit_code` |
+| `GET /api/actions/{id}/stream` | **SSE**: `event: line` per stdout/stderr line, `event: end` on completion |
+| `GET /api/runs?limit=` | run history from the JSONL log (no DB) |
+
+Wave-2 endpoints (experiments + sessions):
+
+| Method · Path | Purpose |
+|---|---|
+| `GET /api/experiments` | the scored catalog, parsed from `experiments/*.yaml` |
+| `POST /api/experiments/{id}/outcome` | append a structured entry + free notes under `documentation/experiments/` |
+| `POST /api/sessions` | open a practice session `{title}` → `{id}` |
+| `PATCH /api/sessions/{id}` | attach a note (actions/experiments auto-attach) |
+| `GET /api/sessions/{id}/summary` | render a paste-ready markdown write-up (timeline, exit codes, outcomes, notes) |
+
+**Verbs** (`ActionRequest.verb`): `up · down · status · scale · experiment`.
+Placeholders are strictly validated before any value reaches the shell — `n`
+is an integer 1..10, the experiment id matches `^exp-[a-z0-9-]+$`; no other
+user input is ever passed to `sh -c`. **Destructive verbs** (`down`, resets)
+require `params.confirm="true"`. The `experiment` verb runs
+`make experiment E=<id>` — the runner's own exit code is the pass/fail.
+
+**Concurrency:** one running action per `(system,target)` — a second request
+gets `409`. **Timeouts** are per verb (aws `up`: 30 min; other `up`: 10 min;
+`status`: 60 s). A non-zero make exit ends the action `state:failed` with the
+code — a failing command surfaces as a failed action, never a silent success
+(EXP-61). Every shell-out merges stdout+stderr line-scanned into a bounded
+ring (last 2000 lines) for late SSE subscribers; logs are structured JSON on
+stdout (`slog`).
+
+## Auth modes (ADR-005.4)
+
+| Mode | Trigger | Requirement |
+|---|---|---|
+| Localhost (default) | `127.0.0.1` bind, `CONTROLD_TOKEN` unset | none — zero friction locally |
+| Token | `CONTROLD_TOKEN` set | `Authorization: Bearer <token>` on `/api/*`; SSE uses `?token=` (EventSource can't set headers). Wrong/missing → `401` + audit log line |
+| AWS-enabled | `CONTROLD_ENABLE_AWS=1` | **token + TLS both required at startup** (`CONTROLD_TLS_CERT`/`CONTROLD_TLS_KEY`) or the daemon refuses to boot |
+
+The localhost bind never listens off-loopback, so a remote connection is
+refused outright (EXP-63). The hard gate exists because an AWS-triggering
+control plane cannot stay open.
 
 ## Run
 
@@ -35,49 +106,42 @@ make controld       # go run the daemon on 127.0.0.1:4900
 make status-page    # next dev on 127.0.0.1:4901
 ```
 
-Then open http://127.0.0.1:4901. Both targets down is a normal state; the
-page shows "target unavailable" until compose or kind comes up.
+Then open http://127.0.0.1:4901. Both targets down is a normal state — the
+cockpit shows "target unavailable" until compose or kind comes up.
 
-Overrides:
+Environment overrides:
 
-- `CONTROLD_ADDR` (or `-addr`) — controld listen address, default
-  `127.0.0.1:4900`. Keep it on localhost.
-- `NEXT_PUBLIC_CONTROLD_URL` — where the page reaches controld, default
-  `http://127.0.0.1:4900`.
+| Var | Default | Meaning |
+|---|---|---|
+| `CONTROLD_ADDR` (or `-addr`) | `127.0.0.1:4900` | listen address — keep it on localhost |
+| `CONTROLD_REPO_ROOT` | the checkout root | working directory for every `sh -c` invocation |
+| `NEXT_PUBLIC_CONTROLD_URL` | `http://127.0.0.1:4900` | where the page reaches controld |
+| `CONTROLD_TOKEN` | unset | when set, Bearer auth required on `/api/*` |
+| `CONTROLD_ENABLE_AWS` | `0` | `1` enables the aws target — forces token + TLS |
+| `CONTROLD_TLS_CERT` / `CONTROLD_TLS_KEY` | unset | TLS cert/key; required with `CONTROLD_ENABLE_AWS=1` |
 
-## API
+## Run history (`runs/`)
 
-- `GET /healthz` — liveness, plain `ok`.
-- `GET /api/targets` — `[{name, available}]` for `compose` and `kind`;
-  availability probed via `docker compose ls` / `kind get clusters`,
-  cached ~5 s.
-- `GET /api/status?target=compose|kind` — compose: per-service
-  `{name, state, health, image}` from `docker compose -p microservices ps`;
-  kind: workload-level `{namespace, name, ready, status}` aggregated from
-  pods in `lab-core`, `lab-infra`, `lab-obs` (pod hash suffixes collapsed).
-- `GET /api/health?target=compose|kind` — compose: HTTP probes of the
-  host-mapped health endpoints (api :8080, auth :3000, graphrag :8082;
-  workers are not port-mapped and are skipped); kind: derived from pod
-  readiness, no HTTP. Shape: `{service, ok, latency_ms, error?}`.
-- `GET /api/links?target=compose|kind` — static per-target links map
-  (Grafana, Prometheus, RabbitMQ, MinIO on compose; the `*.lab.local`
-  ingress hosts on kind).
+Action history persists as **JSON lines, one file per day**, at
+`mission-control/controld/runs/YYYY-MM-DD.jsonl` — no database (ADR-005.2).
+The directory is gitignored; losing it loses history, not state (the live
+target is always the truth). Each line is an `ActionRecord`:
 
-Every shell-out runs under a 10 s timeout; failures return
-`{"error": "..."}` with HTTP 502 — a missing `docker` or `kubectl` never
-crashes the daemon. Logs are structured JSON on stdout (`slog`).
+```json
+{"id":"…","request":{"system":"lab","target":"kind","verb":"up","params":{}},
+ "command":"make cluster-up","state":"succeeded","exit_code":0,
+ "started_at":"…","ended_at":"…"}
+```
 
-## v6 growth path
+`GET /api/runs?limit=` reads back from these files; the `command` field is the
+spot-check that every UI action delegated to make.
 
-- **Actions**: controld gains POST endpoints that invoke the existing make
-  targets (ADR-005.2 — make stays the single source of truth), with
-  streaming output over WS. The read-only endpoints above keep their
-  shapes.
-- **Experiments**: render the ADR-004.2 YAML experiment definitions, run
-  them via make, embed each experiment's Watch dashboards, record outcomes
-  to `documentation/experiments/`.
-- **Targets**: the `{name, available}` target list grows an `aws` entry in
-  v5; remote control arrives only together with the auth story
-  (ADR-005.4 — minimum shared token + TLS).
-- **UI**: the status page grows into the Mission Control cockpit on the
-  same Next.js stack (ADR-005.1); this page is the de-risking exercise.
+## See also
+
+- [systems/README.md](../systems/README.md) — the registry schema (v0) and
+  the two shipped system definitions.
+- [documentation/phases/v6-mission-control.md](../documentation/phases/v6-mission-control.md)
+  — the phase brief (mission, work breakdown, acceptance).
+- [documentation/phases/v6-DEFERRED.md](../documentation/phases/v6-DEFERRED.md)
+  — the honest ledger of what has not run yet and the seams on parallel v4/v5
+  work; read it before tagging `lab-v6.0`.

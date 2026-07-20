@@ -1,7 +1,7 @@
 # Phase v6 — Mission Control
 
-**Status:** architecture + skeletons landed (expedited 2026-07-19) —
-execute via [v6-HANDOFF.md](v6-HANDOFF.md) · **Depends on:** v5 (all three
+**Status:** code-complete — live exit runs deferred (see
+[v6-DEFERRED.md](v6-DEFERRED.md)) · **Depends on:** v5 (all three
 targets exist) ·
 **Exit tag:** `lab-v6.0` · **Decisions in force:** ADR-005 (all), ADR-004.2
 (experiment YAML), ADR-001.3 (grows from the v3 status page)
