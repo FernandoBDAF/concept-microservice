@@ -5,8 +5,9 @@ package main
 // Two modes, chosen by environment:
 //   - no CONTROLD_TOKEN  → localhost no-auth mode (current v3 behavior).
 //   - CONTROLD_TOKEN set  → every /api/* request must carry
-//     Authorization: Bearer <token> (or ?token= for SSE, since EventSource
-//     cannot set headers); mismatch → 401 + an audit slog line.
+//     Authorization: Bearer <token>; the SSE stream route alone also accepts
+//     ?token= (EventSource cannot set headers); mismatch → 401 + an audit
+//     slog line.
 //
 // The aws target additionally requires token + TLS (ValidateStartup enforces
 // it): remote aws control must never run unauthenticated or in cleartext.
@@ -28,7 +29,7 @@ import (
 
 // Config is the runtime configuration the engine and auth gate consult. It is
 // assembled by the orchestrator in main.go from flags/env (see
-// INTEGRATION-NOTES-A.md); ConfigFromEnv builds the env-only portion.
+// mission-control/README.md); ConfigFromEnv builds the env-only portion.
 type Config struct {
 	RepoRoot  string // absolute; commands exec with Dir = RepoRoot
 	Token     string // CONTROLD_TOKEN; "" → no-auth localhost mode
@@ -90,7 +91,7 @@ func AuthMiddleware(cfg Config, log *slog.Logger) func(http.Handler) http.Handle
 				return
 			}
 			got := bearerToken(r)
-			if got == "" {
+			if got == "" && isStreamPath(r) {
 				got = r.URL.Query().Get("token") // SSE via EventSource
 			}
 			if subtle.ConstantTimeCompare([]byte(got), want) != 1 {
@@ -104,6 +105,16 @@ func AuthMiddleware(cfg Config, log *slog.Logger) func(http.Handler) http.Handle
 	}
 }
 
+// isStreamPath reports whether the request targets the SSE stream route
+// (GET /api/actions/{id}/stream, see main.go's mux) — the ONLY endpoint where
+// the ?token= query fallback is accepted, because EventSource cannot set
+// headers. Every other /api endpoint requires the Bearer header.
+func isStreamPath(r *http.Request) bool {
+	return r.Method == http.MethodGet &&
+		strings.HasPrefix(r.URL.Path, "/api/actions/") &&
+		strings.HasSuffix(r.URL.Path, "/stream")
+}
+
 func bearerToken(r *http.Request) string {
 	const prefix = "Bearer "
 	h := r.Header.Get("Authorization")
@@ -115,7 +126,7 @@ func bearerToken(r *http.Request) string {
 
 // AWSTargetEntry is the /api/targets row for the aws target when it is enabled.
 // main.go owns /api/targets; the orchestrator appends this entry to its response
-// when cfg.EnableAWS (see INTEGRATION-NOTES-A.md). It is a map rather than the
+// when cfg.EnableAWS (see mission-control/README.md). It is a map rather than the
 // main.go Target struct so it can carry the extra "note" field without altering
 // that read-only type.
 //

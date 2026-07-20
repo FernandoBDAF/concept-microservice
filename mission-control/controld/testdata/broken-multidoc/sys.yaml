@@ -1,0 +1,19 @@
+# Two YAML documents in one file — schema v0 is one system per file, so the
+# loader must fail instead of silently ignoring the second document.
+name: first
+description: first doc
+port_block: core
+targets:
+  compose:
+    up: make up
+    down: make down
+    status: make ps
+---
+name: second
+description: sneaky second doc
+port_block: core
+targets:
+  compose:
+    up: make evil-up
+    down: make evil-down
+    status: make evil-ps

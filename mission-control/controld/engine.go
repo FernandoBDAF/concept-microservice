@@ -49,6 +49,17 @@ func statusOf(err error) int {
 	return http.StatusInternalServerError
 }
 
+// engineRecordsMax caps the in-memory record map: terminal records beyond this
+// count are evicted oldest-first (running actions are never evicted). After
+// eviction — or a daemon restart — GET /api/actions/{id} 404s for the evicted
+// id; /api/runs remains the durable history (JSONL on disk).
+const engineRecordsMax = 500
+
+// outputDrainGrace is how long, after the action process itself exits, the
+// output pump keeps reading for lingering pipe writers (backgrounded
+// descendants that inherited the write end) before the read end is closed.
+const outputDrainGrace = 2 * time.Second
+
 // Engine owns the live action state.
 type Engine struct {
 	cfg   Config
@@ -58,10 +69,19 @@ type Engine struct {
 
 	// timeout is the per-verb budget; a field so tests can shorten it.
 	timeout func(verb, target string) time.Duration
+	// recordsMax caps the terminal-record memory; a field so tests can shrink it.
+	recordsMax int
 
-	mu      sync.Mutex
-	records map[string]*actionState // id -> state
-	running map[string]string       // "system\x00target" -> running action id
+	// shutdownCtx parents every action's exec context: canceling it (Shutdown)
+	// kills the running process groups so their actions finalize and persist.
+	shutdownCtx    context.Context
+	shutdownCancel context.CancelFunc
+	actions        sync.WaitGroup // one Add per launched action, Done on finalize
+
+	mu       sync.Mutex
+	records  map[string]*actionState // id -> state
+	running  map[string]string       // "system\x00target" -> running action id
+	terminal []string                // terminal record ids, oldest first (eviction order)
 }
 
 // actionState bundles a record with its output broker.
@@ -83,14 +103,35 @@ func NewEngine(cfg Config, reg *Registry, store *Store, log *slog.Logger) *Engin
 	if log == nil {
 		log = slog.Default()
 	}
+	sctx, cancel := context.WithCancel(context.Background())
 	return &Engine{
-		cfg:     cfg,
-		reg:     reg,
-		store:   store,
-		log:     log,
-		timeout: verbTimeout,
-		records: map[string]*actionState{},
-		running: map[string]string{},
+		cfg:            cfg,
+		reg:            reg,
+		store:          store,
+		log:            log,
+		timeout:        verbTimeout,
+		recordsMax:     engineRecordsMax,
+		shutdownCtx:    sctx,
+		shutdownCancel: cancel,
+		records:        map[string]*actionState{},
+		running:        map[string]string{},
+	}
+}
+
+// Shutdown cancels every running action (their exec contexts are children of
+// shutdownCtx, so the process groups are SIGKILLed) and waits — bounded by ctx
+// — for them to finalize and persist to run history.
+func (e *Engine) Shutdown(ctx context.Context) {
+	e.shutdownCancel()
+	done := make(chan struct{})
+	go func() {
+		e.actions.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		e.log.Warn("shutdown: timed out waiting for running actions to finalize")
 	}
 }
 
@@ -147,7 +188,11 @@ func (e *Engine) StartAction(req ActionRequest) (*ActionRecord, error) {
 	e.running[key] = id
 	e.mu.Unlock()
 
-	go e.execute(st, key)
+	e.actions.Add(1)
+	go func() {
+		defer e.actions.Done()
+		e.execute(st, key)
+	}()
 
 	out := *rec
 	return &out, nil
@@ -159,7 +204,9 @@ func (e *Engine) execute(st *actionState, key string) {
 	cmdStr := st.rec.Command
 	budget := e.timeout(req.Verb, req.Target)
 
-	ctx, cancel := context.WithTimeout(context.Background(), budget)
+	// Child of shutdownCtx: daemon shutdown cancels the exec context, which
+	// kills the process group (c.Cancel below) so the action still finalizes.
+	ctx, cancel := context.WithTimeout(e.shutdownCtx, budget)
 	defer cancel()
 
 	c := exec.CommandContext(ctx, "sh", "-c", cmdStr)
@@ -208,14 +255,46 @@ func (e *Engine) execute(st *actionState, key string) {
 	// (and its group) exit.
 	pw.Close()
 
-	sc := bufio.NewScanner(pr)
-	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024) // 1 MiB max line
-	for sc.Scan() {
-		st.broker.publish(sc.Text())
-	}
-	pr.Close()
+	// Pump merged output in a goroutine: the scanner must not gate c.Wait(),
+	// because a backgrounded descendant holding the pipe write end would
+	// otherwise keep a finished action "running" until the verb timeout. On a
+	// scanner error (e.g. a single line beyond the buffer cap) the pump keeps
+	// draining the pipe so the child never blocks on a full pipe, and the
+	// error is surfaced as a marker line below instead of dying silently.
+	scanDone := make(chan struct{})
+	var scanErr error
+	go func() {
+		defer close(scanDone)
+		sc := bufio.NewScanner(pr)
+		sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024) // 4 MiB max line
+		for sc.Scan() {
+			st.broker.publish(sc.Text())
+		}
+		if err := sc.Err(); err != nil {
+			scanErr = err
+			io.Copy(io.Discard, pr) // keep draining so the child can exit
+		}
+	}()
 
 	waitErr := c.Wait()
+
+	// The process (group leader) has exited. Allow a short bounded drain for
+	// stragglers still holding the pipe, then close the read end to unblock
+	// the scanner — a setsid escapee must not wedge the (system,target) slot.
+	drained := true
+	select {
+	case <-scanDone:
+	case <-time.After(outputDrainGrace):
+		drained = false
+	}
+	pr.Close()
+	<-scanDone
+
+	if !drained {
+		st.broker.publish(outputCutMark)
+	} else if scanErr != nil {
+		st.broker.publish(fmt.Sprintf(scanErrMark, scanErr))
+	}
 
 	state, exit := "succeeded", 0
 	var marker string
@@ -223,6 +302,10 @@ func (e *Engine) execute(st *actionState, key string) {
 	case ctx.Err() == context.DeadlineExceeded:
 		state, exit = "failed", -1
 		marker = fmt.Sprintf(timeoutMarker, budget)
+	case waitErr != nil && ctx.Err() == context.Canceled:
+		// Daemon shutdown canceled the exec context and killed the group.
+		state, exit = "failed", -1
+		marker = shutdownMarker
 	case waitErr != nil:
 		state = "failed"
 		var ee *exec.ExitError
@@ -271,6 +354,14 @@ func (e *Engine) finalize(st *actionState, key, state string, exit int, preMarke
 
 	e.mu.Lock()
 	delete(e.running, key)
+	// Cap the in-memory record map: evict the oldest terminal records beyond
+	// recordsMax. GET /api/actions/{id} 404s after eviction (as after a
+	// restart); /api/runs stays the durable history.
+	e.terminal = append(e.terminal, rec.ID)
+	for len(e.terminal) > e.recordsMax {
+		delete(e.records, e.terminal[0])
+		e.terminal = e.terminal[1:]
+	}
 	e.mu.Unlock()
 
 	if e.store != nil {
@@ -350,7 +441,9 @@ func (e *Engine) HandleCreateAction(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]string{"id": rec.ID, "command": rec.Command})
 }
 
-// HandleGetAction serves GET /api/actions/{id} → full ActionRecord.
+// HandleGetAction serves GET /api/actions/{id} → full ActionRecord. Records
+// are in-memory only: an id 404s after eviction (engineRecordsMax terminal
+// records retained) or a daemon restart — /api/runs is the durable history.
 func (e *Engine) HandleGetAction(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	st, ok := e.lookup(id)

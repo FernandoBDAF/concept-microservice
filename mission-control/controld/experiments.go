@@ -36,6 +36,10 @@ var expIDRe = regexp.MustCompile(`^exp-[a-z0-9-]+$`)
 // validOutcomeResults is the closed set accepted by the outcome endpoint.
 var validOutcomeResults = map[string]bool{"pass": true, "fail": true, "aborted": true}
 
+// outcomeNotesMax caps outcome notes: they are appended verbatim to a
+// repo-committed markdown file, so they must stay a write-up, not a dump.
+const outcomeNotesMax = 16 << 10 // 16 KiB
+
 // Experiment is one scored-experiment definition (experiments/README.md schema
 // v0), enriched with the repo-relative file path for the UI.
 type Experiment struct {
@@ -201,6 +205,11 @@ func (c *Catalog) HandleOutcome(w http.ResponseWriter, r *http.Request) {
 	}
 	if !validOutcomeResults[body.Result] {
 		writeError(w, http.StatusBadRequest, `result must be one of "pass", "fail", "aborted"`)
+		return
+	}
+	if len(body.Notes) > outcomeNotesMax {
+		writeError(w, http.StatusBadRequest,
+			fmt.Sprintf("notes too long (%d bytes, max %d)", len(body.Notes), outcomeNotesMax))
 		return
 	}
 

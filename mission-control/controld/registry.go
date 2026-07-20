@@ -11,7 +11,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -76,6 +78,12 @@ func loadDir(dir string) (map[string]System, []System, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("registry: glob %s: %w", dir, err)
 	}
+	// A missing or empty systems/ dir must never silently yield an empty
+	// registry — the common cause is a typo'd -repo-root, and a daemon with no
+	// systems is useless. Startup-fatal with a pointed error instead.
+	if len(paths) == 0 {
+		return nil, nil, fmt.Errorf("registry: no *.yaml files in %s — is -repo-root (or CONTROLD_REPO_ROOT) pointing at the repo?", dir)
+	}
 	sort.Strings(paths)
 
 	byName := make(map[string]System, len(paths))
@@ -110,6 +118,12 @@ func parseSystemFile(path string) (System, error) {
 	var sys System
 	if err := dec.Decode(&sys); err != nil {
 		return System{}, fmt.Errorf("registry: parse %s: %w", filepath.Base(path), err)
+	}
+	// Schema v0 is one system per file: a second `---` document would be
+	// silently ignored by a single Decode, so detect it and fail the load.
+	var extra any
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		return System{}, fmt.Errorf("registry: %s: multiple YAML documents (one system per file)", filepath.Base(path))
 	}
 	if err := validateSystem(sys, filepath.Base(path)); err != nil {
 		return System{}, err

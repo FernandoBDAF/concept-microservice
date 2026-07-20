@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -24,10 +25,20 @@ const (
 // Store persists and reads ActionRecords as JSONL day files.
 type Store struct {
 	dir string
-	mu  sync.Mutex // serializes appends
+	log *slog.Logger
+	mu  sync.Mutex // serializes appends AND reads (a read must not race an in-flight append)
+
+	// warned dedupes corrupt-line warnings: one log line per file:line.
+	warned map[string]bool
 }
 
-func NewStore(dir string) *Store { return &Store{dir: dir} }
+// NewStore constructs a Store. log may be nil (slog.Default is used).
+func NewStore(dir string, log *slog.Logger) *Store {
+	if log == nil {
+		log = slog.Default()
+	}
+	return &Store{dir: dir, log: log, warned: map[string]bool{}}
+}
 
 // Dir returns the run-history directory. Per-action scored-run report subdirs
 // (reports/<action-id>/) live under it — inside the gitignored runs/ tree.
@@ -61,7 +72,8 @@ func (s *Store) Append(rec ActionRecord) error {
 }
 
 // Runs returns up to limit records, newest-first, walking day files from the
-// newest date backward and reading each file's lines in reverse.
+// newest date backward and reading each file's lines in reverse. It takes the
+// store mutex so a read never races an in-flight Append.
 func (s *Store) Runs(limit int) ([]ActionRecord, error) {
 	if limit <= 0 {
 		limit = runsDefaultLimit
@@ -69,6 +81,9 @@ func (s *Store) Runs(limit int) ([]ActionRecord, error) {
 	if limit > runsMaxLimit {
 		limit = runsMaxLimit
 	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	paths, err := filepath.Glob(filepath.Join(s.dir, "*.jsonl"))
 	if err != nil {
@@ -79,7 +94,7 @@ func (s *Store) Runs(limit int) ([]ActionRecord, error) {
 
 	out := make([]ActionRecord, 0, limit)
 	for _, p := range paths {
-		recs, err := readDayReversed(p)
+		recs, err := s.readDayReversed(p)
 		if err != nil {
 			return nil, err
 		}
@@ -94,8 +109,10 @@ func (s *Store) Runs(limit int) ([]ActionRecord, error) {
 }
 
 // readDayReversed reads one JSONL file and returns its records newest-first
-// (i.e. last line first). Blank lines are skipped.
-func readDayReversed(path string) ([]ActionRecord, error) {
+// (i.e. last line first). Blank lines are skipped. A torn/corrupt line is
+// skipped with a warning (logged once per file:line) — one bad line must never
+// permanently fail the whole history read. Called with s.mu held.
+func (s *Store) readDayReversed(path string) ([]ActionRecord, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("store: open %s: %w", path, err)
@@ -105,14 +122,15 @@ func readDayReversed(path string) ([]ActionRecord, error) {
 	var recs []ActionRecord
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for sc.Scan() {
+	for n := 1; sc.Scan(); n++ {
 		line := strings.TrimSpace(sc.Text())
 		if line == "" {
 			continue
 		}
 		var rec ActionRecord
 		if err := json.Unmarshal([]byte(line), &rec); err != nil {
-			return nil, fmt.Errorf("store: parse line in %s: %w", filepath.Base(path), err)
+			s.warnBadLine(filepath.Base(path), n, err)
+			continue
 		}
 		recs = append(recs, rec)
 	}
@@ -124,4 +142,15 @@ func readDayReversed(path string) ([]ActionRecord, error) {
 		recs[i], recs[j] = recs[j], recs[i]
 	}
 	return recs, nil
+}
+
+// warnBadLine logs a corrupt JSONL line once per file:line. Called with s.mu
+// held.
+func (s *Store) warnBadLine(file string, line int, err error) {
+	key := fmt.Sprintf("%s:%d", file, line)
+	if s.warned[key] {
+		return
+	}
+	s.warned[key] = true
+	s.log.Warn("store: skipping corrupt run-history line", "file", file, "line", line, "error", err.Error())
 }

@@ -23,6 +23,9 @@ const (
 	dropMarkerFmt  = "…controld: dropped %d line(s) to a slow client…"
 	timeoutMarker  = "…controld: action timed out after %s — process group killed…"
 	startupErrMark = "…controld: failed to start command: %s…"
+	scanErrMark    = "…controld: output truncated (scanner error: %s)…"
+	outputCutMark  = "…controld: output stream closed — a background process still held it open…"
+	shutdownMarker = "…controld: daemon shutting down — process group killed…"
 )
 
 // broker fans one action's merged stdout/stderr out to SSE subscribers and
@@ -39,6 +42,10 @@ type broker struct {
 type subscriber struct {
 	ch      chan string
 	dropped int
+	// pendingDrop is the dropped count still unflushed when the broker closed.
+	// Written (under the broker mutex) before ch is closed; the channel-close
+	// happens-before edge makes it safe for the SSE loop to read afterward.
+	pendingDrop int
 }
 
 func newBroker(maxRing int) *broker {
@@ -102,7 +109,9 @@ func (b *broker) unsubscribe(s *subscriber) {
 }
 
 // close marks the action finished, records the end payload, and closes every
-// subscriber channel so their SSE loops emit the terminal event.
+// subscriber channel so their SSE loops emit the terminal event. A subscriber
+// with an unflushed dropped count gets it stashed as pendingDrop so the SSE
+// loop can emit the "dropped N lines" marker before the end event.
 func (b *broker) close(endData string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -112,6 +121,7 @@ func (b *broker) close(endData string) {
 	b.done = true
 	b.endData = endData
 	for s := range b.subs {
+		s.pendingDrop = s.dropped
 		close(s.ch)
 	}
 	b.subs = map[*subscriber]struct{}{}
@@ -179,6 +189,9 @@ func serveSSE(w http.ResponseWriter, r *http.Request, b *broker) {
 			return
 		case line, ok := <-sub.ch:
 			if !ok {
+				if sub.pendingDrop > 0 {
+					writeLine(fmt.Sprintf(dropMarkerFmt, sub.pendingDrop))
+				}
 				writeEnd(b.endInfo())
 				return
 			}

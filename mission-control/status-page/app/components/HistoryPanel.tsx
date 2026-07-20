@@ -1,8 +1,10 @@
 "use client";
 
-// Collapsible run history from /api/runs. A row reopens that action's modal
-// (record, plus live stream if it is still running). Refetches when an action
-// launches or completes (runsVersion) while the panel is open.
+// Collapsible run history from /api/runs. The runs log only holds terminal
+// records, so a row reopens that action's modal with the stored state, exit
+// code, and report — never a live stream (running actions re-attach via the
+// 409 "View running" path instead). Refetches when an action launches or
+// completes (runsVersion) while the panel is open.
 
 import { useCallback, useEffect, useState } from "react";
 import { getJSON } from "../lib/api";

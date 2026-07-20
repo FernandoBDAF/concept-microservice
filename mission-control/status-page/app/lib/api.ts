@@ -21,10 +21,20 @@ export function setToken(token: string): void {
 
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  // Structured ids some 409 bodies carry: the action already running for a
+  // (system,target) pair (engine), or the session already open (sessions).
+  runningId?: string;
+  openId?: string;
+  constructor(
+    message: string,
+    status: number,
+    ids?: { runningId?: string; openId?: string }
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.runningId = ids?.runningId;
+    this.openId = ids?.openId;
   }
 }
 
@@ -36,23 +46,32 @@ function authHeaders(extra?: Record<string, string>): Record<string, string> {
   };
 }
 
-async function parseError(res: Response): Promise<string> {
+async function toApiError(res: Response): Promise<ApiError> {
+  let message = `controld returned ${res.status}`;
+  let runningId: string | undefined;
+  let openId: string | undefined;
   try {
     const body = await res.json();
-    if (body && typeof body.error === "string") return body.error;
+    if (body && typeof body.error === "string") message = body.error;
+    if (body && typeof body.running_id === "string") runningId = body.running_id;
+    if (body && typeof body.open_id === "string") openId = body.open_id;
   } catch {
     /* body may be empty or non-JSON */
   }
-  return `controld returned ${res.status}`;
+  return new ApiError(message, res.status, { runningId, openId });
 }
 
-export async function getJSON<T>(path: string): Promise<T> {
+export async function getJSON<T>(
+  path: string,
+  opts?: { signal?: AbortSignal }
+): Promise<T> {
   const res = await fetch(`${CONTROLD_BASE}${path}`, {
     cache: "no-store",
     headers: authHeaders(),
+    signal: opts?.signal,
   });
   if (!res.ok) {
-    throw new ApiError(await parseError(res), res.status);
+    throw await toApiError(res);
   }
   return (await res.json()) as T;
 }
@@ -65,7 +84,7 @@ export async function postJSON<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    throw new ApiError(await parseError(res), res.status);
+    throw await toApiError(res);
   }
   // 204 (outcome) has no body.
   if (res.status === 204) return undefined as T;
@@ -80,7 +99,7 @@ export async function patchJSON<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    throw new ApiError(await parseError(res), res.status);
+    throw await toApiError(res);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
@@ -92,7 +111,7 @@ export async function getText(path: string): Promise<string> {
     headers: authHeaders(),
   });
   if (!res.ok) {
-    throw new ApiError(await parseError(res), res.status);
+    throw await toApiError(res);
   }
   return await res.text();
 }

@@ -10,11 +10,10 @@ import {
   useCallback,
   useContext,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
-import { getToken as readToken, setToken as persistToken } from "./api";
+import { getJSON, getToken as readToken, setToken as persistToken } from "./api";
 import type { ActionRecord, ActionRequest, SystemDef } from "./types";
 import { ActionModal } from "../components/ActionModal";
 import { ToastStack, type Toast } from "../components/ToastStack";
@@ -29,7 +28,7 @@ interface CockpitCtx {
   saveToken: (t: string) => void;
   addToast: (t: Omit<Toast, "id">) => void;
   openAction: (mode: ActionModalMode) => void;
-  openRunning: (system: string, target: string) => Promise<void>;
+  openRunning: (id: string) => Promise<void>;
   bumpRuns: () => void;
   runsVersion: number;
 }
@@ -49,9 +48,6 @@ export function CockpitProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [mode, setMode] = useState<ActionModalMode | null>(null);
   const [runsVersion, setRunsVersion] = useState(0);
-  const fetchRunsRef = useRef<
-    ((s: string, t: string) => Promise<ActionRecord | null>) | null
-  >(null);
 
   const saveToken = useCallback((t: string) => {
     persistToken(t);
@@ -73,40 +69,22 @@ export function CockpitProvider({ children }: { children: ReactNode }) {
   const openAction = useCallback((m: ActionModalMode) => setMode(m), []);
   const bumpRuns = useCallback(() => setRunsVersion((v) => v + 1), []);
 
-  // Best-effort: find the running action for a (system,target) and reopen it.
-  // 409 responses do not carry the running id, so we look it up in the runs log.
+  // Reopen the running action a 409 pointed at (its body carries running_id).
+  // The modal's attach path streams from the broker, which replays the full
+  // output ring on subscribe — so attaching late loses nothing.
   const openRunning = useCallback(
-    async (system: string, target: string) => {
-      const finder = fetchRunsRef.current;
-      if (!finder) return;
+    async (id: string) => {
       try {
-        const rec = await finder(system, target);
-        if (rec) setMode({ kind: "open", record: rec });
-        else
-          addToast({
-            tone: "warn",
-            message: "Couldn't locate the running action in the runs log.",
-          });
+        const rec = await getJSON<ActionRecord>(
+          `/api/actions/${encodeURIComponent(id)}`
+        );
+        setMode({ kind: "open", record: rec });
       } catch {
-        addToast({ tone: "warn", message: "Failed to load the runs log." });
+        addToast({ tone: "warn", message: "Failed to load the running action." });
       }
     },
     [addToast]
   );
-
-  // Registered lazily to avoid importing the runs fetch here directly.
-  fetchRunsRef.current = async (system, target) => {
-    const { getJSON } = await import("./api");
-    const runs = await getJSON<ActionRecord[]>("/api/runs?limit=20");
-    return (
-      runs.find(
-        (r) =>
-          r.request.system === system &&
-          r.request.target === target &&
-          (r.state === "running" || r.state === "pending")
-      ) ?? null
-    );
-  };
 
   const value = useMemo<CockpitCtx>(
     () => ({
@@ -124,13 +102,7 @@ export function CockpitProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={value}>
       {children}
-      {mode && (
-        <ActionModal
-          mode={mode}
-          onClose={() => setMode(null)}
-          onOpenRecord={(record) => setMode({ kind: "open", record })}
-        />
-      )}
+      {mode && <ActionModal mode={mode} onClose={() => setMode(null)} />}
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </Ctx.Provider>
   );

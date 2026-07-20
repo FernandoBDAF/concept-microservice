@@ -1,6 +1,6 @@
 // controld is lab-controld: the Mission Control daemon (ADR-005.1/.2).
 //
-// v3 shipped the read-only sliver (targets/status/health/links). v6 adds the
+// v3 shipped the read-only sliver (targets/status/health). v6 adds the
 // control plane: actions from the systems/ registry executed as make
 // invocations with streamed output (actions.go, engine.go), run history,
 // and the ADR-005.4 auth gate (localhost stays no-auth; token + TLS are
@@ -10,8 +10,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -27,6 +29,10 @@ const (
 	probeTimeout   = 3 * time.Second
 	targetCacheTTL = 5 * time.Second
 
+	// shutdownTimeout bounds graceful shutdown: running actions get killed and
+	// finalized, then in-flight HTTP requests drain, all within this budget.
+	shutdownTimeout = 10 * time.Second
+
 	composeProjectName = "microservices"
 	kindClusterName    = "lab"
 )
@@ -37,31 +43,6 @@ var kindNamespaces = []string{"lab-core", "lab-infra", "lab-obs"}
 var allowedOrigins = map[string]bool{
 	"http://127.0.0.1:4901": true,
 	"http://localhost:4901": true,
-}
-
-// Link is one UI link for a target.
-type Link struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
-	Note string `json:"note,omitempty"`
-}
-
-// linksByTarget is the static per-target links map, data-driven so the UI
-// stays target-agnostic.
-var linksByTarget = map[string][]Link{
-	"compose": {
-		{Name: "Grafana", URL: "http://localhost:3001"},
-		{Name: "Prometheus", URL: "http://localhost:9090"},
-		{Name: "RabbitMQ", URL: "http://localhost:15672"},
-		{Name: "MinIO Console", URL: "http://localhost:9001"},
-	},
-	"kind": {
-		{Name: "Grafana", URL: "https://grafana.lab.local"},
-		{Name: "OpenSearch", URL: "https://opensearch.lab.local"},
-		{Name: "API", URL: "https://api.lab.local"},
-		{Name: "RabbitMQ", URL: "https://grafana.lab.local", Note: "via Grafana"},
-		{Name: "Tempo", URL: "https://grafana.lab.local", Note: "via Grafana"},
-	},
 }
 
 // HealthResult is one service's health probe outcome.
@@ -140,7 +121,7 @@ func main() {
 		log.Error("registry load failed", "error", err)
 		os.Exit(1) // invalid systems/*.yaml is startup-fatal by design
 	}
-	store := NewStore("runs")
+	store := NewStore("runs", log)
 	engine := NewEngine(cfg, reg, store, log)
 	recorder := NewRecorder("runs", store, log)
 	catalog := NewCatalog(cfg, recorder, log)
@@ -161,7 +142,6 @@ func main() {
 	mux.HandleFunc("GET /api/targets", s.handleTargets)
 	mux.HandleFunc("GET /api/status", s.handleStatus)
 	mux.HandleFunc("GET /api/health", s.handleHealth)
-	mux.HandleFunc("GET /api/links", s.handleLinks)
 	mux.HandleFunc("GET /api/systems", engine.HandleSystems)
 	mux.HandleFunc("POST /api/actions", engine.HandleCreateAction)
 	mux.HandleFunc("GET /api/actions/{id}", engine.HandleGetAction)
@@ -175,17 +155,54 @@ func main() {
 	mux.HandleFunc("GET /api/sessions/{id}/summary", recorder.HandleSummary)
 
 	handler := s.middleware(AuthMiddleware(cfg, log)(mux))
+	ln, err := net.Listen("tcp", *addr)
+	if err != nil {
+		log.Error("listen failed", "addr", *addr, "error", err)
+		os.Exit(1)
+	}
 	if cfg.TLSCert != "" && cfg.TLSKey != "" {
 		log.Info("controld listening (TLS)", "addr", *addr, "mode", "read+control")
-		err = http.ListenAndServeTLS(*addr, cfg.TLSCert, cfg.TLSKey, handler)
 	} else {
 		log.Info("controld listening", "addr", *addr, "mode", "read+control")
-		err = http.ListenAndServe(*addr, handler)
 	}
-	if err != nil {
+	if err := serve(ctx, &http.Server{Handler: handler}, ln, cfg, engine, log); err != nil {
 		log.Error("server exited", "error", err)
 		os.Exit(1)
 	}
+}
+
+// serve runs srv on ln until ctx is canceled (SIGINT), then shuts down
+// gracefully: running actions are canceled (their process groups killed) so
+// they finalize and persist to run history, and in-flight HTTP requests
+// drain — all bounded by shutdownTimeout. A nil return means a clean exit.
+func serve(ctx context.Context, srv *http.Server, ln net.Listener, cfg Config, engine *Engine, log *slog.Logger) error {
+	errCh := make(chan error, 1)
+	go func() {
+		if cfg.TLSCert != "" && cfg.TLSKey != "" {
+			errCh <- srv.ServeTLS(ln, cfg.TLSCert, cfg.TLSKey)
+		} else {
+			errCh <- srv.Serve(ln)
+		}
+	}()
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-ctx.Done():
+	}
+
+	log.Info("shutdown: signal received — canceling actions and draining HTTP")
+	shCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	engine.Shutdown(shCtx)
+	if err := srv.Shutdown(shCtx); err != nil {
+		srv.Close()
+		return err
+	}
+	if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
 }
 
 func envOr(key, fallback string) string {
@@ -358,14 +375,4 @@ func (s *server) probe(ctx context.Context, service, url string) HealthResult {
 		res.Error = "status " + resp.Status
 	}
 	return res
-}
-
-func (s *server) handleLinks(w http.ResponseWriter, r *http.Request) {
-	target := r.URL.Query().Get("target")
-	links, ok := linksByTarget[target]
-	if !ok {
-		writeError(w, http.StatusBadRequest, "unknown target: use ?target=compose or ?target=kind")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"target": target, "links": links})
 }

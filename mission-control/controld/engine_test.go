@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -25,7 +26,7 @@ func execEngine(t *testing.T, cfg Config) *Engine {
 	if cfg.RepoRoot == "" {
 		cfg.RepoRoot = t.TempDir()
 	}
-	store := NewStore(filepath.Join(t.TempDir(), "runs"))
+	store := NewStore(filepath.Join(t.TempDir(), "runs"), quietLogger())
 	return NewEngine(cfg, reg, store, quietLogger())
 }
 
@@ -240,6 +241,7 @@ func TestHTTPRejections(t *testing.T) {
 		{"unknown target", ActionRequest{System: "fixture", Target: "aws", Verb: "up"}, 403}, // aws disabled
 		{"down without confirm", ActionRequest{System: "fixture", Target: "compose", Verb: "down"}, 400},
 		{"scale n out of range", ActionRequest{System: "fixture", Target: "compose", Verb: "scale", Params: map[string]string{"component": "worker", "n": "99"}}, 400},
+		{"experiment unknown target", ActionRequest{System: "fixture", Target: "anything", Verb: "experiment", Params: map[string]string{"id": "exp-1"}}, 404},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -327,6 +329,193 @@ func TestSSETokenQueryParam(t *testing.T) {
 	}
 	if !strings.Contains(endData, `"state":"succeeded"`) {
 		t.Fatalf("end payload = %q", endData)
+	}
+}
+
+// runRawAction registers a fabricated running action for cmd and executes it
+// synchronously (same pattern as the report attachment tests), returning the
+// terminal record and the broker's replay lines.
+func runRawAction(t *testing.T, e *Engine, id, cmd string) (ActionRecord, []string) {
+	t.Helper()
+	key := runKey("raw", id)
+	st := &actionState{
+		rec: &ActionRecord{
+			ID:        id,
+			Request:   ActionRequest{System: "raw", Target: id, Verb: "up"},
+			Command:   cmd,
+			State:     "running",
+			StartedAt: time.Now().UTC(),
+		},
+		broker: newBroker(ringMax),
+	}
+	e.mu.Lock()
+	e.records[id] = st
+	e.running[key] = id
+	e.mu.Unlock()
+
+	e.execute(st, key)
+
+	replay, _, done, _ := st.broker.subscribe()
+	if !done {
+		t.Fatalf("broker not closed after execute")
+	}
+	return st.snapshot(), replay
+}
+
+func TestBackgroundWriterDoesNotBlockCompletion(t *testing.T) {
+	// A backgrounded descendant holding the pipe write end must not keep a
+	// finished action "running" until the verb timeout: the pump drains for a
+	// short bounded grace after process exit, then the read end is closed.
+	e := execEngine(t, Config{})
+	start := time.Now()
+	rec, replay := runRawAction(t, e, "bgwriter00000001", "echo hi; sleep 30 &")
+	elapsed := time.Since(start)
+
+	if rec.State != "succeeded" || rec.ExitCode == nil || *rec.ExitCode != 0 {
+		t.Fatalf("record = %+v, want succeeded/0", rec)
+	}
+	if elapsed > 10*time.Second {
+		t.Fatalf("action took %s — the background writer gated completion", elapsed)
+	}
+	if len(replay) == 0 || replay[0] != "hi" {
+		t.Errorf("replay = %v, want the echoed line first", replay)
+	}
+}
+
+func TestScannerErrorPublishesMarker(t *testing.T) {
+	// A single output line beyond the scanner buffer cap must not silently
+	// fail the action: the child still runs to its own exit, and the stream
+	// carries an explanatory truncation marker.
+	e := execEngine(t, Config{})
+	// ~6 MiB single line, over the 4 MiB cap, then a clean exit 0.
+	rec, replay := runRawAction(t, e, "giantline0000001",
+		"head -c 6291456 /dev/zero | tr '\\0' a; echo; echo done")
+	if rec.State != "succeeded" || rec.ExitCode == nil || *rec.ExitCode != 0 {
+		t.Fatalf("record = %+v, want succeeded/0 despite the oversized line", rec)
+	}
+	found := false
+	for _, l := range replay {
+		if strings.Contains(l, "output truncated") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no truncation marker in replay (len %d)", len(replay))
+	}
+}
+
+func TestEngineShutdownFinalizesRunningAction(t *testing.T) {
+	// Daemon shutdown must kill running actions' process groups so they
+	// finalize (state/exit persisted to run history) instead of being lost.
+	e := execEngine(t, Config{})
+	srv := newTestServer(t, e, Config{}, quietLogger())
+
+	status, body := postAction(t, srv, "", ActionRequest{System: "fixture", Target: "kind", Verb: "up"}) // sleep 5
+	if status != http.StatusAccepted {
+		t.Fatalf("status = %d", status)
+	}
+	id := body["id"]
+	time.Sleep(100 * time.Millisecond) // let the child start
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	start := time.Now()
+	e.Shutdown(ctx)
+	if elapsed := time.Since(start); elapsed > 4*time.Second {
+		t.Fatalf("Shutdown took %s, want prompt group-kill + finalize", elapsed)
+	}
+
+	rec := getAction(t, srv, id, "")
+	if rec.State != "failed" || rec.ExitCode == nil || *rec.ExitCode != -1 {
+		t.Fatalf("record after shutdown = %+v, want failed/-1", rec)
+	}
+	runs, err := e.store.Runs(10)
+	if err != nil {
+		t.Fatalf("store runs: %v", err)
+	}
+	persisted := false
+	for _, r := range runs {
+		if r.ID == id {
+			persisted = true
+		}
+	}
+	if !persisted {
+		t.Error("shutdown-canceled action not persisted to run history")
+	}
+}
+
+func TestEngineRecordEviction(t *testing.T) {
+	// Terminal records beyond recordsMax are evicted oldest-first: the id
+	// 404s afterward while /api/runs keeps the durable history.
+	e := execEngine(t, Config{})
+	e.recordsMax = 1
+	srv := newTestServer(t, e, Config{}, quietLogger())
+
+	_, body1 := postAction(t, srv, "", ActionRequest{System: "fixture", Target: "compose", Verb: "up"})
+	waitTerminal(t, srv, body1["id"], "")
+	_, body2 := postAction(t, srv, "", ActionRequest{System: "fixture", Target: "compose", Verb: "up"})
+	waitTerminal(t, srv, body2["id"], "")
+
+	// Eviction happens inside finalize just after the state turns terminal;
+	// poll briefly for the 404.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		resp, err := http.Get(srv.URL + "/api/actions/" + body1["id"])
+		if err != nil {
+			t.Fatalf("GET evicted action: %v", err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusNotFound {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("first action not evicted (status %d)", resp.StatusCode)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// The newest record is still served.
+	if rec := getAction(t, srv, body2["id"], ""); rec.State != "succeeded" {
+		t.Errorf("retained record = %+v", rec)
+	}
+	// Both remain in the durable history.
+	runs, err := e.store.Runs(10)
+	if err != nil {
+		t.Fatalf("store runs: %v", err)
+	}
+	if len(runs) != 2 {
+		t.Errorf("durable history = %d records, want 2", len(runs))
+	}
+}
+
+func TestTokenQueryRejectedOffStream(t *testing.T) {
+	// The ?token= fallback exists for EventSource only: it must be accepted
+	// solely on the SSE stream route, never on other /api endpoints.
+	const token = "scoped-token"
+	cfg := Config{Token: token}
+	e := execEngine(t, cfg)
+	srv := newTestServer(t, e, cfg, quietLogger())
+
+	for _, path := range []string{"/api/systems", "/api/runs"} {
+		resp, err := http.Get(srv.URL + path + "?token=" + token)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("GET %s with ?token = %d, want 401", path, resp.StatusCode)
+		}
+	}
+	// POST with ?token is rejected too (correct-token Bearer still works —
+	// covered by TestAuthMiddleware; stream ?token by TestSSETokenQueryParam).
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/actions?token="+token,
+		strings.NewReader(`{"system":"fixture","target":"compose","verb":"up"}`))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST actions: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("POST /api/actions with ?token = %d, want 401", resp.StatusCode)
 	}
 }
 

@@ -36,4 +36,8 @@ links:
     prometheus: https://prometheus.lab.local
     opensearch: https://opensearch.lab.local
     ntfy: https://ntfy.lab.local
+    api: https://api.lab.local
+  aws:
+    cost-explorer: https://console.aws.amazon.com/cost-management/home
+    eks-console: https://console.aws.amazon.com/eks/home
 experiments: experiments/

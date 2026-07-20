@@ -36,6 +36,10 @@ type AssertionResult struct {
 	Name   string `json:"name"`
 	Passed bool   `json:"passed"`
 	Detail string `json:"detail,omitempty"`
+	// Skipped marks a <skipped> testcase: not passed, but distinct from a
+	// failure for display. It still counts into ExperimentReport.Failed so the
+	// summary math (passed count = total - failed) stays consistent.
+	Skipped bool `json:"skipped,omitempty"`
 }
 
 // ExperimentReport is the parsed summary of a scored run. (JSON contract — do
@@ -58,8 +62,14 @@ type junitSuite struct {
 type junitCase struct {
 	Name    string        `xml:"name,attr"`
 	Failure *junitFailure `xml:"failure"`
+	// Error and Skipped are not emitted by run.py today, but junit tooling
+	// emits both — neither may silently parse as a passed assertion.
+	Error   *junitFailure `xml:"error"`
+	Skipped *junitFailure `xml:"skipped"`
 }
 
+// junitFailure is the shared shape of <failure>, <error>, and <skipped>
+// children: a message attribute plus optional text content.
 type junitFailure struct {
 	Message string `xml:"message,attr"`
 	Text    string `xml:",chardata"`
@@ -107,19 +117,41 @@ func parseExperimentReport(dir string) (*ExperimentReport, error) {
 		Assertions: make([]AssertionResult, 0, len(suite.Cases)),
 	}
 	for _, tc := range suite.Cases {
-		ar := AssertionResult{Name: tc.Name, Passed: tc.Failure == nil}
-		if tc.Failure != nil {
+		ar := AssertionResult{Name: tc.Name, Passed: true}
+		switch {
+		case tc.Failure != nil:
+			ar.Passed = false
 			rep.Failed++
-			detail := strings.TrimSpace(tc.Failure.Message)
-			if detail == "" {
-				detail = strings.TrimSpace(tc.Failure.Text)
-			}
-			ar.Detail = detail
+			ar.Detail = failureDetail(tc.Failure, "")
+		case tc.Error != nil:
+			// junit <error> (crashed, not asserted-false) → a failure with detail.
+			ar.Passed = false
+			rep.Failed++
+			ar.Detail = failureDetail(tc.Error, "error")
+		case tc.Skipped != nil:
+			// junit <skipped> → not passed; marked distinctly, but counted into
+			// Failed so passed-count math (total - failed) stays consistent.
+			ar.Passed = false
+			ar.Skipped = true
+			rep.Failed++
+			ar.Detail = failureDetail(tc.Skipped, "skipped")
 		}
 		rep.Assertions = append(rep.Assertions, ar)
 	}
 	rep.Passed = rep.Failed == 0
 	return rep, nil
+}
+
+// failureDetail extracts the detail string from a <failure>/<error>/<skipped>
+// child: message attr first, text content second, fallback last.
+func failureDetail(f *junitFailure, fallback string) string {
+	if d := strings.TrimSpace(f.Message); d != "" {
+		return d
+	}
+	if d := strings.TrimSpace(f.Text); d != "" {
+		return d
+	}
+	return fallback
 }
 
 // newestReport returns the path with the most recent mod time (falling back to

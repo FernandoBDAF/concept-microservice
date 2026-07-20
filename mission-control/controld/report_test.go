@@ -101,6 +101,44 @@ func TestParseExperimentReportStepsFailed(t *testing.T) {
 	}
 }
 
+// junitErrorSkipped exercises the junit children run.py does not emit today
+// but junit tooling does: <error> and <skipped> must not parse as passed.
+const junitErrorSkipped = `<?xml version='1.0' encoding='utf-8'?>
+<testsuite name="exp-07" tests="3" failures="0" errors="1" skipped="1" time="4.000" timestamp="2026-07-19T12:00:00">
+  <testcase classname="exp-07" name="http /ready 200" time="0.400" />
+  <testcase classname="exp-07" name="promql q == 0" time="1.000">
+    <error message="prometheus unreachable">promql q == 0: prometheus unreachable</error>
+  </testcase>
+  <testcase classname="exp-07" name="cli check" time="0.000">
+    <skipped message="needs kind target" />
+  </testcase>
+</testsuite>
+`
+
+func TestParseExperimentReportErrorAndSkipped(t *testing.T) {
+	dir := writeReport(t, "exp-07-20260719-120000.xml", junitErrorSkipped)
+	rep, err := parseExperimentReport(dir)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	// error + skipped both count into Failed so passed-count math
+	// (total - failed) stays consistent; the run is not passed.
+	if rep.Passed || rep.Total != 3 || rep.Failed != 2 {
+		t.Fatalf("summary = %+v, want total 3 / failed 2 / passed false", rep)
+	}
+	if !rep.Assertions[0].Passed || rep.Assertions[0].Skipped {
+		t.Errorf("assertion[0] = %+v, want plain pass", rep.Assertions[0])
+	}
+	errCase := rep.Assertions[1]
+	if errCase.Passed || errCase.Skipped || errCase.Detail != "prometheus unreachable" {
+		t.Errorf("error case = %+v, want failed with the error message", errCase)
+	}
+	skipCase := rep.Assertions[2]
+	if skipCase.Passed || !skipCase.Skipped || skipCase.Detail != "needs kind target" {
+		t.Errorf("skipped case = %+v, want not-passed + skipped mark + message", skipCase)
+	}
+}
+
 func TestParseExperimentReportLenient(t *testing.T) {
 	// Empty dir (no xml) → error, not a partial report.
 	if _, err := parseExperimentReport(t.TempDir()); err == nil {
@@ -214,7 +252,7 @@ func TestReportDirFor(t *testing.T) {
 	if d := reportDirFor(nil, "abc"); d != "" {
 		t.Errorf("nil store → %q, want empty", d)
 	}
-	store := NewStore("runs")
+	store := NewStore("runs", quietLogger())
 	d := reportDirFor(store, "deadbeef")
 	if !filepath.IsAbs(d) {
 		t.Errorf("report dir %q is not absolute", d)

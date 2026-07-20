@@ -194,7 +194,7 @@ experiments: ## List scored experiments
 
 # ── Mission Control seed (PRD v3→v6, ADR-001.3/ADR-005) ──────────────────────
 
-controld: ## Run the read-only lab-controld on 127.0.0.1:4900
+controld: ## Run lab-controld (the Mission Control control plane) on 127.0.0.1:4900
 	cd mission-control/controld && go run .
 
 status-page: ## Run the status page on 127.0.0.1:4901

@@ -3,6 +3,8 @@ package main
 import (
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -49,6 +51,7 @@ func TestLoadRegistryBroken(t *testing.T) {
 		"unknown top key":    "testdata/broken-unknown-key",
 		"non-kebab name":     "testdata/broken-noncabeb",
 		"empty scale tmpl":   "testdata/broken-empty-scale",
+		"multiple yaml docs": "testdata/broken-multidoc",
 	}
 	for name, dir := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -56,6 +59,45 @@ func TestLoadRegistryBroken(t *testing.T) {
 				t.Fatalf("expected load error for %s (%s)", name, dir)
 			}
 		})
+	}
+}
+
+func TestLoadRegistryEmptyOrMissingDirFatal(t *testing.T) {
+	// A missing or empty systems/ dir is a misconfig (typically a typo'd
+	// -repo-root) — it must be startup-fatal, never an empty registry.
+	if _, err := LoadRegistry(t.TempDir(), quietLogger()); err == nil {
+		t.Error("empty dir: expected load error, got nil")
+	}
+	missing := filepath.Join(t.TempDir(), "no-such-systems")
+	if _, err := LoadRegistry(missing, quietLogger()); err == nil {
+		t.Error("missing dir: expected load error, got nil")
+	}
+}
+
+// TestLoadRealSystemsRegistry loads the repo's real systems/ dir, guarding the
+// committed registry files (schema validity + the rung-1 deep links).
+func TestLoadRealSystemsRegistry(t *testing.T) {
+	dir, err := filepath.Abs("../../systems")
+	if err != nil {
+		t.Fatalf("abs systems dir: %v", err)
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Skipf("real systems dir not present: %v", err)
+	}
+	reg, err := LoadRegistry(dir, quietLogger())
+	if err != nil {
+		t.Fatalf("load real systems/: %v", err)
+	}
+	lab, ok := reg.System("lab")
+	if !ok {
+		t.Fatal("lab not in real registry")
+	}
+	if got := lab.Links["kind"]["api"]; got != "https://api.lab.local" {
+		t.Errorf("lab kind api link = %q", got)
+	}
+	aws := lab.Links["aws"]
+	if aws["cost-explorer"] != "https://console.aws.amazon.com/cost-management/home" {
+		t.Errorf("lab aws cost-explorer link = %q", aws["cost-explorer"])
 	}
 }
 

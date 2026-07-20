@@ -37,6 +37,11 @@ const (
 	// sessionRunsLimit bounds how many run-history records the summary scans
 	// for actions that fall inside the session window.
 	sessionRunsLimit = 500
+	// sessionsMax caps the in-memory session map: closed sessions beyond this
+	// count are evicted oldest-first (the open session is never evicted).
+	// After eviction — or a daemon restart — PATCH/summary 404 for that id;
+	// the JSONL event log under runs/sessions.jsonl remains on disk.
+	sessionsMax = 200
 )
 
 // runsSource is the minimal slice of wave-1's *Store the summary needs. *Store
@@ -100,10 +105,13 @@ type Recorder struct {
 
 	// now is injectable so timestamps are deterministic in tests.
 	now func() time.Time
+	// closedMax caps retained closed sessions; a field so tests can shrink it.
+	closedMax int
 
-	mu   sync.Mutex
-	open *Session            // the currently-open session, nil if none
-	byID map[string]*Session // every session created this process
+	mu     sync.Mutex
+	open   *Session            // the currently-open session, nil if none
+	byID   map[string]*Session // retained sessions (open + last closedMax closed)
+	closed []string            // closed session ids, oldest first (eviction order)
 }
 
 // NewRecorder constructs a Recorder. runs may be nil (the summary then carries
@@ -113,11 +121,12 @@ func NewRecorder(dir string, runs runsSource, log *slog.Logger) *Recorder {
 		log = slog.Default()
 	}
 	return &Recorder{
-		dir:  dir,
-		runs: runs,
-		log:  log,
-		now:  time.Now,
-		byID: map[string]*Session{},
+		dir:       dir,
+		runs:      runs,
+		log:       log,
+		now:       time.Now,
+		closedMax: sessionsMax,
+		byID:      map[string]*Session{},
 	}
 }
 
@@ -157,8 +166,9 @@ func (r *Recorder) Current() (SessionView, bool) {
 }
 
 // Patch applies an optional note and/or a close to a session. note==nil (or
-// blank) is a no-op for notes; doClose closes an open session (second close →
-// 409). Unknown id → 404.
+// blank) is a no-op for notes; a note on a closed session → 409 (matching
+// close-after-close); doClose closes an open session (second close → 409).
+// Unknown id → 404.
 func (r *Recorder) Patch(id string, note *string, doClose bool) (SessionView, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -167,6 +177,9 @@ func (r *Recorder) Patch(id string, note *string, doClose bool) (SessionView, er
 		return SessionView{}, &sessionError{status: http.StatusNotFound, msg: "no such session: " + id}
 	}
 	if note != nil && strings.TrimSpace(*note) != "" {
+		if s.EndedAt != nil {
+			return SessionView{}, &sessionError{status: http.StatusConflict, msg: "session already closed"}
+		}
 		at := r.now().UTC()
 		s.notes = append(s.notes, noteEntry{at: at, text: *note})
 		r.appendEvent(sessionEvent{Session: s.ID, Kind: "note", At: at, Note: *note})
@@ -180,6 +193,14 @@ func (r *Recorder) Patch(id string, note *string, doClose bool) (SessionView, er
 		s.EndedAt = &at
 		if r.open != nil && r.open.ID == s.ID {
 			r.open = nil
+		}
+		// Cap retained closed sessions, evicting oldest-first (the view is
+		// snapshotted before a potential self-eviction at closedMax=0 edge;
+		// the JSONL event log keeps the durable trace).
+		r.closed = append(r.closed, s.ID)
+		for len(r.closed) > r.closedMax {
+			delete(r.byID, r.closed[0])
+			r.closed = r.closed[1:]
 		}
 		r.appendEvent(sessionEvent{Session: s.ID, Kind: "closed", At: at})
 		r.log.Info("session closed", "id", s.ID)

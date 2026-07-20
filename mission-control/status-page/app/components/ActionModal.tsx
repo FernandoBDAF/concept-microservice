@@ -11,23 +11,28 @@ import { ApiError, getJSON, postJSON, streamUrl } from "../lib/api";
 import { actionStateClass, previewCommand, reportSummary } from "../lib/format";
 import type {
   ActionRecord,
+  ActionRequest,
   ActionState,
   ExperimentReport,
 } from "../lib/types";
 import { useCockpit, type ActionModalMode } from "../lib/store";
 
 const MAX_LINES = 2000;
+// Stream-recovery tuning: a dropped SSE connection retries with doubling
+// backoff; once retries are spent we fall back to polling the record until
+// the terminal state is known (or the modal closes).
+const RECONNECT_MAX = 4;
+const RECONNECT_BASE_MS = 1000;
+const RECOVER_POLL_MS = 3000;
 
 type Phase = "confirm" | "posting" | "streaming" | "done" | "error";
 
 export function ActionModal({
   mode,
   onClose,
-  onOpenRecord,
 }: {
   mode: ActionModalMode;
   onClose: () => void;
-  onOpenRecord: (record: ActionRecord) => void;
 }) {
   const { addToast, openRunning, bumpRuns } = useCockpit();
 
@@ -36,7 +41,7 @@ export function ActionModal({
       ? mode.confirm
         ? "confirm"
         : "posting"
-      : mode.record.state === "running" || mode.record.state === "pending"
+      : mode.record.state === "running"
       ? "streaming"
       : "done";
 
@@ -57,9 +62,7 @@ export function ActionModal({
   const [resolved, setResolved] = useState<boolean>(mode.kind === "open");
   const [lines, setLines] = useState<string[]>([]);
   const [finalState, setFinalState] = useState<ActionState | null>(
-    mode.kind === "open" &&
-      mode.record.state !== "running" &&
-      mode.record.state !== "pending"
+    mode.kind === "open" && mode.record.state !== "running"
       ? mode.record.state
       : null
   );
@@ -77,6 +80,11 @@ export function ActionModal({
 
   const esRef = useRef<EventSource | null>(null);
   const outRef = useRef<HTMLPreElement | null>(null);
+  // Stream-recovery bookkeeping (refs: the retry loop lives across renders).
+  const endedRef = useRef(false);
+  const reconnectAttemptsRef = useRef(0);
+  const retryTimerRef = useRef<number | null>(null);
+  const pollTimerRef = useRef<number | null>(null);
   const request = mode.kind === "launch" ? mode.request : mode.record.request;
 
   const appendLine = useCallback((line: string) => {
@@ -103,12 +111,51 @@ export function ActionModal({
     }
   }, []);
 
+  // Last-resort recovery once stream retries are spent: poll the record until
+  // it reaches a terminal state, then surface state/exit code/report. Keeps
+  // trying while controld is unreachable so the modal never sticks in an
+  // unknown state when the daemon comes back.
+  const pollForFinal = useCallback(
+    function pollForFinal(id: string) {
+      void (async () => {
+        if (endedRef.current) return;
+        try {
+          const rec = await getJSON<ActionRecord>(
+            `/api/actions/${encodeURIComponent(id)}`
+          );
+          if (rec.state !== "running") {
+            endedRef.current = true;
+            setFinalState(rec.state);
+            setExitCode(rec.exit_code);
+            if (rec.report) setReport(rec.report);
+            setStreamError("stream lost — final state recovered from controld");
+            setPhase("done");
+            bumpRuns();
+            return;
+          }
+        } catch {
+          /* controld unreachable right now; keep trying below */
+        }
+        pollTimerRef.current = window.setTimeout(
+          () => pollForFinal(id),
+          RECOVER_POLL_MS
+        );
+      })();
+    },
+    [bumpRuns]
+  );
+
   const startStream = useCallback(
-    (id: string) => {
+    function startStream(id: string) {
       const es = new EventSource(streamUrl(id));
       esRef.current = es;
+      es.onopen = () => {
+        reconnectAttemptsRef.current = 0;
+        setStreamError(null);
+      };
       es.addEventListener("line", (e) => appendLine((e as MessageEvent).data));
       es.addEventListener("end", (e) => {
+        endedRef.current = true;
         try {
           const payload = JSON.parse((e as MessageEvent).data) as {
             state: ActionState;
@@ -119,6 +166,7 @@ export function ActionModal({
         } catch {
           setFinalState("succeeded");
         }
+        setStreamError(null);
         setPhase("done");
         es.close();
         esRef.current = null;
@@ -126,27 +174,45 @@ export function ActionModal({
         void fetchReport(id);
       });
       es.onerror = () => {
-        // EventSource auto-reconnects; close to avoid a storm and surface a
-        // non-fatal note. If the action already ended this is harmless.
-        if (esRef.current) {
-          setStreamError("stream disconnected");
-          es.close();
-          esRef.current = null;
-          setPhase((p) => (p === "streaming" ? "done" : p));
+        // Ignore errors after the end event or an intentional close.
+        if (!esRef.current || endedRef.current) return;
+        es.close();
+        esRef.current = null;
+        const attempt = ++reconnectAttemptsRef.current;
+        if (attempt <= RECONNECT_MAX) {
+          // Reconnecting is lossless: the broker replays its full output ring
+          // on subscribe. Reset the buffer so replayed lines don't duplicate.
+          setStreamError(
+            `stream disconnected — reconnecting (${attempt}/${RECONNECT_MAX})…`
+          );
+          retryTimerRef.current = window.setTimeout(() => {
+            retryTimerRef.current = null;
+            setLines([]);
+            startStream(id);
+          }, RECONNECT_BASE_MS * 2 ** (attempt - 1));
+        } else {
+          setStreamError("stream lost — polling controld for the final state…");
+          pollForFinal(id);
         }
       };
     },
-    [appendLine, bumpRuns, fetchReport]
+    [appendLine, bumpRuns, fetchReport, pollForFinal]
   );
 
   const doPost = useCallback(async () => {
     if (mode.kind !== "launch") return;
     setPhase("posting");
     setErrorMsg(null);
+    // The confirm gate stands in for the CLI's explicit confirm=true: once the
+    // user clicks through it, carry that consent on the wire — controld
+    // rejects destructive verbs without params.confirm="true".
+    const body: ActionRequest = mode.confirm
+      ? { ...mode.request, params: { ...mode.request.params, confirm: "true" } }
+      : mode.request;
     try {
       const res = await postJSON<{ id: string; command: string }>(
         "/api/actions",
-        mode.request
+        body
       );
       setActionId(res.id);
       setCommand(res.command);
@@ -156,14 +222,18 @@ export function ActionModal({
       startStream(res.id);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
+        const runningId = err.runningId;
         addToast({
           tone: "warn",
           message: `An action is already running for ${mode.request.system}/${mode.request.target}.`,
-          action: {
-            label: "View running",
-            onClick: () =>
-              openRunning(mode.request.system, mode.request.target),
-          },
+          ...(runningId
+            ? {
+                action: {
+                  label: "View running",
+                  onClick: () => void openRunning(runningId),
+                },
+              }
+            : {}),
         });
         onClose();
         return;
@@ -184,6 +254,11 @@ export function ActionModal({
     return () => {
       esRef.current?.close();
       esRef.current = null;
+      if (retryTimerRef.current !== null)
+        window.clearTimeout(retryTimerRef.current);
+      if (pollTimerRef.current !== null)
+        window.clearTimeout(pollTimerRef.current);
+      endedRef.current = true; // stop any in-flight recovery poll
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -193,14 +268,27 @@ export function ActionModal({
     if (outRef.current) outRef.current.scrollTop = outRef.current.scrollHeight;
   }, [lines]);
 
-  // Escape closes.
+  // Closing mid-stream detaches the view, not the action — it keeps running
+  // on controld. Hint at that (and the re-attach path) before letting go.
+  const requestClose = useCallback(() => {
+    if (phase === "streaming") {
+      const leave = window.confirm(
+        "The action keeps running on controld after this view closes.\n" +
+          'Re-attach any time: launch the same system/target again and pick "View running" — the full output replays.\n\nClose the view?'
+      );
+      if (!leave) return;
+    }
+    onClose();
+  }, [phase, onClose]);
+
+  // Escape closes (guarded while streaming).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") requestClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [requestClose]);
 
   const title = `${request.verb} · ${request.system} · ${request.target}`;
   const destructive = request.verb === "down";
@@ -210,7 +298,7 @@ export function ActionModal({
   );
 
   return (
-    <div className="overlay" onMouseDown={onClose}>
+    <div className="overlay" onMouseDown={requestClose}>
       <div
         className="modal"
         role="dialog"
@@ -227,7 +315,11 @@ export function ActionModal({
             <span className="prompt-sep"> :: </span>
             {request.target}
           </span>
-          <button className="modal-close" aria-label="Close" onClick={onClose}>
+          <button
+            className="modal-close"
+            aria-label="Close"
+            onClick={requestClose}
+          >
             ×
           </button>
         </div>
@@ -350,7 +442,11 @@ export function ActionModal({
           ) : (
             <span className="prompt-meta">idle</span>
           )}
-          <button className="btn-ghost" style={{ marginLeft: "auto" }} onClick={onClose}>
+          <button
+            className="btn-ghost"
+            style={{ marginLeft: "auto" }}
+            onClick={requestClose}
+          >
             Close
           </button>
         </div>

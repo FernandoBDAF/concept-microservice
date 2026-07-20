@@ -50,6 +50,16 @@ export function SessionBar() {
       await loadCurrent();
       addToast({ tone: "info", message: `Session started: ${title}` });
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        // A session is already open (perhaps from another tab or the CLI) —
+        // adopt it instead of leaving the bar stuck on "Start session".
+        await loadCurrent();
+        addToast({
+          tone: "info",
+          message: "A session is already open — showing it.",
+        });
+        return;
+      }
       addToast({
         tone: "error",
         message: err instanceof Error ? err.message : "Failed to start session",

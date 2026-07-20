@@ -10,7 +10,7 @@ package main
 // auth.go. documentation/phases/v6-HANDOFF.md §2-3 sequences the work.
 //
 // API contract (wired into main.go's mux by the orchestrator — see
-// INTEGRATION-NOTES-A.md):
+// mission-control/README.md):
 //   GET  /api/systems                 -> []System (registry, parsed, by name)
 //   POST /api/actions                 -> start an Action; 202 {id, command}
 //   GET  /api/actions/{id}            -> ActionRecord (state + exit code)
@@ -140,6 +140,9 @@ func resolveCommand(reg *Registry, cfg Config, req ActionRequest) (string, error
 		return strings.ReplaceAll(tmpl, "{n}", strconv.Itoa(n)), nil
 
 	case "experiment":
+		if _, ok := sys.Targets[req.Target]; !ok {
+			return "", apiErr(404, "target not available for system "+req.System+": "+req.Target)
+		}
 		if sys.Experiments == "" {
 			return "", apiErr(400, "system "+req.System+" declares no experiments")
 		}

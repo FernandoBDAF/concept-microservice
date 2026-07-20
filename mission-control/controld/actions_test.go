@@ -70,6 +70,8 @@ func TestResolveCommandRejections(t *testing.T) {
 		{"scale on aws (no template, enabled)", Config{EnableAWS: true}, ActionRequest{System: "lab", Target: "aws", Verb: "scale", Params: map[string]string{"component": "email-worker", "n": "2"}}, 400},
 		{"experiment bad id", noAWS, ActionRequest{System: "lab", Target: "compose", Verb: "experiment", Params: map[string]string{"id": "exp-bad; rm -rf /"}}, 400},
 		{"experiment uppercase id", noAWS, ActionRequest{System: "lab", Target: "compose", Verb: "experiment", Params: map[string]string{"id": "EXP-42"}}, 400},
+		{"experiment unknown target", noAWS, ActionRequest{System: "lab", Target: "anything", Verb: "experiment", Params: map[string]string{"id": "exp-1"}}, 404},
+		{"experiment empty target", noAWS, ActionRequest{System: "lab", Verb: "experiment", Params: map[string]string{"id": "exp-1"}}, 404},
 		{"aws disabled", noAWS, ActionRequest{System: "lab", Target: "aws", Verb: "up"}, 403},
 	}
 	for _, c := range cases {

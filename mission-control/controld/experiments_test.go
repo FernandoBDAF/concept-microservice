@@ -309,6 +309,28 @@ func TestOutcomeUnknownID404(t *testing.T) {
 	}
 }
 
+func TestOutcomeNotesTooLong400(t *testing.T) {
+	// Notes land verbatim in a repo-committed markdown file — cap them.
+	root := writeExpRepo(t, map[string]string{"exp-02.yaml": expValidYAML})
+	c := NewCatalog(Config{RepoRoot: root}, nil, quietLogger())
+	srv := httptest.NewServer(expRouter(c))
+	t.Cleanup(srv.Close)
+
+	huge := strings.Repeat("a", outcomeNotesMax+1)
+	if s := postOutcome(t, srv, "exp-02", `{"result":"pass","notes":"`+huge+`"}`); s != http.StatusBadRequest {
+		t.Errorf("oversized notes status = %d, want 400", s)
+	}
+	// Nothing was appended.
+	if _, err := os.Stat(filepath.Join(root, "documentation", "experiments", "mission-control-outcomes.md")); !os.IsNotExist(err) {
+		t.Errorf("outcome file created for rejected notes")
+	}
+	// At the cap is still accepted.
+	ok := strings.Repeat("a", outcomeNotesMax)
+	if s := postOutcome(t, srv, "exp-02", `{"result":"pass","notes":"`+ok+`"}`); s != http.StatusNoContent {
+		t.Errorf("at-cap notes status = %d, want 204", s)
+	}
+}
+
 func TestOutcomeBadResult400(t *testing.T) {
 	root := writeExpRepo(t, map[string]string{"exp-02.yaml": expValidYAML})
 	c := NewCatalog(Config{RepoRoot: root}, nil, quietLogger())

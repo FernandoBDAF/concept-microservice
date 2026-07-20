@@ -48,63 +48,88 @@ function Cockpit() {
 
   // 5s poll: targets always; lab live state (status + health) only when the
   // selected target is compose/kind and available (the read API covers those).
-  const poll = useCallback(async (current: TargetName) => {
-    let fetchedTargets: Target[];
-    try {
-      fetchedTargets = await getJSON<Target[]>("/api/targets");
-      setTargets(fetchedTargets);
-      setControldDown(false);
-      setAuthError(false);
-    } catch (err) {
-      if (is401(err)) setAuthError(true);
-      else setControldDown(true);
-      setLastPoll(clock());
-      return;
-    }
-
-    const available =
-      fetchedTargets.find((t) => t.name === current)?.available ?? false;
-    const readable = current === "compose" || current === "kind";
-
-    if (!readable || !available) {
-      setLabSnap({ ...emptyLabSnapshot, loaded: false });
-      setLastPoll(clock());
-      return;
-    }
-
-    const next: LabSnapshot = { ...emptyLabSnapshot, loaded: true };
-    try {
-      if (current === "compose") {
-        const status = await getJSON<{ services: ComposeService[] }>(
-          "/api/status?target=compose"
-        );
-        next.services = status.services ?? [];
-      } else {
-        const status = await getJSON<{ workloads: KindWorkload[] }>(
-          "/api/status?target=kind"
-        );
-        next.workloads = status.workloads ?? [];
+  // The caller's AbortSignal cancels a poll that outlives its target selection
+  // so stale responses never land in state.
+  const poll = useCallback(
+    async (current: TargetName, signal: AbortSignal) => {
+      let fetchedTargets: Target[];
+      try {
+        fetchedTargets = await getJSON<Target[]>("/api/targets", { signal });
+        setTargets(fetchedTargets);
+        setControldDown(false);
+        setAuthError(false);
+      } catch (err) {
+        if (signal.aborted) return;
+        if (is401(err)) setAuthError(true);
+        else setControldDown(true);
+        setLastPoll(clock());
+        return;
       }
-    } catch (err) {
-      if (is401(err)) setAuthError(true);
-      next.statusError = err instanceof Error ? err.message : String(err);
-    }
-    try {
-      const health = await getJSON<{ results: HealthResult[] }>(
-        `/api/health?target=${current}`
-      );
-      next.health = health.results ?? [];
-    } catch {
-      // health degrades quietly; status error already surfaces problems
-    }
-    setLabSnap(next);
-    setLastPoll(clock());
-  }, []);
+
+      const available =
+        fetchedTargets.find((t) => t.name === current)?.available ?? false;
+      const readable = current === "compose" || current === "kind";
+
+      if (!readable || !available) {
+        setLabSnap({ ...emptyLabSnapshot, loaded: false });
+        setLastPoll(clock());
+        return;
+      }
+
+      const next: LabSnapshot = { ...emptyLabSnapshot, loaded: true };
+      try {
+        if (current === "compose") {
+          const status = await getJSON<{ services: ComposeService[] }>(
+            "/api/status?target=compose",
+            { signal }
+          );
+          next.services = status.services ?? [];
+        } else {
+          const status = await getJSON<{ workloads: KindWorkload[] }>(
+            "/api/status?target=kind",
+            { signal }
+          );
+          next.workloads = status.workloads ?? [];
+        }
+      } catch (err) {
+        if (signal.aborted) return;
+        if (is401(err)) setAuthError(true);
+        next.statusError = err instanceof Error ? err.message : String(err);
+      }
+      try {
+        const health = await getJSON<{ results: HealthResult[] }>(
+          `/api/health?target=${current}`,
+          { signal }
+        );
+        next.health = health.results ?? [];
+      } catch {
+        // health degrades quietly; status error already surfaces problems
+      }
+      if (signal.aborted) return;
+      setLabSnap(next);
+      setLastPoll(clock());
+    },
+    []
+  );
 
   useEffect(() => {
-    void poll(target);
-    const id = window.setInterval(() => void poll(target), POLL_MS);
-    return () => window.clearInterval(id);
+    const ctrl = new AbortController();
+    let inFlight = false;
+    const run = async () => {
+      if (inFlight) return; // previous poll still running — skip this tick
+      inFlight = true;
+      try {
+        await poll(target, ctrl.signal);
+      } finally {
+        inFlight = false;
+      }
+    };
+    void run();
+    const id = window.setInterval(() => void run(), POLL_MS);
+    return () => {
+      window.clearInterval(id);
+      ctrl.abort(); // drop any in-flight poll for the old target
+    };
   }, [target, poll]);
 
   // Catalogs: fetch once + on target change + manual refresh (never polled).
@@ -138,7 +163,9 @@ function Cockpit() {
 
   const targetAvailable =
     targets.find((t) => t.name === target)?.available ?? false;
-  const labSystem = systems.find((s) => s.name === "lab") ?? null;
+  // The system whose registry entry declares an experiments catalog owns the
+  // scored-run verb (today that's lab; any system declaring one works).
+  const experimentSystem = systems.find((s) => Boolean(s.experiments)) ?? null;
 
   return (
     <main className="console">
@@ -197,7 +224,7 @@ function Cockpit() {
       <ExperimentLibrary
         experiments={experiments}
         target={target}
-        labSystem={labSystem}
+        experimentSystem={experimentSystem}
         onRefresh={() => void loadCatalog()}
         loadError={expError}
       />

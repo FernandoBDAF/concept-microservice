@@ -98,7 +98,9 @@ export interface ActionRequest {
   params?: ActionParams;
 }
 
-export type ActionState = "pending" | "running" | "succeeded" | "failed";
+// controld records are born "running" and finalize to succeeded/failed; there
+// is no queued/pending state.
+export type ActionState = "running" | "succeeded" | "failed";
 
 // ---- scored-experiment report (present only on completed scored runs) ----
 

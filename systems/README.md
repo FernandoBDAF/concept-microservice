@@ -12,10 +12,10 @@ name: lab                  # unique id (kebab-case)
 description: one line
 port_block: core           # or 41xx/42xx/43xx per HOST_CONTRACT.md
 targets:                   # which lab targets can run it, and how.
-  compose:                 # every command MUST be a make target (ADR-005.2:
-    up: make up            # the daemon wraps make, never reimplements it)
-    down: make down
-    status: make ps
+  compose:                 # commands SHOULD be make targets (ADR-005.2: the
+    up: make up            # daemon wraps make, never reimplements it) — but
+    down: make down        # the registry content IS the whitelist, so non-make
+    status: make ps        # commands (e.g. kubectl for guests) are allowed.
   kind:
     up: make cluster-up
     down: make cluster-down
@@ -28,13 +28,19 @@ scale:                     # optional: scalable components
   - component: email-worker
     compose: make scale S=email-worker N={n}
     kind: make cluster-scale S=email-worker N={n}
-links:                     # per-target deep links (status page shows them)
+links:                     # per-target deep links (status page shows them);
   compose: { grafana: "http://localhost:3001", rabbitmq: "http://localhost:15672" }
   kind: { grafana: "https://grafana.lab.local" }
+  aws: { cost-explorer: "https://console.aws.amazon.com/cost-management/home" }
 experiments: experiments/  # dir of scored YAML defs relevant to this system
 ```
 
 Rules: commands are exec'd verbatim from the repo root with streamed
 stdout; `{n}`-style placeholders are filled from validated action params;
 anything not listed here is not invokable (the registry doubles as the
-daemon's action whitelist — see mission-control/controld/actions.go).
+daemon's action whitelist — see mission-control/controld/registry.go and
+actions.go: `make` is preferred, but the enforced rule is the whitelist
+itself, not a make-only restriction). One system per file — a second
+`---` YAML document fails the load. `port_block` is informational only
+(documenting the HOST_CONTRACT.md allocation); the loader does not
+validate it against the `core|41xx|42xx|43xx` set.

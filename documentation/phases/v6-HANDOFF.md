@@ -1,5 +1,14 @@
 # Phase v6 handoff — Mission Control
 
+> **Executed 2026-07-19..20 — kept as the design record.** The as-built
+> differs in places: the stream gained SSE heartbeats and write timeouts;
+> the aws availability check shipped as a read-only
+> `terraform -chdir=deploy/aws/session output` probe, not the `aws-plan`
+> cheap check named in §4; `PATCH /api/sessions/{id}` takes `{note, close}`.
+> Current truth lives in
+> [mission-control/README.md](../../mission-control/README.md) and the
+> honest ledger in [v6-DEFERRED.md](v6-DEFERRED.md).
+
 **Audience:** the session that finishes v6. Grow the v3 seed
 (`mission-control/`) into the full cockpit; wrap `make`, never replace it
 (ADR-005.2). Inherited on `phase/v6`: the systems registry

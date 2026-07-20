@@ -179,6 +179,81 @@ func TestSessionLifecycle(t *testing.T) {
 	}
 }
 
+func TestSessionNoteAfterClose409(t *testing.T) {
+	// A note on a closed session must be rejected (matching close-after-close),
+	// not silently recorded into a window that no longer exists.
+	r := NewRecorder(filepath.Join(t.TempDir(), "runs"), nil, quietLogger())
+	srv := httptest.NewServer(sessionRouter(r))
+	t.Cleanup(srv.Close)
+
+	_, body := doReq(t, http.MethodPost, srv.URL+"/api/sessions", `{"title":"short"}`)
+	var sv SessionView
+	json.Unmarshal([]byte(body), &sv)
+	resp, _ := doReq(t, http.MethodPatch, srv.URL+"/api/sessions/"+sv.ID, `{"close":true}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("close status = %d", resp.StatusCode)
+	}
+
+	resp, body = doReq(t, http.MethodPatch, srv.URL+"/api/sessions/"+sv.ID, `{"note":"too late"}`)
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("note-after-close status = %d, want 409 (body %s)", resp.StatusCode, body)
+	}
+	if !strings.Contains(body, "already closed") {
+		t.Errorf("note-after-close body = %s", body)
+	}
+	// The summary must not carry the rejected note.
+	_, md := doReq(t, http.MethodGet, srv.URL+"/api/sessions/"+sv.ID+"/summary", "")
+	if strings.Contains(md, "too late") {
+		t.Errorf("rejected note leaked into summary:\n%s", md)
+	}
+}
+
+func TestSessionEviction(t *testing.T) {
+	// Closed sessions beyond closedMax are evicted oldest-first: the id 404s
+	// afterward (like after a restart); the JSONL event log stays on disk.
+	dir := filepath.Join(t.TempDir(), "runs")
+	r := NewRecorder(dir, nil, quietLogger())
+	r.closedMax = 1
+	srv := httptest.NewServer(sessionRouter(r))
+	t.Cleanup(srv.Close)
+
+	openClose := func(title string) string {
+		t.Helper()
+		_, body := doReq(t, http.MethodPost, srv.URL+"/api/sessions", `{"title":"`+title+`"}`)
+		var sv SessionView
+		json.Unmarshal([]byte(body), &sv)
+		if sv.ID == "" {
+			t.Fatalf("no session id for %q (body %s)", title, body)
+		}
+		resp, _ := doReq(t, http.MethodPatch, srv.URL+"/api/sessions/"+sv.ID, `{"close":true}`)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("close %q status = %d", title, resp.StatusCode)
+		}
+		return sv.ID
+	}
+	first := openClose("first")
+	second := openClose("second")
+
+	resp, _ := doReq(t, http.MethodGet, srv.URL+"/api/sessions/"+first+"/summary", "")
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("evicted session summary status = %d, want 404", resp.StatusCode)
+	}
+	resp, _ = doReq(t, http.MethodGet, srv.URL+"/api/sessions/"+second+"/summary", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("retained session summary status = %d, want 200", resp.StatusCode)
+	}
+	// The durable event log still holds both sessions' events.
+	data, err := readFileTrim(filepath.Join(dir, "sessions.jsonl"))
+	if err != nil {
+		t.Fatalf("sessions.jsonl: %v", err)
+	}
+	for _, id := range []string{first, second} {
+		if !strings.Contains(data, id) {
+			t.Errorf("sessions.jsonl missing events for %s", id)
+		}
+	}
+}
+
 func TestSessionPatchUnknownID404(t *testing.T) {
 	r := NewRecorder(filepath.Join(t.TempDir(), "runs"), nil, quietLogger())
 	srv := httptest.NewServer(sessionRouter(r))

@@ -107,8 +107,8 @@ independent while both projects are in motion (ADR-005.5).
 ## 7. Mission Control (v6)
 
 One place to control and see the whole lab. Built (Next.js/React) rather than
-assembled; a thin **lab-controld** daemon exposes REST/WS but executes the
-same `make` targets everything else uses — one source of truth. Capability
+assembled; a thin **lab-controld** daemon exposes REST/SSE (ADR-005.6) but
+executes the same `make` targets everything else uses — one source of truth. Capability
 ladder: visibility → control (launch systems/targets) → experiment library →
 multi-environment (compose/kind/AWS). A read-only status page ships early, in
 v3 (ADR-001.3, ADR-005).

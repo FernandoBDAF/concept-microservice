@@ -1,10 +1,12 @@
 "use client";
 
 // Rung 3: the experiment catalog. Cards list id/title/needs; the detail modal
-// renders steps, watch items (each with the lab system's Grafana-family deep
-// links for the current target beside it), and the assertions table. From the
-// detail you can run the scored experiment (streaming action) or record an
-// outcome.
+// renders steps, watch items (each with the experiment-owning system's
+// Grafana-family deep links for the current target beside it), and the
+// assertions table. From the detail you can run the scored experiment
+// (streaming action) or record an outcome. The owning system is whichever
+// registry entry declares an experiments catalog — today lab, but any system
+// declaring one works without UI changes.
 
 import { useCallback, useState } from "react";
 import { postJSON } from "../lib/api";
@@ -19,13 +21,13 @@ import { useCockpit } from "../lib/store";
 export function ExperimentLibrary({
   experiments,
   target,
-  labSystem,
+  experimentSystem,
   onRefresh,
   loadError,
 }: {
   experiments: Experiment[];
   target: TargetName;
-  labSystem: SystemDef | null;
+  experimentSystem: SystemDef | null;
   onRefresh: () => void;
   loadError: string | null;
 }) {
@@ -76,7 +78,7 @@ export function ExperimentLibrary({
         <ExperimentDetail
           exp={selected}
           target={target}
-          labSystem={labSystem}
+          experimentSystem={experimentSystem}
           onClose={() => setSelected(null)}
         />
       )}
@@ -87,38 +89,41 @@ export function ExperimentLibrary({
 function ExperimentDetail({
   exp,
   target,
-  labSystem,
+  experimentSystem,
   onClose,
 }: {
   exp: Experiment;
   target: TargetName;
-  labSystem: SystemDef | null;
+  experimentSystem: SystemDef | null;
   onClose: () => void;
 }) {
   const { openAction, addToast } = useCockpit();
   const [result, setResult] = useState<OutcomeResult>("pass");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
-  const links = labSystem?.links?.[target] ?? {};
+  const links = experimentSystem?.links?.[target] ?? {};
   const linkEntries = Object.entries(links);
 
   const runScored = useCallback(() => {
-    if (!labSystem) {
-      addToast({ tone: "warn", message: "lab system not loaded" });
+    if (!experimentSystem) {
+      addToast({
+        tone: "warn",
+        message: "no system in the registry declares experiments",
+      });
       return;
     }
     openAction({
       kind: "launch",
       request: {
-        system: "lab",
+        system: experimentSystem.name,
         target,
         verb: "experiment",
         params: { id: exp.id },
       },
-      system: labSystem,
+      system: experimentSystem,
       confirm: false,
     });
-  }, [labSystem, target, exp.id, openAction, addToast]);
+  }, [experimentSystem, target, exp.id, openAction, addToast]);
 
   const recordOutcome = useCallback(async () => {
     setSaving(true);
