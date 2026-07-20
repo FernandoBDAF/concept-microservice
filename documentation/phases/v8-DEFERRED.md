@@ -16,14 +16,14 @@ worker + publisher assembled following only the READMEs, wall-clock logged
 honestly. Nothing blocks it except time; run it after D4 closes so the
 clock measures the *proven* templates.
 
-### D2 — EXP-81 (template regression) — partially covered, live run deferred
-The harness exists: per-template `test/bootstrap.sh` + own `ci.yml` +
-the lab's path-filtered `templates` workflow. **No bootstrap script has
-been executed yet** — the authoring environment had no docker daemon
-(Docker Desktop WSL integration off). First execution happens in the PR's
-CI run; treat the first green `templates` job as the real authoring
-validation, and expect to iterate. The deliberately-broken-copy half of
-EXP-81 stays manual until run.
+### D2 — EXP-81 (template regression) — smokes green in CI; broken-copy half pending
+The harness exists and its live half ran: all three `test/bootstrap.sh`
+smokes **passed on their first execution** in PR #18's `templates` CI job
+(2026-07-20 — auth 51s, api-publisher 1m09s, worker-go 1m24s; the
+authoring environment had no docker daemon, so CI was the first run).
+Still pending for EXP-81 proper: the deliberately-broken-copy
+demonstration (a sabotaged copy must FAIL its bootstrap test) + the
+write-up.
 
 ### D3 — EXP-82 (Helm exercise) — chart ready, exercise not run
 `templates/worker-go/chart/` lints and is reconciled against the extracted

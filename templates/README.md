@@ -16,9 +16,9 @@ The lab's original motivation, made deliverable: hardened pieces become
 
 | Template | Source of truth (extraction origin) | Status |
 |---|---|---|
-| [auth-service](auth-service/) | `auth-service/` post-v4 (JWKS, sessions, rotation, lockout, roles) | cut — 32 tests green; live smoke pending (v8-DEFERRED D2) |
-| [worker-go](worker-go/) | `graph-worker/operational-workers/internal/common/*` post-v4 (envelope, consume loop, retry tiers, idempotency, results) | cut — 28 tests green; live smoke pending (v8-DEFERRED D2) |
-| [api-publisher](api-publisher/) | `api-service` post-v4 (outbox+relay, typed submission, JWKS middleware) | cut — 22 tests green; live smoke pending (v8-DEFERRED D2) |
+| [auth-service](auth-service/) | `auth-service/` post-v4 (JWKS, sessions, rotation, lockout, roles) | cut — 32 tests + CI bootstrap smoke green |
+| [worker-go](worker-go/) | `graph-worker/operational-workers/internal/common/*` post-v4 (envelope, consume loop, retry tiers, idempotency, results) | cut — 28 tests + CI bootstrap smoke green |
+| [api-publisher](api-publisher/) | `api-service` post-v4 (outbox+relay, typed submission, JWKS middleware) | cut — 22 tests + CI bootstrap smoke green |
 | [patterns/](patterns/) | docs, not code (cache-aside, storage pipeline, deploy shapes) | written — claims code-verified against post-v4 `main` |
 
 Extraction state (2026-07-19): v8-HANDOFF §§1–5 executed on
