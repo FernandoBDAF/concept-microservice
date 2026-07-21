@@ -1,0 +1,84 @@
+# mycelium graph-api — Python stdlib http.server on 8080. /health and /ready
+# handlers are added guest-side (KM-2, v7-HANDOFF). Exposes /metrics too, so it
+# also gets a ServiceMonitor in ../obs.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mycelium-graph-api
+  namespace: mycelium
+  labels:
+    app: mycelium-graph-api
+    lab.local/guest: mycelium
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+  selector:
+    app: mycelium-graph-api
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mycelium-graph-api
+  namespace: mycelium
+  labels:
+    app: mycelium-graph-api
+    lab.local/guest: mycelium
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mycelium-graph-api
+  template:
+    metadata:
+      labels:
+        app: mycelium-graph-api
+        lab.local/guest: mycelium
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: graph-api
+          image: localhost:5001/mycelium-graph-api:dev
+          imagePullPolicy: Always
+          env:
+            # ADR-007.3: fake LLM/embeddings — zero real keys, zero spend.
+            - name: LLM_MODE
+              value: fake
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8080
+          # /health + /ready handlers added guest-side (KM-2).
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi

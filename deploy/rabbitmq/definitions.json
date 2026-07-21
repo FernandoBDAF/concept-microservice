@@ -3,6 +3,9 @@
   "vhosts": [
     {
       "name": "/"
+    },
+    {
+      "name": "mycelium"
     }
   ],
   "users": [
@@ -19,6 +22,13 @@
     {
       "user": "guest",
       "vhost": "/",
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
+    },
+    {
+      "user": "guest",
+      "vhost": "mycelium",
       "configure": ".*",
       "write": ".*",
       "read": ".*"
@@ -140,6 +150,42 @@
     {
       "name": "task-results",
       "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "mycelium-stages",
+      "vhost": "mycelium",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "mycelium-stages.dlx",
+      "vhost": "mycelium",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "mycelium-results",
+      "vhost": "mycelium",
       "type": "direct",
       "durable": true,
       "auto_delete": false,
@@ -372,6 +418,585 @@
       "durable": true,
       "auto_delete": false,
       "arguments": {}
+    },
+    {
+      "name": "km.stage.ingest",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "mycelium-stages.dlx",
+        "x-dead-letter-routing-key": "km.stage.ingest"
+      }
+    },
+    {
+      "name": "km.stage.ingest.retry.5s",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 5000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.ingest"
+      }
+    },
+    {
+      "name": "km.stage.ingest.retry.30s",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 30000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.ingest"
+      }
+    },
+    {
+      "name": "km.stage.ingest.retry.2m",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 120000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.ingest"
+      }
+    },
+    {
+      "name": "km.stage.ingest.dlq",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 604800000
+      }
+    },
+    {
+      "name": "km.stage.clean",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "mycelium-stages.dlx",
+        "x-dead-letter-routing-key": "km.stage.clean"
+      }
+    },
+    {
+      "name": "km.stage.clean.retry.5s",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 5000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.clean"
+      }
+    },
+    {
+      "name": "km.stage.clean.retry.30s",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 30000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.clean"
+      }
+    },
+    {
+      "name": "km.stage.clean.retry.2m",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 120000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.clean"
+      }
+    },
+    {
+      "name": "km.stage.clean.dlq",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 604800000
+      }
+    },
+    {
+      "name": "km.stage.enrich",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "mycelium-stages.dlx",
+        "x-dead-letter-routing-key": "km.stage.enrich"
+      }
+    },
+    {
+      "name": "km.stage.enrich.retry.5s",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 5000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.enrich"
+      }
+    },
+    {
+      "name": "km.stage.enrich.retry.30s",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 30000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.enrich"
+      }
+    },
+    {
+      "name": "km.stage.enrich.retry.2m",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 120000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.enrich"
+      }
+    },
+    {
+      "name": "km.stage.enrich.dlq",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 604800000
+      }
+    },
+    {
+      "name": "km.stage.chunk",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "mycelium-stages.dlx",
+        "x-dead-letter-routing-key": "km.stage.chunk"
+      }
+    },
+    {
+      "name": "km.stage.chunk.retry.5s",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 5000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.chunk"
+      }
+    },
+    {
+      "name": "km.stage.chunk.retry.30s",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 30000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.chunk"
+      }
+    },
+    {
+      "name": "km.stage.chunk.retry.2m",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 120000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.chunk"
+      }
+    },
+    {
+      "name": "km.stage.chunk.dlq",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 604800000
+      }
+    },
+    {
+      "name": "km.stage.embed",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "mycelium-stages.dlx",
+        "x-dead-letter-routing-key": "km.stage.embed"
+      }
+    },
+    {
+      "name": "km.stage.embed.retry.5s",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 5000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.embed"
+      }
+    },
+    {
+      "name": "km.stage.embed.retry.30s",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 30000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.embed"
+      }
+    },
+    {
+      "name": "km.stage.embed.retry.2m",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 120000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.embed"
+      }
+    },
+    {
+      "name": "km.stage.embed.dlq",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 604800000
+      }
+    },
+    {
+      "name": "km.stage.redundancy",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "mycelium-stages.dlx",
+        "x-dead-letter-routing-key": "km.stage.redundancy"
+      }
+    },
+    {
+      "name": "km.stage.redundancy.retry.5s",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 5000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.redundancy"
+      }
+    },
+    {
+      "name": "km.stage.redundancy.retry.30s",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 30000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.redundancy"
+      }
+    },
+    {
+      "name": "km.stage.redundancy.retry.2m",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 120000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.redundancy"
+      }
+    },
+    {
+      "name": "km.stage.redundancy.dlq",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 604800000
+      }
+    },
+    {
+      "name": "km.stage.trust",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "mycelium-stages.dlx",
+        "x-dead-letter-routing-key": "km.stage.trust"
+      }
+    },
+    {
+      "name": "km.stage.trust.retry.5s",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 5000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.trust"
+      }
+    },
+    {
+      "name": "km.stage.trust.retry.30s",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 30000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.trust"
+      }
+    },
+    {
+      "name": "km.stage.trust.retry.2m",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 120000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.trust"
+      }
+    },
+    {
+      "name": "km.stage.trust.dlq",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 604800000
+      }
+    },
+    {
+      "name": "km.stage.graph_extraction",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "mycelium-stages.dlx",
+        "x-dead-letter-routing-key": "km.stage.graph_extraction"
+      }
+    },
+    {
+      "name": "km.stage.graph_extraction.retry.5s",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 5000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.graph_extraction"
+      }
+    },
+    {
+      "name": "km.stage.graph_extraction.retry.30s",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 30000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.graph_extraction"
+      }
+    },
+    {
+      "name": "km.stage.graph_extraction.retry.2m",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 120000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.graph_extraction"
+      }
+    },
+    {
+      "name": "km.stage.graph_extraction.dlq",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 604800000
+      }
+    },
+    {
+      "name": "km.stage.entity_resolution",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "mycelium-stages.dlx",
+        "x-dead-letter-routing-key": "km.stage.entity_resolution"
+      }
+    },
+    {
+      "name": "km.stage.entity_resolution.retry.5s",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 5000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.entity_resolution"
+      }
+    },
+    {
+      "name": "km.stage.entity_resolution.retry.30s",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 30000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.entity_resolution"
+      }
+    },
+    {
+      "name": "km.stage.entity_resolution.retry.2m",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 120000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.entity_resolution"
+      }
+    },
+    {
+      "name": "km.stage.entity_resolution.dlq",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 604800000
+      }
+    },
+    {
+      "name": "km.stage.graph_construction",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "mycelium-stages.dlx",
+        "x-dead-letter-routing-key": "km.stage.graph_construction"
+      }
+    },
+    {
+      "name": "km.stage.graph_construction.retry.5s",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 5000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.graph_construction"
+      }
+    },
+    {
+      "name": "km.stage.graph_construction.retry.30s",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 30000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.graph_construction"
+      }
+    },
+    {
+      "name": "km.stage.graph_construction.retry.2m",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 120000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.graph_construction"
+      }
+    },
+    {
+      "name": "km.stage.graph_construction.dlq",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 604800000
+      }
+    },
+    {
+      "name": "km.stage.community_detection",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "mycelium-stages.dlx",
+        "x-dead-letter-routing-key": "km.stage.community_detection"
+      }
+    },
+    {
+      "name": "km.stage.community_detection.retry.5s",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 5000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.community_detection"
+      }
+    },
+    {
+      "name": "km.stage.community_detection.retry.30s",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 30000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.community_detection"
+      }
+    },
+    {
+      "name": "km.stage.community_detection.retry.2m",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 120000,
+        "x-dead-letter-exchange": "mycelium-stages",
+        "x-dead-letter-routing-key": "km.stage.community_detection"
+      }
+    },
+    {
+      "name": "km.stage.community_detection.dlq",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-message-ttl": 604800000
+      }
+    },
+    {
+      "name": "mycelium-task-results",
+      "vhost": "mycelium",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
     }
   ],
   "bindings": [
@@ -549,6 +1174,454 @@
       "destination": "task-results",
       "destination_type": "queue",
       "routing_key": "task.result",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages",
+      "vhost": "mycelium",
+      "destination": "km.stage.ingest",
+      "destination_type": "queue",
+      "routing_key": "km.stage.ingest",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.ingest.retry.5s",
+      "destination_type": "queue",
+      "routing_key": "km.stage.ingest.retry.5s",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.ingest.retry.30s",
+      "destination_type": "queue",
+      "routing_key": "km.stage.ingest.retry.30s",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.ingest.retry.2m",
+      "destination_type": "queue",
+      "routing_key": "km.stage.ingest.retry.2m",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.dlx",
+      "vhost": "mycelium",
+      "destination": "km.stage.ingest.dlq",
+      "destination_type": "queue",
+      "routing_key": "km.stage.ingest",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages",
+      "vhost": "mycelium",
+      "destination": "km.stage.clean",
+      "destination_type": "queue",
+      "routing_key": "km.stage.clean",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.clean.retry.5s",
+      "destination_type": "queue",
+      "routing_key": "km.stage.clean.retry.5s",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.clean.retry.30s",
+      "destination_type": "queue",
+      "routing_key": "km.stage.clean.retry.30s",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.clean.retry.2m",
+      "destination_type": "queue",
+      "routing_key": "km.stage.clean.retry.2m",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.dlx",
+      "vhost": "mycelium",
+      "destination": "km.stage.clean.dlq",
+      "destination_type": "queue",
+      "routing_key": "km.stage.clean",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages",
+      "vhost": "mycelium",
+      "destination": "km.stage.enrich",
+      "destination_type": "queue",
+      "routing_key": "km.stage.enrich",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.enrich.retry.5s",
+      "destination_type": "queue",
+      "routing_key": "km.stage.enrich.retry.5s",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.enrich.retry.30s",
+      "destination_type": "queue",
+      "routing_key": "km.stage.enrich.retry.30s",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.enrich.retry.2m",
+      "destination_type": "queue",
+      "routing_key": "km.stage.enrich.retry.2m",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.dlx",
+      "vhost": "mycelium",
+      "destination": "km.stage.enrich.dlq",
+      "destination_type": "queue",
+      "routing_key": "km.stage.enrich",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages",
+      "vhost": "mycelium",
+      "destination": "km.stage.chunk",
+      "destination_type": "queue",
+      "routing_key": "km.stage.chunk",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.chunk.retry.5s",
+      "destination_type": "queue",
+      "routing_key": "km.stage.chunk.retry.5s",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.chunk.retry.30s",
+      "destination_type": "queue",
+      "routing_key": "km.stage.chunk.retry.30s",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.chunk.retry.2m",
+      "destination_type": "queue",
+      "routing_key": "km.stage.chunk.retry.2m",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.dlx",
+      "vhost": "mycelium",
+      "destination": "km.stage.chunk.dlq",
+      "destination_type": "queue",
+      "routing_key": "km.stage.chunk",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages",
+      "vhost": "mycelium",
+      "destination": "km.stage.embed",
+      "destination_type": "queue",
+      "routing_key": "km.stage.embed",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.embed.retry.5s",
+      "destination_type": "queue",
+      "routing_key": "km.stage.embed.retry.5s",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.embed.retry.30s",
+      "destination_type": "queue",
+      "routing_key": "km.stage.embed.retry.30s",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.embed.retry.2m",
+      "destination_type": "queue",
+      "routing_key": "km.stage.embed.retry.2m",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.dlx",
+      "vhost": "mycelium",
+      "destination": "km.stage.embed.dlq",
+      "destination_type": "queue",
+      "routing_key": "km.stage.embed",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages",
+      "vhost": "mycelium",
+      "destination": "km.stage.redundancy",
+      "destination_type": "queue",
+      "routing_key": "km.stage.redundancy",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.redundancy.retry.5s",
+      "destination_type": "queue",
+      "routing_key": "km.stage.redundancy.retry.5s",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.redundancy.retry.30s",
+      "destination_type": "queue",
+      "routing_key": "km.stage.redundancy.retry.30s",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.redundancy.retry.2m",
+      "destination_type": "queue",
+      "routing_key": "km.stage.redundancy.retry.2m",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.dlx",
+      "vhost": "mycelium",
+      "destination": "km.stage.redundancy.dlq",
+      "destination_type": "queue",
+      "routing_key": "km.stage.redundancy",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages",
+      "vhost": "mycelium",
+      "destination": "km.stage.trust",
+      "destination_type": "queue",
+      "routing_key": "km.stage.trust",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.trust.retry.5s",
+      "destination_type": "queue",
+      "routing_key": "km.stage.trust.retry.5s",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.trust.retry.30s",
+      "destination_type": "queue",
+      "routing_key": "km.stage.trust.retry.30s",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.trust.retry.2m",
+      "destination_type": "queue",
+      "routing_key": "km.stage.trust.retry.2m",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.dlx",
+      "vhost": "mycelium",
+      "destination": "km.stage.trust.dlq",
+      "destination_type": "queue",
+      "routing_key": "km.stage.trust",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages",
+      "vhost": "mycelium",
+      "destination": "km.stage.graph_extraction",
+      "destination_type": "queue",
+      "routing_key": "km.stage.graph_extraction",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.graph_extraction.retry.5s",
+      "destination_type": "queue",
+      "routing_key": "km.stage.graph_extraction.retry.5s",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.graph_extraction.retry.30s",
+      "destination_type": "queue",
+      "routing_key": "km.stage.graph_extraction.retry.30s",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.graph_extraction.retry.2m",
+      "destination_type": "queue",
+      "routing_key": "km.stage.graph_extraction.retry.2m",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.dlx",
+      "vhost": "mycelium",
+      "destination": "km.stage.graph_extraction.dlq",
+      "destination_type": "queue",
+      "routing_key": "km.stage.graph_extraction",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages",
+      "vhost": "mycelium",
+      "destination": "km.stage.entity_resolution",
+      "destination_type": "queue",
+      "routing_key": "km.stage.entity_resolution",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.entity_resolution.retry.5s",
+      "destination_type": "queue",
+      "routing_key": "km.stage.entity_resolution.retry.5s",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.entity_resolution.retry.30s",
+      "destination_type": "queue",
+      "routing_key": "km.stage.entity_resolution.retry.30s",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.entity_resolution.retry.2m",
+      "destination_type": "queue",
+      "routing_key": "km.stage.entity_resolution.retry.2m",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.dlx",
+      "vhost": "mycelium",
+      "destination": "km.stage.entity_resolution.dlq",
+      "destination_type": "queue",
+      "routing_key": "km.stage.entity_resolution",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages",
+      "vhost": "mycelium",
+      "destination": "km.stage.graph_construction",
+      "destination_type": "queue",
+      "routing_key": "km.stage.graph_construction",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.graph_construction.retry.5s",
+      "destination_type": "queue",
+      "routing_key": "km.stage.graph_construction.retry.5s",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.graph_construction.retry.30s",
+      "destination_type": "queue",
+      "routing_key": "km.stage.graph_construction.retry.30s",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.graph_construction.retry.2m",
+      "destination_type": "queue",
+      "routing_key": "km.stage.graph_construction.retry.2m",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.dlx",
+      "vhost": "mycelium",
+      "destination": "km.stage.graph_construction.dlq",
+      "destination_type": "queue",
+      "routing_key": "km.stage.graph_construction",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages",
+      "vhost": "mycelium",
+      "destination": "km.stage.community_detection",
+      "destination_type": "queue",
+      "routing_key": "km.stage.community_detection",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.community_detection.retry.5s",
+      "destination_type": "queue",
+      "routing_key": "km.stage.community_detection.retry.5s",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.community_detection.retry.30s",
+      "destination_type": "queue",
+      "routing_key": "km.stage.community_detection.retry.30s",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.retry",
+      "vhost": "mycelium",
+      "destination": "km.stage.community_detection.retry.2m",
+      "destination_type": "queue",
+      "routing_key": "km.stage.community_detection.retry.2m",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-stages.dlx",
+      "vhost": "mycelium",
+      "destination": "km.stage.community_detection.dlq",
+      "destination_type": "queue",
+      "routing_key": "km.stage.community_detection",
+      "arguments": {}
+    },
+    {
+      "source": "mycelium-results",
+      "vhost": "mycelium",
+      "destination": "mycelium-task-results",
+      "destination_type": "queue",
+      "routing_key": "km.stage.result",
       "arguments": {}
     }
   ]

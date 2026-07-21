@@ -1,0 +1,28 @@
+# ServiceMonitors for loam — PLACEHOLDER.
+#
+# loam exposes NO /metrics anywhere today (LOAM_DEPLOYMENT_PLAN recon: "No
+# /metrics anywhere"). There is therefore nothing to scrape, and no live
+# ServiceMonitor is defined. The scaffolding is kept so that the day loam adds a
+# Prometheus endpoint (prefix `loam_...` per HOST_CONTRACT §1.2), wiring it into
+# the shared Grafana is a one-file change: uncomment the block below, point it
+# at the metrics port/path, and set prometheus.io/scrape: "true" in loam.yaml.
+#
+# The overlay must stay kustomize-valid with no live resources, so this file
+# intentionally defines none — the commented block is the template.
+#
+# apiVersion: monitoring.coreos.com/v1
+# kind: ServiceMonitor
+# metadata:
+#   name: loam
+#   namespace: loam
+#   labels:
+#     app: loam
+#     lab.local/guest: loam
+# spec:
+#   selector:
+#     matchLabels:
+#       app: loam
+#   endpoints:
+#     - port: control          # or a dedicated metrics port once it exists
+#       path: /metrics
+#       interval: 15s

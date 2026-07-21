@@ -1,0 +1,77 @@
+# mycelium stages-ui — Next.js on container port 3000 (Next default). No
+# /metrics (UI); /health + /ready handlers added guest-side (KM-2). Reached
+# from the shared ingress at mycelium.lab.local (see ingress.yaml).
+apiVersion: v1
+kind: Service
+metadata:
+  name: mycelium-stages-ui
+  namespace: mycelium
+  labels:
+    app: mycelium-stages-ui
+    lab.local/guest: mycelium
+spec:
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+  selector:
+    app: mycelium-stages-ui
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mycelium-stages-ui
+  namespace: mycelium
+  labels:
+    app: mycelium-stages-ui
+    lab.local/guest: mycelium
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mycelium-stages-ui
+  template:
+    metadata:
+      labels:
+        app: mycelium-stages-ui
+        lab.local/guest: mycelium
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: stages-ui
+          image: localhost:5001/mycelium-stages-ui:dev
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 3000
+          # /health + /ready handlers added guest-side (KM-2).
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 384Mi

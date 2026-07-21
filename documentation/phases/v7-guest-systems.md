@@ -1,8 +1,13 @@
 # Phase v7 — Guest systems: mycelium (formerly KnowledgeManager) & loam
 
-**Status:** recon + plans + handoff landed (expedited 2026-07-19; both
-repos live under `~/repo/forest/`, not the paths below) — execute via
-[v7-HANDOFF.md](v7-HANDOFF.md) · **Depends on:** v6 (systems model), v5
+**Status:** recon + plans + handoff (2026-07-19), then **lab-side
+onboarding landed** (2026-07-19: `guests/mycelium/` + `guests/loam/`
+manifests, the `mycelium` broker vhost, EXP-70..74 scored defs — all
+statically verified). Guest-side code (KM-1/2/4, L-1/2) and every
+experiment *run* remain deferred: repos absent + no live cluster/AWS this
+pass. Ledger: [v7-DEFERRED.md](v7-DEFERRED.md); execute guest-side via
+[v7-HANDOFF.md](v7-HANDOFF.md). Both repos live under `~/repo/forest/`,
+not the paths below · **Depends on:** v6 (systems model), v5
 (AWS sessions) ·
 **Exit tag:** `lab-v7.0` · **Decisions in force:** ADR-007 (all), ADR-005.5,
 ADR-008 (conventions KM adopts), ADR-009.3 (secrets)

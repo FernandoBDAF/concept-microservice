@@ -1,0 +1,54 @@
+# EXP-72 · Agent-run lifecycle (loam) — loam guest exit criterion.
+# Prose companion: EXPERIMENTS.md §EXP-72 (v7). Asserts the operational
+# envelope only (ADR-007.7), not agent output quality.
+#
+# NOT YET RUNNABLE: needs the loam k8s-Jobs runner adapter (L-1 callsite
+# indirection + L-2 k8s provider, guest-side PRs pending) AND L-3 lab
+# onboarding (guests/loam/, namespace `loam`, Secret loam-agent-token,
+# quotas, netpols) live on a kind cluster.
+#
+# Two drills in one file:
+#  (a) happy path — a real loam workflow runs as a Job, completes within its
+#      wall-clock budget, logs + branch artifact retrievable, sandbox cleaned;
+#  (b) hung-agent — an agent forced to stall trips activeDeadlineSeconds
+#      (from runTimeoutMs) and is killed + reported cleanly (DeadlineExceeded).
+id: exp-72
+title: Agent-run lifecycle (loam)
+needs: [kind, guest:loam]
+steps:
+  # Launch a real (small) workflow as a Job in ns loam. CLI-driven in the lab
+  # rehearsal (Mission Control integration is out of scope, ADR-005.5).
+  - run: make loam-run RUN=lifecycle-smoke
+    background: true
+  # Hung-agent drill: same launcher, an agent wedged (sleep) past its budget
+  # so activeDeadlineSeconds fires. Short runTimeoutMs for a fast drill.
+  - run: make loam-run-hung RUN=hung-drill RUN_TIMEOUT_MS=60000
+    background: true
+watch:
+  - "loam Agent Farm → Job phase (lifecycle-smoke: Active → Complete)"
+  - "loam Agent Farm → Job phase (hung-drill: Active → Failed/DeadlineExceeded)"
+assertions:
+  # (a) happy path completes within the wall-clock budget.
+  - type: cli
+    run: kubectl -n loam wait --for=condition=complete job -l loam.run-id=lifecycle-smoke --timeout=840s
+    timeout: 900s
+  # (a) branch artifact retrievable — the Job pushed its branch to origin
+  # (L-2 adapter contract: host reads branchAheadShas against origin/<branch>).
+  - type: cli
+    run: git ls-remote --heads origin | grep -q 'loam/run/lifecycle-smoke'
+    timeout: 60s
+  # (a) logs retrievable — captured from the pod's stdout (fluent-bit path).
+  - type: cli
+    run: kubectl -n loam logs -l loam.run-id=lifecycle-smoke --tail=1 | grep -q .
+    timeout: 60s
+  # (b) hung agent is killed by activeDeadline and reported cleanly: the Job
+  # reaches Failed with reason DeadlineExceeded (backoffLimit 0 → no retries).
+  - type: cli
+    run: kubectl -n loam wait --for=condition=failed job -l loam.run-id=hung-drill --timeout=180s && kubectl -n loam get job -l loam.run-id=hung-drill -o jsonpath='{.items[*].status.conditions[?(@.type=="Failed")].reason}' | grep -q DeadlineExceeded
+    timeout: 240s
+  # NOTE: "sandbox cleaned" is enforced by ttlSecondsAfterFinished: 3600 (L-2)
+  # — the pod/Job are GC'd an hour after finish, longer than any experiment
+  # window, so it is a deferred human/next-run check, not scored here.
+cleanup:
+  - run: make loam-clean RUN=lifecycle-smoke
+  - run: make loam-clean RUN=hung-drill

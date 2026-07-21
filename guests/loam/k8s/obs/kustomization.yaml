@@ -1,0 +1,11 @@
+# loam obs overlay — separate from base because ServiceMonitors need the
+# monitoring.coreos.com CRDs from the obs stack (deploy/obs, phase v3).
+#
+# loam exposes NO Prometheus metrics today (recon finding), so this overlay
+# currently renders nothing but the (disabled) placeholder. Apply only after the
+# obs stack is installed, and only once loam grows a /metrics endpoint:
+#   kubectl apply -k guests/loam/k8s/obs
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - servicemonitors.yaml

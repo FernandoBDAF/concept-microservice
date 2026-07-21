@@ -14,6 +14,16 @@ architecture): `documentation/deployment/KM_DEPLOYMENT_PLAN.md`,
 Inherited on `phase/v7`: draft systems entries (`systems/mycelium.yaml`,
 `systems/loam.yaml` — marked DRAFT) and both deployment plans.
 
+> **UPDATE 2026-07-19 — lab-side onboarding landed.** The steps that live
+> in *this* repo are done and statically verified: **KM-3** (`guests/mycelium/`
+> + the `mycelium` broker vhost in `generate-definitions.py`), **L-3**
+> (`guests/loam/`), the EXP-70..74 scored defs, and the systems-entry notes.
+> What remains is the **guest-side** work (KM-1/2/4, L-1/2 — repos absent
+> this pass) and every experiment *run* (no live cluster/AWS). The honest
+> ledger of what's left, with entry points, is
+> [v7-DEFERRED.md](v7-DEFERRED.md). The KM/loam sections below are the
+> guest-side spec — still the source of truth for those PRs.
+
 ## KM track
 
 **KM-1 (mycelium repo) — fake-LLM mode (ADR-007.3, contract gate):**

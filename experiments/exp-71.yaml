@@ -1,0 +1,47 @@
+# EXP-71 · KM budgeted real run — mycelium guest exit criterion.
+# Prose companion: EXPERIMENTS.md §EXP-71 (v7). Sibling of EXP-70: same
+# pipeline, real keys, ONE small ingestion under a hard budget.
+#
+# MANUAL / BUDGETED — requires real OPENAI/VOYAGE keys; run DELIBERATELY,
+# never in unattended CI. Spend is capped by MAX_ITERATIONS + batch sizes
+# (KM plan §cost model). The dollar figure and the fake-vs-real per-stage
+# timing comparison are recorded by a human in the write-up (EXP-71 cost
+# line, phase acceptance) — the runner cannot score "$ spent".
+#
+# NOT YET RUNNABLE: same guest-image + onboarding prerequisites as EXP-70,
+# PLUS a funded real key mounted from the lab secret path (not fake mode).
+id: exp-71
+title: KM budgeted real run
+needs: [compose, guest:mycelium]
+steps:
+  # Real mode: keys come from the lab secret path, NOT the repo. One small
+  # ingestion (a single short video / tiny batch) bounded by MAX_ITERATIONS.
+  - run: make km-up MODE=real
+  - run: make km-ingest VIDEO=fixtures/real/one-short.json MAX_ITERATIONS=5
+    background: true
+watch:
+  - "KM Pipeline → stage queue depth (drains once the single run completes)"
+  - "KM Pipeline → per-stage duration (compare against EXP-70 fake timings)"
+  - "KM Pipeline → LLM tokens / Voyage RPM (the spend meter)"
+assertions:
+  # Pipeline completes — the one budgeted run drains every stage queue.
+  # Generous deadline: real OpenAI + Voyage (20 RPM cap) is far slower than
+  # fake mode.
+  - type: promql
+    query: sum(rabbitmq_queue_messages{vhost="mycelium",queue=~"km\\.stage\\..*"})
+    op: "<="
+    value: 0
+    timeout: 1800s
+  # Budget guard: the iteration cap is set and small — proves the run is
+  # bounded, not open-ended (the mechanical half of "hard budget"; the $
+  # ceiling itself is a human write-up check).
+  - type: cli
+    run: docker compose -p mycelium exec -T stages-api sh -c 'test -n "$MAX_ITERATIONS" && test "$MAX_ITERATIONS" -le 10'
+    timeout: 30s
+  # stages-api readiness (lab port 4220, KM-3 port block).
+  - type: http
+    url: http://localhost:4220/ready
+    status: 200
+    timeout: 60s
+cleanup:
+  - run: make km-down

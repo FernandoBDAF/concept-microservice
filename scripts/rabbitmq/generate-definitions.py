@@ -20,6 +20,14 @@ Design (ADR-008.1/.3/.5/.6):
   failure; api-service consumes and advances document/task status.
 - No default-tasks parking lot (ADR-008.6).
 
+Guest vhosts (ADR-007.1/.4): a guest that adopts the lab's queue conventions
+gets its OWN vhost so its topology is isolated from lab-core but built from
+the SAME retry-tier/DLQ pattern (the migration is the exercise). The mycelium
+guest onboards its pipeline this way — each pipeline stage becomes a work
+queue `km.stage.<name>` on the `mycelium` vhost with the identical 5s/30s/2m
+retry ladder + a per-stage DLQ, and a `mycelium-results` loop mirrors
+`task-results`. See documentation/deployment/KM_DEPLOYMENT_PLAN.md §2.
+
 Run: python3 scripts/rabbitmq/generate-definitions.py
 """
 import base64
@@ -38,6 +46,20 @@ RETRY_TIERS = [("5s", 5_000), ("30s", 30_000), ("2m", 120_000)]
 EMAIL_STALENESS_TTL_MS = 3_600_000  # 1h — same envelope as the old queue TTL
 EMAIL_EXPIRED_RETENTION_MS = 86_400_000
 
+# --- guest: mycelium (GraphRAG pipeline) — ADR-007.1/.4 -------------------
+# Its own vhost; stage boundaries become lab envelopes (KM_DEPLOYMENT_PLAN §2).
+# Pipeline order (recon): ingestion ingest→…→trust, then graphrag
+# graph_extraction→…→community_detection. Each stage = one work queue on the
+# `mycelium-stages` exchange, same retry ladder + DLQ as lab-core.
+MYCELIUM_VHOST = "mycelium"
+MYCELIUM_EXCHANGE = "mycelium-stages"
+MYCELIUM_STAGES = [
+    "ingest", "clean", "enrich", "chunk", "embed", "redundancy", "trust",
+    "graph_extraction", "entity_resolution", "graph_construction",
+    "community_detection",
+]
+MYCELIUM_DLQ_TTL_MS = 604_800_000  # 7d — matches the document pipeline DLQ
+
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 OUT_DIR = os.path.join(ROOT, "deploy", "rabbitmq")
 
@@ -52,17 +74,17 @@ def guest_password_hash() -> str:
 def build():
     exchanges, queues, bindings = [], [], []
 
-    def exchange(name):
-        exchanges.append({"name": name, "vhost": "/", "type": "direct",
+    def exchange(name, vhost="/"):
+        exchanges.append({"name": name, "vhost": vhost, "type": "direct",
                           "durable": True, "auto_delete": False, "internal": False,
                           "arguments": {}})
 
-    def queue(name, args):
-        queues.append({"name": name, "vhost": "/", "durable": True,
+    def queue(name, args, vhost="/"):
+        queues.append({"name": name, "vhost": vhost, "durable": True,
                        "auto_delete": False, "arguments": args})
 
-    def bind(src, dest, rk):
-        bindings.append({"source": src, "vhost": "/", "destination": dest,
+    def bind(src, dest, rk, vhost="/"):
+        bindings.append({"source": src, "vhost": vhost, "destination": dest,
                          "destination_type": "queue", "routing_key": rk,
                          "arguments": {}})
 
@@ -103,15 +125,52 @@ def build():
     queue("task-results", {})
     bind("task-results", "task-results", "task.result")
 
+    # --- guest: mycelium vhost (ADR-007.1/.4) ----------------------------
+    # Same generator pattern as lab-core, isolated on its own vhost. Each
+    # pipeline stage gets a work queue + the 5s/30s/2m retry ladder + a DLQ;
+    # `mycelium-results` mirrors `task-results` so a controller can consume
+    # stage completions and advance the pipeline (KM_DEPLOYMENT_PLAN §2).
+    mv = MYCELIUM_VHOST
+    mex = MYCELIUM_EXCHANGE
+    exchange(mex, mv)
+    exchange(f"{mex}.dlx", mv)
+    exchange(f"{mex}.retry", mv)
+    for stage in MYCELIUM_STAGES:
+        rk = f"km.stage.{stage}"
+        q = f"km.stage.{stage}"
+        queue(q, {
+            "x-dead-letter-exchange": f"{mex}.dlx",
+            "x-dead-letter-routing-key": rk,
+        }, mv)
+        bind(mex, q, rk, mv)
+        for tier, ttl in RETRY_TIERS:
+            rq = f"{q}.retry.{tier}"
+            queue(rq, {
+                "x-message-ttl": ttl,
+                "x-dead-letter-exchange": mex,
+                "x-dead-letter-routing-key": rk,
+            }, mv)
+            bind(f"{mex}.retry", rq, f"{rk}.retry.{tier}", mv)
+        queue(f"{q}.dlq", {"x-message-ttl": MYCELIUM_DLQ_TTL_MS}, mv)
+        bind(f"{mex}.dlx", f"{q}.dlq", rk, mv)
+    # stage-completion feedback loop for the mycelium controller
+    exchange("mycelium-results", mv)
+    queue("mycelium-task-results", {}, mv)
+    bind("mycelium-results", "mycelium-task-results", "km.stage.result", mv)
+
     return {
         "rabbit_version": "3.12.0",
-        "vhosts": [{"name": "/"}],
+        "vhosts": [{"name": "/"}, {"name": MYCELIUM_VHOST}],
         # load_definitions at boot skips default-user creation, so guest must
         # be declared here (lab-only credential, matches compose/cluster)
         "users": [{"name": "guest", "password_hash": guest_password_hash(),
                    "hashing_algorithm": "rabbit_password_hashing_sha256",
                    "tags": ["administrator"]}],
+        # guest has full rights on lab-core (/) and the mycelium guest vhost;
+        # on kind the password is rotated by init-secrets (v4-HANDOFF §A1)
         "permissions": [{"user": "guest", "vhost": "/",
+                         "configure": ".*", "write": ".*", "read": ".*"},
+                        {"user": "guest", "vhost": MYCELIUM_VHOST,
                          "configure": ".*", "write": ".*", "read": ".*"}],
         "topic_permissions": [],
         "parameters": [],
@@ -144,7 +203,24 @@ def routing_table_md(defs):
         "- `task-results` (rk `task.result`): workers/graphrag publish completion/failure; api-service consumes (ADR-008.3).",
         "- No `default-tasks` fallback — unknown routing keys are a publisher bug and fail fast (ADR-008.6).",
         "",
-        f"Totals: {len(defs['exchanges'])} exchanges, {len(defs['queues'])} queues, {len(defs['bindings'])} bindings.",
+        "## Guest vhost: `mycelium` (ADR-007.1/.4)",
+        "",
+        f"Exchange `{MYCELIUM_EXCHANGE}` (+ `.retry`/`.dlx`) on vhost `{MYCELIUM_VHOST}`.",
+        "Each pipeline stage is a work queue with the same 5s/30s/2m retry ladder",
+        "and a per-stage DLQ; `mycelium-results` (rk `km.stage.result`) closes the",
+        "loop. Built by the same generator so the guest inherits lab conventions —",
+        "the migration is the exercise (KM_DEPLOYMENT_PLAN §2).",
+        "",
+        "| routing key | work queue | retry tiers | DLQ (TTL) |",
+        "|---|---|---|---|",
+    ]
+    for stage in MYCELIUM_STAGES:
+        tiers = "/".join(t for t, _ in RETRY_TIERS)
+        lines.append(f"| `km.stage.{stage}` | `km.stage.{stage}` | {tiers} | "
+                     f"`km.stage.{stage}.dlq` ({MYCELIUM_DLQ_TTL_MS // 3_600_000}h) |")
+    lines += [
+        "",
+        f"Totals: {len(defs['exchanges'])} exchanges, {len(defs['queues'])} queues, {len(defs['bindings'])} bindings (across all vhosts).",
     ]
     return "\n".join(lines) + "\n"
 

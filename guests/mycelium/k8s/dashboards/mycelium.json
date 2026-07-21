@@ -1,0 +1,83 @@
+{
+  "id": null,
+  "uid": "mycelium-stages",
+  "title": "mycelium — stages",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "tags": ["lab", "guest", "mycelium"],
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Stage throughput (processed/s by stage)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (stage) (rate(mycelium_stage_processed_total[2m]))",
+          "legendFormat": "{{stage}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Stage duration p95 (by stage)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, stage) (rate(mycelium_stage_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{stage}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Stage queue depth (km.stage.* on vhost mycelium)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rabbitmq_queue_messages{vhost=\"mycelium\", queue=~\"km\\\\.stage\\\\.[^.]+\"}",
+          "legendFormat": "{{queue}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Dead-letter depth (km.stage.*.dlq on vhost mycelium)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rabbitmq_queue_messages{vhost=\"mycelium\", queue=~\"km\\\\.stage\\\\..+\\\\.dlq\"}",
+          "legendFormat": "{{queue}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "text",
+      "title": "About this dashboard",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 16 },
+      "options": {
+        "mode": "markdown",
+        "content": "Stage counters/durations come from mycelium's Prometheus `/metrics` (stages-api). **The exact metric names (`mycelium_stage_processed_total`, `mycelium_stage_duration_seconds`, label `stage`) are confirmed guest-side (KM-2)** — adjust here if they differ. Queue panels read the shared RabbitMQ exporter for the `mycelium` vhost; the `km.stage.<name>` topology + `.dlq` are owned by the orchestrator's generator (ADR-007.4). In fake mode (EXP-70) stages drain with zero LLM spend."
+      }
+    }
+  ]
+}

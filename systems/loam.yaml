@@ -1,8 +1,13 @@
-# DRAFT (phase v7 — not yet launchable): loam guest registration.
-# Port block 43xx (HOST_CONTRACT.md). The knowledge UI is the long-running
-# service; agent runs execute as k8s Jobs in namespace `loam` (ADR-007.5)
-# and are NOT a systems-registry target — they arrive via the loam-side
-# runner adapter (v7-HANDOFF.md §5 spec).
+# loam guest registration. Port block 43xx (HOST_CONTRACT.md). The knowledge
+# UI is the long-running service; agent runs execute as k8s Jobs in namespace
+# `loam` (ADR-007.5) and are NOT a systems-registry target — they arrive via
+# the loam-side runner adapter (v7-HANDOFF.md §5 spec).
+# Lab-side onboarding HAS LANDED (guests/loam/ — ns, UI+control deploy,
+# quotas, netpols, placeholder Secret, phase v7 lab-side pass); targets/links
+# below are live config. STILL NOT LAUNCHABLE END-TO-END: the loam image +
+# the k8s-Jobs adapter are built guest-side (L-1/L-2, PRs pending), so
+# `guest-up`/`apply -k` will not pull until those land. See
+# documentation/phases/v7-DEFERRED.md.
 name: loam
 description: loam knowledge UI (service) + agent runs as k8s Jobs — guest
 port_block: 43xx

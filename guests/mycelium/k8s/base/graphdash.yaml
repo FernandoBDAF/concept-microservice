@@ -1,0 +1,77 @@
+# mycelium graphdash — Next.js on container port 3000 (Next default). No
+# /metrics (UI); /health + /ready handlers added guest-side (KM-2). Reached
+# from the shared ingress at mycelium.lab.local/graph (see ingress.yaml).
+apiVersion: v1
+kind: Service
+metadata:
+  name: mycelium-graphdash
+  namespace: mycelium
+  labels:
+    app: mycelium-graphdash
+    lab.local/guest: mycelium
+spec:
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+  selector:
+    app: mycelium-graphdash
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mycelium-graphdash
+  namespace: mycelium
+  labels:
+    app: mycelium-graphdash
+    lab.local/guest: mycelium
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mycelium-graphdash
+  template:
+    metadata:
+      labels:
+        app: mycelium-graphdash
+        lab.local/guest: mycelium
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: graphdash
+          image: localhost:5001/mycelium-graphdash:dev
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 3000
+          # /health + /ready handlers added guest-side (KM-2).
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 384Mi

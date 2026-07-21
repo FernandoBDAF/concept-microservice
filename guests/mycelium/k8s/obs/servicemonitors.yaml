@@ -1,0 +1,45 @@
+# ServiceMonitors for mycelium — kept apart from base because they need the
+# monitoring.coreos.com CRDs from the obs stack (deploy/obs, phase v3). Apply
+# only after the obs stack is installed:
+#   kubectl apply -k guests/mycelium/k8s/obs
+#
+# NOTE: kube-prometheus-stack must be configured to select ServiceMonitors
+# across namespaces regardless of helm-release labels
+# (serviceMonitorSelectorNilUsesHelmValues: false) — or add its release label
+# here to match deploy/obs's selector.
+#
+# stages-api definitely exposes /metrics (Prometheus text). graph-api exposes
+# /metrics too (KM-2 adds the trivial handlers); both are scraped here.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: mycelium-stages-api
+  namespace: mycelium
+  labels:
+    app: mycelium-stages-api
+    lab.local/guest: mycelium
+spec:
+  selector:
+    matchLabels:
+      app: mycelium-stages-api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: mycelium-graph-api
+  namespace: mycelium
+  labels:
+    app: mycelium-graph-api
+    lab.local/guest: mycelium
+spec:
+  selector:
+    matchLabels:
+      app: mycelium-graph-api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s

@@ -1,8 +1,11 @@
-# DRAFT (phase v7 — not yet launchable): mycelium (formerly
-# KnowledgeManager) guest registration. Port block 42xx (HOST_CONTRACT.md).
-# Becomes real when guests/mycelium/ lands per v7-HANDOFF.md §2-3; until
-# then controld should surface it as "planned" (registry loader treats a
-# missing guests/<name>/ dir as not-launchable).
+# mycelium (formerly KnowledgeManager) guest registration. Port block 42xx
+# (HOST_CONTRACT.md). Lab-side onboarding HAS LANDED (guests/mycelium/ + the
+# `mycelium` broker vhost, phase v7 lab-side pass) — the targets/links below
+# are live config. STILL NOT LAUNCHABLE END-TO-END: the container images are
+# built guest-side (KM-1 fake mode + KM-2 containerize, PRs pending), so
+# `guest-up`/`apply -k` will not pull until those land. controld should
+# surface it as "planned" until the images exist. See
+# documentation/phases/v7-DEFERRED.md.
 name: mycelium
 description: GraphRAG ingestion pipeline (YouTube → knowledge graphs) — guest
 port_block: 42xx

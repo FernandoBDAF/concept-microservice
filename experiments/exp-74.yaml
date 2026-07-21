@@ -1,0 +1,45 @@
+# EXP-74 · Guest on AWS — joint v7 exit criterion (owner's pick: mycelium).
+# Prose companion: EXPERIMENTS.md §EXP-74 (v7). One guest runs a scaled-down
+# drill inside a real AWS session; cost recorded; teardown leaves NOTHING.
+#
+# NOT YET RUNNABLE — BLOCKED / DEFERRED ON v5: the AWS-sessions track (v5) is
+# NOT yet executed, so there is no `aws` runner pre-check, no session
+# terraform, no EKS context. This def registers the exit criterion; it runs
+# only after v5 lands and the guest images (EXP-70..71 prerequisites) exist.
+# Owner picks the guest at execution time — drafted here for mycelium; the
+# loam variant swaps the namespace/readiness for ns loam + /api/capabilities.
+#
+# Cost line ($ for the session) is recorded by a human in the write-up
+# (EXP-74 cost line, phase acceptance) — the runner cannot score "$ spent".
+id: exp-74
+title: Guest on AWS
+needs: [aws, guest:mycelium]
+steps:
+  # Stand up a short-lived AWS session (v5 terraform), deploy the guest
+  # scaled to dev numbers, run a smoke drill that WAITS for readiness and
+  # records a proof marker, then tear the whole session down. Target names
+  # arrive with v5 (aws/sessions/*) + the guest onboarding.
+  - run: make aws-session-up SESSION=exp-74
+  - run: make km-aws-drill SESSION=exp-74 SCALE=down   # deploy + smoke; writes artifacts/exp-74-ready.txt
+  - run: make aws-session-down SESSION=exp-74          # teardown (also repeated in cleanup)
+watch:
+  - "AWS Session → guest pod readiness inside the session"
+  - "AWS Session → cost explorer / session tag spend (the cost line)"
+  - "AWS Session → terraform state (empty after teardown)"
+assertions:
+  # Readiness WAS achieved in the AWS session — checked against the marker
+  # the drill recorded (temporally consistent with the post-teardown state
+  # below; the live pod is gone by now, so we assert the captured proof).
+  - type: cli
+    run: grep -q 'stages-api ready' artifacts/exp-74-ready.txt
+    timeout: 60s
+  # Teardown leaves no running resources: no live guest namespace in the
+  # session context AND the session's terraform state is empty. This is the
+  # "leaves nothing" guarantee — a leaked EKS/RDS resource is billable.
+  - type: cli
+    run: '! kubectl --context aws-session-exp-74 get ns mycelium >/dev/null 2>&1 && ! terraform -chdir=aws/sessions/exp-74 state list 2>/dev/null | grep -q .'
+    timeout: 300s
+cleanup:
+  # Idempotent belt-and-suspenders teardown — always runs, even if a step
+  # failed mid-session, so no AWS resource is left billing.
+  - run: make aws-session-down SESSION=exp-74
