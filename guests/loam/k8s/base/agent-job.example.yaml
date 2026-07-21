@@ -16,6 +16,18 @@
 #   • backoffLimit 0 (retries are loam's decision, not the Job controller's)
 #   • activeDeadlineSeconds = wall-clock budget (hung agent is killed → EXP-72)
 #   • ttlSecondsAfterFinished cleans the Job object up automatically
+#
+# ⚠️ EXECUTION MODEL — the deepest open L-2 decision (recon 2026-07-20,
+# loam@29044d8): loam TODAY is HOST-DRIVEN — the host holds the sandbox handle
+# and drives the agent via streamed exec while the container just `sleep
+# infinity`s; there is NO `loam-agent` binary. This example shows the
+# ALTERNATIVE autonomous-in-pod shape (the pod runs the agent itself and pushes
+# the branch). The k8s-Jobs adapter (L-2) must pick one: keep host-driving the
+# pod (kubectl exec/API — fits sandcastle's IsolatedSandboxProvider, which is
+# also host-driven-over-remote-exec) OR build a real in-image agent entrypoint.
+# Until that is decided, `loam-agent run` below is a placeholder for that
+# entrypoint, and `git push` stands in for loam's host-side branch retrieval
+# (branchAheadShas against origin/<branch>).
 apiVersion: batch/v1
 kind: Job
 metadata:

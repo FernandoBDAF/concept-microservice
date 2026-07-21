@@ -1,16 +1,28 @@
 # loam long-running surface — the knowledge UI (:4400, Hono+React, read-only
-# GETs) and the orchestrate control API (:4500, Hono). Both default to loopback
-# in the loam repo; the container image binds host=0.0.0.0 (via HOST env) so the
-# kubelet and the Service can reach them. Deployed as ONE pod/one container that
-# serves both ports (recon: two Hono servers, one process) — mirrors how
-# hello-guest keeps a component simple.
+# GETs) and the orchestrate control API (:4500, Hono). Deployed as ONE pod/one
+# container that serves both ports (recon: two Hono servers, one process).
+#
+# ⚠️ TWO guest-side prerequisites before this Deployment is actually reachable
+# (recon 2026-07-20, loam@29044d8):
+#  1. loam does NOT read process.env.HOST — `serve` binds non-loopback only via
+#     a --host FLAG and `loam ui` has no host option at all, so both servers
+#     default to 127.0.0.1. The HOST env below is a NO-OP until the guest-side
+#     image adds HOST/--host support; without it the Service/kubelet cannot
+#     reach the containers.
+#  2. the control API (:4500) 403s any non-loopback Host header (loopback-only,
+#     enforced) — a kubelet probe would be rejected. So the probes below target
+#     the UI (:4400), which has no such guard, and go green only once (1) lands.
+# Both are tracked as guest-side work (L-1/L-2 + a containerize step); the
+# :dev image itself is guest-side, so this manifest is the contract, not yet
+# runnable.
 #
 # Agent RUNS are NOT here: they arrive as k8s Jobs (see agent-job.example.yaml,
 # rendered guest-side by the loam adapter). This Deployment is only the
 # always-on control plane + knowledge browser.
 #
 # NOTE: image localhost:5001/loam:dev is built + pushed from the loam repo
-# (guest-side PRs L-1/L-2), which is NOT yet onboarded — reference only.
+# (/home/fbarroso/forest/loam, guest-side PRs L-1/L-2), which is NOT yet
+# onboarded — reference only.
 apiVersion: v1
 kind: Service
 metadata:
@@ -60,8 +72,10 @@ spec:
           image: localhost:5001/loam:dev
           imagePullPolicy: Always
           env:
-            # loam servers default to 127.0.0.1; force 0.0.0.0 in-container so
-            # probes/Service reach them (recon: loopback-default).
+            # NO-OP until the guest-side image honors it (loam ignores
+            # process.env.HOST today — see the header). Kept as the intended
+            # contract: the container must bind 0.0.0.0 for the Service to reach
+            # it.
             - name: HOST
               value: "0.0.0.0"
           securityContext:
@@ -73,24 +87,26 @@ spec:
               containerPort: 4400
             - name: control
               containerPort: 4500
-          # /api/capabilities on the control API is the closest thing loam has
-          # to a readiness probe (recon) — used for startup/readiness/liveness.
+          # Probe the UI (:4400), NOT the control API (:4500) — the control API
+          # 403s non-loopback Host headers, so a kubelet probe there never
+          # succeeds. The UI has read-only GETs and no such guard. (Still gated
+          # on the guest-side HOST-bind work above.)
           startupProbe:
             httpGet:
-              path: /api/capabilities
-              port: control
+              path: /
+              port: ui
             periodSeconds: 2
             failureThreshold: 30
           readinessProbe:
             httpGet:
-              path: /api/capabilities
-              port: control
+              path: /
+              port: ui
             periodSeconds: 5
             timeoutSeconds: 3
           livenessProbe:
             httpGet:
-              path: /api/capabilities
-              port: control
+              path: /
+              port: ui
             periodSeconds: 10
             timeoutSeconds: 5
           resources:

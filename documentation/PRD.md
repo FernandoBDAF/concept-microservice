@@ -88,14 +88,14 @@ namespace/compose-project per guest + documented port ranges; shared lab
 infra by default with per-guest BYO where production fidelity demands it
 (ADR-007.1/.2).
 
-### 6.2 mycelium (formerly KnowledgeManager) (`~/repo/mycelium`)
-YouTube → knowledge-graph pipeline (GraphRAG) + GraphDash/StagesUI front-ends
-+ systemic-control. Onboards in v7: **pipeline first**, behind a mandatory
-deterministic fake-LLM mode; **adopts the lab's queue conventions** (the
-migration is the exercise); real-key runs are explicit budgeted experiments
-(ADR-007.3/.4).
+### 6.2 mycelium (formerly KnowledgeManager) (`/home/fbarroso/forest/mycelium`)
+YouTube → knowledge-graph pipeline (GraphRAG) + StagesUI front-end (GraphDash
+was retired upstream in phase 4) + systemic-control. Onboards in v7: **pipeline
+first**, behind a mandatory deterministic fake-LLM mode (greenfield — unbuilt
+upstream today); **adopts the lab's queue conventions** (the migration is the
+exercise); real-key runs are explicit budgeted experiments (ADR-007.3/.4).
 
-### 6.3 agentic-workflow-manager (`~/repo/Raine/loam`)
+### 6.3 agentic-workflow-manager (`/home/fbarroso/forest/loam`)
 TS monorepo launching Claude Code agents in per-run sandboxes + a read-only
 knowledge UI. Onboards in v7: agent runs become **Kubernetes Jobs** via a
 loam-side runner adapter (the deployment plan's core artifact); tokens via

@@ -19,7 +19,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (stage) (rate(mycelium_stage_processed_total[2m]))",
+          "expr": "sum by (stage) (rate(chunks_processed[2m]))",
           "legendFormat": "{{stage}}"
         }
       ]
@@ -34,7 +34,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le, stage) (rate(mycelium_stage_duration_seconds_bucket[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, stage) (rate(stage_duration_seconds_bucket[5m])))",
           "legendFormat": "{{stage}}"
         }
       ]
@@ -76,7 +76,7 @@
       "gridPos": { "h": 6, "w": 24, "x": 0, "y": 16 },
       "options": {
         "mode": "markdown",
-        "content": "Stage counters/durations come from mycelium's Prometheus `/metrics` (stages-api). **The exact metric names (`mycelium_stage_processed_total`, `mycelium_stage_duration_seconds`, label `stage`) are confirmed guest-side (KM-2)** — adjust here if they differ. Queue panels read the shared RabbitMQ exporter for the `mycelium` vhost; the `km.stage.<name>` topology + `.dlq` are owned by the orchestrator's generator (ADR-007.4). In fake mode (EXP-70) stages drain with zero LLM spend."
+        "content": "Stage counters/durations come from mycelium's Prometheus `/metrics` (the stages surface of its consolidated FastAPI). Metric names are pinned to mycelium's real, **unprefixed** collectors (recon 2026-07-20): `chunks_processed` (label `stage`) and the `stage_duration_seconds` histogram — verify the histogram type when the KM-2 image lands. Queue panels read the LAB's shared RabbitMQ exporter for the `mycelium` vhost (the KM-4 queue-mode target topology, owned by the lab's generator, ADR-007.4); depths stay 0 until queue-mode publishes. In fake mode (EXP-70, once KM-1 lands) stages drain with zero LLM spend."
       }
     }
   ]

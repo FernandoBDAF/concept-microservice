@@ -1,6 +1,8 @@
-# mycelium stages-ui — Next.js on container port 3000 (Next default). No
-# /metrics (UI); /health + /ready handlers added guest-side (KM-2). Reached
-# from the shared ingress at mycelium.lab.local (see ingress.yaml).
+# mycelium stages-ui — the unified StagesUI ("Living Instrument"), Next.js 16 on
+# container port 3000 (Next default), home route /explore. No /metrics (UI). The
+# Next.js app has NO /health|/ready route today; both are a guest-side KM-2 gap,
+# so the probes below only pass once those handlers land (the :dev image is
+# itself guest-side). Reached from the shared ingress at mycelium.lab.local.
 apiVersion: v1
 kind: Service
 metadata:

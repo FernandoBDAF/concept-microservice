@@ -75,15 +75,16 @@ helm-shaped. Nothing requiring a live cluster or AWS was executed.
 
 ## Traps and open flags
 
-- ⚠️ **Live credentials:** recon found a real `CLAUDE_CODE_OAUTH_TOKEN`
-  and `ANTHROPIC_API_KEY` in plaintext in `~/repo/forest/loam/.env`
-  (gitignored but live). Rotation is step 0 of v7
-  (`LOAM_DEPLOYMENT_PLAN.md`). If untouched since 2026-07-19, flag it to
-  the owner again.
+- ⚠️ **Agent credentials (corrected 2026-07-20):** the earlier flag of a
+  live `CLAUDE_CODE_OAUTH_TOKEN`/`ANTHROPIC_API_KEY` in `loam/.env` did
+  **not reproduce** — there is no `.env` in `/home/fbarroso/forest/loam`
+  and no token committed anywhere (verified by `stat`/`find`/`git grep`;
+  `.env` is gitignored + untracked). Treat it as a pre-deploy verification
+  step, not a hard blocker (`LOAM_DEPLOYMENT_PLAN.md`).
 - **Stale paths in older docs:** the guest repos live at
-  `~/repo/forest/mycelium` and `~/repo/forest/loam` — the v7 phase doc's
-  original paths (`~/repo/mycelium`, `~/repo/Raine/loam`) are wrong; the
-  v7-branch docs carry the correction.
+  `/home/fbarroso/forest/mycelium` and `/home/fbarroso/forest/loam` — older
+  paths (`~/repo/mycelium`, `~/repo/Raine/loam`, `~/repo/forest/...`) are
+  wrong; the v7 docs carry the correction.
 - **`loam validate` hook noise:** a workspace-level hook runs on every
   file write and reports 11 pre-existing errors about
   `documentation/decisions/*.md` frontmatter. It's on `main`, it's not

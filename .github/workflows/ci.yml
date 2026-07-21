@@ -91,6 +91,12 @@ jobs:
       - run: kustomize build deploy/obs/manifests/logs > /dev/null
       - run: kustomize build guests/hello-guest/k8s/base > /dev/null
       - run: kustomize build guests/hello-guest/k8s/obs > /dev/null
+      # v7 guests render standalone (guest images are built guest-side; these
+      # prove the lab-side manifests kustomize cleanly)
+      - run: kustomize build guests/mycelium/k8s/base > /dev/null
+      - run: kustomize build guests/mycelium/k8s/obs > /dev/null
+      - run: kustomize build guests/loam/k8s/base > /dev/null
+      - run: kustomize build guests/loam/k8s/obs > /dev/null
 
   # CI phase 2 (ADR-010.2): scored smoke experiments on main only (PRs stay
   # fast). Runs the compose stack and a small set of scored experiments; junit

@@ -3,9 +3,13 @@
 # `loam` (ADR-007.5) and are NOT a systems-registry target — they arrive via
 # the loam-side runner adapter (v7-HANDOFF.md §5 spec).
 # Lab-side onboarding HAS LANDED (guests/loam/ — ns, UI+control deploy,
-# quotas, netpols, placeholder Secret, phase v7 lab-side pass); targets/links
-# below are live config. STILL NOT LAUNCHABLE END-TO-END: the loam image +
-# the k8s-Jobs adapter are built guest-side (L-1/L-2, PRs pending), so
+# quotas, netpols, placeholder Secret, phase v7 lab-side pass) and was
+# re-verified against the present loam repo (/home/fbarroso/forest/loam@29044d8,
+# recon 2026-07-20): UI :4400 + control API :4500 (both loopback-default,
+# host-driven agent runs via @ai-hero/sandcastle docker at 9 call sites).
+# targets/links below are live config. STILL NOT LAUNCHABLE END-TO-END: the loam
+# image + the k8s-Jobs adapter are built guest-side (L-1 callsite indirection,
+# L-2 Jobs adapter incl. a HOST-bind/non-loopback-serve fix, PRs pending), so
 # `guest-up`/`apply -k` will not pull until those land. See
 # documentation/phases/v7-DEFERRED.md.
 name: loam

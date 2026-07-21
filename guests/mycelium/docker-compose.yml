@@ -2,23 +2,28 @@
 # Host-port block 42xx per the registry in documentation/HOST_CONTRACT.md §1.4.
 #
 # IMAGES ARE GUEST-SIDE: mycelium-<component>:dev is built from the mycelium
-# repo (~/repo/forest/mycelium), NOT here — there is no Dockerfile in this
-# tree (KM-2, guest-side). We reference image tags only so that
+# repo (/home/fbarroso/forest/mycelium), NOT here — there is no Dockerfile in
+# this tree (KM-2, guest-side). We reference image tags only so that
 # `docker compose config` parses; until KM-1/KM-2 land, `up` cannot pull.
 #
-# All four services sit on this project's private default network AND on the
-# lab's `microservices_default` network, with `mycelium-*` aliases there so the
-# host Prometheus can scrape mycelium-stages-api:8080 (/metrics) and Grafana
-# can graph it. Requires the lab stack up first (`make up` at the repo root
-# creates microservices_default). Shared infra (ADR-007.1): Mongo db
-# `mycelium` + RabbitMQ vhost `mycelium` on the lab instances.
+# stages-api (:8080) and graph-api (:8081) are the two surfaces of mycelium's
+# consolidated FastAPI service (recon: one process binds both ports); modeled
+# as two services here. StagesUI is the single Next.js front-end (GraphDash was
+# retired in mycelium's phase 4).
+#
+# All services sit on this project's private default network AND on the lab's
+# `microservices_default` network, with `mycelium-*` aliases there so the host
+# Prometheus can scrape mycelium-stages-api:8080 (/metrics) and Grafana can
+# graph it. Requires the lab stack up first (`make up` at the repo root creates
+# microservices_default). Shared infra (ADR-007.1): Mongo db `mycelium` + (for
+# the KM-4 queue-mode migration) RabbitMQ vhost `mycelium` on the lab instances.
 name: mycelium
 
 services:
   stages-api:
     image: localhost:5001/mycelium-stages-api:dev
     environment:
-      LLM_MODE: fake # ADR-007.3: deterministic fixtures, zero real keys (EXP-70)
+      LLM_MODE: fake # KM-1 target (UNBUILT: mycelium has no LLM_MODE yet); real runs need OPENAI/VOYAGE keys
     ports:
       - "4220:8080"
     networks:
@@ -35,16 +40,16 @@ services:
   graph-api:
     image: localhost:5001/mycelium-graph-api:dev
     environment:
-      LLM_MODE: fake # ADR-007.3: deterministic fixtures, zero real keys (EXP-70)
+      LLM_MODE: fake # KM-1 target (UNBUILT: mycelium has no LLM_MODE yet); real runs need OPENAI/VOYAGE keys
     ports:
-      - "4221:8080"
+      - "4221:8081" # graph surface of the consolidated FastAPI (recon: :8081)
     networks:
       default: {}
       lab:
         aliases: [mycelium-graph-api]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8081/health"]
       interval: 10s
       timeout: 3s
       retries: 6
@@ -59,21 +64,8 @@ services:
         aliases: [mycelium-stages-ui]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3000/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 6
-
-  graphdash:
-    image: localhost:5001/mycelium-graphdash:dev
-    ports:
-      - "4211:3000" # Next.js default container port 3000
-    networks:
-      default: {}
-      lab:
-        aliases: [mycelium-graphdash]
-    restart: unless-stopped
-    healthcheck:
+      # StagesUI (Next.js) has no /health route yet — KM-2 gap; the :dev image is
+      # itself guest-side, so this healthcheck only passes once both land.
       test: ["CMD", "wget", "-q", "-O-", "http://localhost:3000/health"]
       interval: 10s
       timeout: 3s

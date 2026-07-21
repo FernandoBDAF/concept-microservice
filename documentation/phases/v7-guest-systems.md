@@ -6,8 +6,8 @@ manifests, the `mycelium` broker vhost, EXP-70..74 scored defs — all
 statically verified). Guest-side code (KM-1/2/4, L-1/2) and every
 experiment *run* remain deferred: repos absent + no live cluster/AWS this
 pass. Ledger: [v7-DEFERRED.md](v7-DEFERRED.md); execute guest-side via
-[v7-HANDOFF.md](v7-HANDOFF.md). Both repos live under `~/repo/forest/`,
-not the paths below · **Depends on:** v6 (systems model), v5
+[v7-HANDOFF.md](v7-HANDOFF.md). Both repos live under `/home/fbarroso/forest/`
+(real paths inline below) · **Depends on:** v6 (systems model), v5
 (AWS sessions) ·
 **Exit tag:** `lab-v7.0` · **Decisions in force:** ADR-007 (all), ADR-005.5,
 ADR-008 (conventions KM adopts), ADR-009.3 (secrets)
@@ -25,7 +25,7 @@ experiments.
 
 - **HOST_CONTRACT.md** (v3) proven by hello-guest; systems registry (v6).
   Port blocks: 42xx = KM, 43xx = loam (ADR-007.2).
-- **mycelium** (`~/repo/mycelium`): GraphRAG ingestion
+- **mycelium** (`/home/fbarroso/forest/mycelium`): GraphRAG ingestion
   pipeline (YouTube → knowledge graphs), GraphDash + StagesUI front-ends,
   systemic-control module; rich observability analyses exist in its docs.
   Decisions: pipeline onboards first with a **mandatory deterministic
@@ -33,7 +33,7 @@ experiments.
   conventions** — the migration is the exercise (ADR-007.4). Shared infra by
   default: own Postgres DB / Mongo database / MinIO-S3 bucket / RabbitMQ
   vhost (ADR-007.1).
-- **loam** (`~/repo/Raine/loam`): TS monorepo; workflows launch Claude Code
+- **loam** (`/home/fbarroso/forest/loam`): TS monorepo; workflows launch Claude Code
   agents in per-run Docker sandboxes (.env holds CLAUDE_CODE_OAUTH_TOKEN);
   execution via sandcastle; local read-only knowledge UI. Decisions: agent
   runs become **k8s Jobs** via a loam-side runner adapter (ADR-007.5);

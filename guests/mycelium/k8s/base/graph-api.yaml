@@ -1,6 +1,11 @@
-# mycelium graph-api — Python stdlib http.server on 8080. /health and /ready
-# handlers are added guest-side (KM-2, v7-HANDOFF). Exposes /metrics too, so it
-# also gets a ServiceMonitor in ../obs.
+# mycelium graph-api — the graph surface of mycelium's consolidated FastAPI
+# service, bound on :8081 (recon 2026-07-20, mycelium@06d2651:
+# GraphRAG/src/app/api/fastapi_app/main.py). In reality stages (:8080) and graph
+# (:8081) are ONE FastAPI process; the lab models them as two logical surfaces,
+# and guest-side KM-2 may ship a single image bound to both ports. Exposes
+# /metrics (scraped via the ServiceMonitor in ../obs). /health already exists on
+# the FastAPI service; a dedicated /ready is the genuine KM-2 gap (readiness
+# falls back to /health until then).
 apiVersion: v1
 kind: Service
 metadata:
@@ -12,7 +17,7 @@ metadata:
 spec:
   ports:
     - name: http
-      port: 8080
+      port: 8081
       targetPort: http
   selector:
     app: mycelium-graph-api
@@ -37,7 +42,7 @@ spec:
         lab.local/guest: mycelium
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8080"
+        prometheus.io/port: "8081"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -46,7 +51,11 @@ spec:
           image: localhost:5001/mycelium-graph-api:dev
           imagePullPolicy: Always
           env:
-            # ADR-007.3: fake LLM/embeddings — zero real keys, zero spend.
+            # TARGET env for the KM-1 deterministic fake mode (ADR-007.3) —
+            # UNBUILT today: mycelium has no LLM_MODE var and real runs require
+            # OPENAI_API_KEY/VOYAGE_API_KEY. Zero-spend is enforced structurally
+            # by the netpol's absent egress to the LLM/embedding providers, not
+            # by this env, until KM-1 lands.
             - name: LLM_MODE
               value: fake
           securityContext:
@@ -55,8 +64,9 @@ spec:
               drop: ["ALL"]
           ports:
             - name: http
-              containerPort: 8080
-          # /health + /ready handlers added guest-side (KM-2).
+              containerPort: 8081
+          # /health exists on the FastAPI service (recon); a dedicated /ready is
+          # the KM-2 gap — readiness uses /health until it lands.
           startupProbe:
             httpGet:
               path: /health
@@ -65,7 +75,7 @@ spec:
             failureThreshold: 30
           readinessProbe:
             httpGet:
-              path: /ready
+              path: /health
               port: http
             periodSeconds: 5
             timeoutSeconds: 3

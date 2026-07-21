@@ -69,7 +69,7 @@ OPS = {
     ">=": lambda a, b: a >= b,
 }
 ASSERTION_TYPES = {"promql", "http", "cli"}
-NEEDS_TOKENS = {"compose", "kind", "obs"}  # plus guest:<name>
+NEEDS_TOKENS = {"compose", "kind", "obs", "aws"}  # plus guest:<name>
 _MISSING = object()
 
 
@@ -339,6 +339,13 @@ def precheck_needs(needs: list[str]) -> list[str]:
                                       shell=True, capture_output=True, text=True)
                 if proc.returncode != 0:
                     failures.append("obs: lab-obs namespace absent — run `make obs-up`")
+            elif need == "aws":
+                # A live AWS session (v5 track) surfaces as a kube-context whose
+                # name carries "aws" (aws-session-<id>); mirrors the kind check.
+                proc = subprocess.run("kubectl config current-context",
+                                      shell=True, capture_output=True, text=True)
+                if proc.returncode != 0 or "aws" not in proc.stdout.lower():
+                    failures.append("aws: no live AWS session context — run `make aws-up` (v5 AWS track)")
             elif isinstance(need, str) and need.startswith("guest:"):
                 name = need.split(":", 1)[1]
                 proc = subprocess.run(

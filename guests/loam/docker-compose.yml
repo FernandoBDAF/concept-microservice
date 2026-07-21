@@ -21,8 +21,11 @@ services:
   loam:
     image: localhost:5001/loam:dev
     environment:
-      # loam servers default to 127.0.0.1; bind 0.0.0.0 so the published ports
-      # and healthcheck reach them in-container (recon).
+      # NO-OP today: loam does NOT read process.env.HOST (recon) — `serve` binds
+      # non-loopback only via a --host flag and `loam ui` has none, so both
+      # servers stay on 127.0.0.1. Until the guest-side image adds HOST/--host
+      # support the published ports below won't reach the servers (the
+      # in-container localhost healthcheck still works). Kept as intended contract.
       HOST: "0.0.0.0"
     ports:
       - "4310:4400"   # knowledge UI

@@ -1,17 +1,19 @@
 # Guest isolation (ADR-007.2): same zero-trust model as lab-core —
 # default-deny both directions, DNS opened for all pods, then exactly the holes
 # mycelium needs: the shared obs stack scraping /metrics, the shared ingress
-# controller reaching the UIs, and egress to the shared stores it opted into
+# controller reaching the UI, and egress to the shared stores it opted into
 # (ADR-007.1: Mongo db `mycelium`, RabbitMQ vhost `mycelium`).
 #
 # ┌─ SPEND-PROOF (EXP-70) ────────────────────────────────────────────────┐
 # │ There is DELIBERATELY NO egress rule to api.openai.com (LLM) or        │
-# │ api.voyageai.com (embeddings). In fake mode (LLM_MODE=fake) the guest  │
-# │ never calls them; this netpol makes that structural — a pod that       │
-# │ cannot route to the providers cannot spend, whatever keys leak into    │
-# │ its env. The ABSENCE of that egress rule is the netpol-level           │
-# │ spend-proof. Adding one is the deliberate, reviewable act that turns   │
-# │ real-key mode on (EXP-71).                                             │
+# │ api.voyageai.com (embeddings). A pod that cannot route to the          │
+# │ providers cannot spend, whatever keys leak into its env — the ABSENCE  │
+# │ of that egress rule is the netpol-level spend-proof. NOTE: a working   │
+# │ deterministic fake mode (LLM_MODE=fake) is UNBUILT in mycelium today   │
+# │ (KM-1, greenfield) — so until KM-1 lands the LLM/embed stages cannot   │
+# │ complete here at all (no keys+egress, no fake). That is acceptable for │
+# │ EXP-70's structural proof; adding a provider-egress rule is the        │
+# │ deliberate, reviewable act that turns real-key mode on (EXP-71).       │
 # └───────────────────────────────────────────────────────────────────────┘
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -41,9 +43,11 @@ spec:
         - protocol: TCP
           port: 53
 ---
-# The shared observability stack (lab-obs) may scrape any mycelium pod on 8080
-# — this is how a netpol-isolated guest stays visible (HOST_CONTRACT §2). Only
-# the two APIs listen on 8080; the UIs (3000) expose no /metrics.
+# The shared observability stack (lab-obs) may scrape mycelium's /metrics on
+# 8080 — this is how a netpol-isolated guest stays visible (HOST_CONTRACT §2).
+# mycelium's stages+graph are one consolidated FastAPI process; /metrics is
+# scraped once via the stages surface (:8080). The UI (:3000) exposes no
+# /metrics.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -61,9 +65,10 @@ spec:
         - protocol: TCP
           port: 8080
 ---
-# The UIs are reachable from the shared ingress controller only (hostname
+# The UI is reachable from the shared ingress controller only (hostname
 # mycelium.lab.local). The APIs have no ingress path; kubelet probes bypass
-# NetworkPolicy by design.
+# NetworkPolicy by design. (GraphDash was retired in mycelium's phase 4, so the
+# only ingress-facing UI is StagesUI.)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -74,7 +79,7 @@ spec:
     matchExpressions:
       - key: app
         operator: In
-        values: [mycelium-stages-ui, mycelium-graphdash]
+        values: [mycelium-stages-ui]
   policyTypes: [Ingress]
   ingress:
     - from:
@@ -86,9 +91,12 @@ spec:
           port: 3000
 ---
 # Shared-infra egress (ADR-007.1): the pipeline/APIs reach the lab's Mongo
-# (27017) and RabbitMQ (5672) in lab-infra. Stage handoff = Mongo collections
-# today; queue-mode (KM-4) uses the `mycelium` vhost. These are the ONLY
-# egress holes besides DNS — note the absence of any LLM-provider rule above.
+# (27017) and RabbitMQ (5672) in lab-infra. Stage handoff today = Mongo
+# collections (in-process); mycelium also dispatches whole runs on arq/Redis,
+# not deployed in this lab rehearsal. The 5672 hole is for the KM-4 queue-mode
+# migration onto the `mycelium` vhost (ADR-007.4 — the migration is the
+# exercise), the lab's target topology. These are the ONLY egress holes besides
+# DNS — note the absence of any LLM-provider rule above.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -106,4 +114,4 @@ spec:
         - protocol: TCP
           port: 27017 # MongoDB (db `mycelium`)
         - protocol: TCP
-          port: 5672 # RabbitMQ (vhost `mycelium`)
+          port: 5672 # RabbitMQ (vhost `mycelium`) — KM-4 queue-mode target

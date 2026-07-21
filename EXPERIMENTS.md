@@ -27,6 +27,11 @@ get a write-up in [`documentation/experiments/`](documentation/experiments/).
 | [EXP-10](#exp-10--message-ttl-expiry-work-loss-semantics) | Message-TTL expiry (work-loss semantics) | `compose` | yes | [exp-10.yaml](experiments/exp-10.yaml) |
 | [EXP-11](#exp-11--document-pipeline-e2e) | Document pipeline E2E | `compose` | yes | [exp-11.yaml](experiments/exp-11.yaml) |
 | [EXP-12](#exp-12--cache-outage-discovery-experiment) | Cache outage (discovery experiment) | `compose` | yes | [exp-12.yaml](experiments/exp-12.yaml) |
+| [EXP-70](#exp-70--km-pipeline-burst-fake-mode) | KM pipeline burst (fake mode) | `compose`, `guest:mycelium` | yes | [exp-70.yaml](experiments/exp-70.yaml) |
+| [EXP-71](#exp-71--km-budgeted-real-run) | KM budgeted real run | `compose`, `guest:mycelium` | yes | [exp-71.yaml](experiments/exp-71.yaml) |
+| [EXP-72](#exp-72--agent-run-lifecycle-loam) | Agent-run lifecycle (loam) | `kind`, `guest:loam` | yes | [exp-72.yaml](experiments/exp-72.yaml) |
+| [EXP-73](#exp-73--agent-resource-envelope-loam) | Agent resource envelope (loam) | `kind`, `guest:loam` | yes | [exp-73.yaml](experiments/exp-73.yaml) |
+| [EXP-74](#exp-74--guest-on-aws) | Guest on AWS | `aws`, `guest:mycelium` | yes | [exp-74.yaml](experiments/exp-74.yaml) |
 
 <!-- experiments-index:end -->
 

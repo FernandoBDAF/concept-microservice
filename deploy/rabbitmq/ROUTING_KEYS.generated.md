@@ -28,8 +28,8 @@ the migration is the exercise (KM_DEPLOYMENT_PLAN §2).
 |---|---|---|---|
 | `km.stage.ingest` | `km.stage.ingest` | 5s/30s/2m | `km.stage.ingest.dlq` (168h) |
 | `km.stage.clean` | `km.stage.clean` | 5s/30s/2m | `km.stage.clean.dlq` (168h) |
-| `km.stage.enrich` | `km.stage.enrich` | 5s/30s/2m | `km.stage.enrich.dlq` (168h) |
 | `km.stage.chunk` | `km.stage.chunk` | 5s/30s/2m | `km.stage.chunk.dlq` (168h) |
+| `km.stage.enrich` | `km.stage.enrich` | 5s/30s/2m | `km.stage.enrich.dlq` (168h) |
 | `km.stage.embed` | `km.stage.embed` | 5s/30s/2m | `km.stage.embed.dlq` (168h) |
 | `km.stage.redundancy` | `km.stage.redundancy` | 5s/30s/2m | `km.stage.redundancy.dlq` (168h) |
 | `km.stage.trust` | `km.stage.trust` | 5s/30s/2m | `km.stage.trust.dlq` (168h) |
@@ -37,5 +37,6 @@ the migration is the exercise (KM_DEPLOYMENT_PLAN §2).
 | `km.stage.entity_resolution` | `km.stage.entity_resolution` | 5s/30s/2m | `km.stage.entity_resolution.dlq` (168h) |
 | `km.stage.graph_construction` | `km.stage.graph_construction` | 5s/30s/2m | `km.stage.graph_construction.dlq` (168h) |
 | `km.stage.community_detection` | `km.stage.community_detection` | 5s/30s/2m | `km.stage.community_detection.dlq` (168h) |
+| `km.stage.insights_generation` | `km.stage.insights_generation` | 5s/30s/2m | `km.stage.insights_generation.dlq` (168h) |
 
-Totals: 17 exchanges, 78 queues, 78 bindings (across all vhosts).
+Totals: 17 exchanges, 83 queues, 83 bindings (across all vhosts).

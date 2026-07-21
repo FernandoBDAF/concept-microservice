@@ -8,47 +8,85 @@ scaffolds the isolation/quota/secret/netpol envelope its **agent runs** need.
 Recon + architecture:
 [`documentation/deployment/LOAM_DEPLOYMENT_PLAN.md`](../../documentation/deployment/LOAM_DEPLOYMENT_PLAN.md).
 
-> ⚠️ **SECURITY — rotate the live token first (step 0, guest-side).**
-> `loam/.env` in the loam repo holds a **live `CLAUDE_CODE_OAUTH_TOKEN` and
-> `ANTHROPIC_API_KEY` in plaintext** (gitignored but real, per
-> LOAM_DEPLOYMENT_PLAN). **Rotate them and move to the lab secret path
-> (ADR-007.6) BEFORE building images or running any real agent in the lab.**
-> The Secret in `k8s/base/secret.yaml` here is a clearly-fake placeholder — the
-> real token is injected out-of-band by init-secrets / AWS Secrets Manager.
-> Never commit a real token to this tree.
+> ⚠️ **SECURITY — verify no live token before building images (pre-deploy check).**
+> **This checkout has no `.env` file** (`/home/fbarroso/forest/loam`; verified —
+> `stat`, `find`, `git status --ignored` all show absence) and **no token is
+> committed anywhere** (`git grep` clean; the only `sk-ant-` string is the
+> validator regex at `config.ts:318`). `.env` is correctly gitignored and
+> untracked. So the earlier "step-0: rotate the live token" gate is **not
+> applicable to this checkout** — it downgrades to a **verification** step:
+> confirm no `.env` with live tokens exists before building images (none present
+> now), then inject the token via the lab secret path (ADR-007.6). loam reads
+> `CLAUDE_CODE_OAUTH_TOKEN` (then `ANTHROPIC_API_KEY`) via `agentAuthEnv()`
+> (`packages/workflows/src/config.ts:313`). The Secret in `k8s/base/secret.yaml`
+> is a clearly-fake placeholder; never commit a real token to this tree.
 
 ## What this guest is
 
-Two long-running Hono servers, deployed as **one** pod / one container
+Two long-running servers, deployed as **one** pod / one container
 (`localhost:5001/loam:dev`):
 
-| Component     | Container port | Compose host | Purpose                                   |
-|---------------|----------------|--------------|-------------------------------------------|
-| knowledge-ui  | 4400           | **4310**     | Hono+React knowledge browser (read-only)  |
-| control-api   | 4500           | **4320**     | orchestrate control API (`/api/capabilities` = readiness) |
+| Component     | Container port | Compose host | Purpose                                             |
+|---------------|----------------|--------------|-----------------------------------------------------|
+| knowledge-ui  | 4400           | **4310**     | React 19 + Vite client / Hono server; read-only GETs, no auth |
+| control-api   | 4500           | **4320**     | orchestrate control API (`serve`)                   |
 
-Both default to loopback in the loam repo; the container binds `host=0.0.0.0`
-(via the `HOST` env). Port block **43xx** (HOST_CONTRACT §1.4).
+Ports **4400/4500 are loam's internal ports**; the **43xx** block is only the
+host-side compose mapping (`4310→4400`, `4320→4500`) — the k8s Services use
+4400/4500 directly. loam does **not** listen on 43xx.
 
-**Agent runs are NOT a long-running service.** Each run executes as a
-**Kubernetes Job in namespace `loam`** — scheduled by the loam-side k8s-Jobs
-adapter (`runner: k8s`), one Job per run, with resource limits,
-`activeDeadlineSeconds`, `ttlSecondsAfterFinished`, `backoffLimit: 0`, and the
-token via `secretKeyRef`. They are **not** a compose service and **not** a
-registry image the lab builds. See `k8s/base/agent-job.example.yaml` for the
-concrete envelope (reference only — the adapter renders real Jobs).
+> ⚠️ **`HOST=0.0.0.0` is a no-op today (guest-side gap).** loam does not read
+> `process.env.HOST`. `serve` (control-api) binds non-loopback only via a
+> `--host` flag; `loam ui` (knowledge-ui) has **no** host flag and *always*
+> binds loopback. So the `HOST=0.0.0.0` that compose/k8s set is ignored — the
+> containers keep binding `127.0.0.1` and stay unreachable. The loam image must
+> add `HOST` support (or the launch commands must pass `--host 0.0.0.0`, plus a
+> new `loam ui --host`) before the pod is reachable.
+>
+> The same loopback enforcement breaks the **readiness probe**: `GET
+> /api/capabilities` on the control port (4500) is loopback-only — its auth
+> middleware 403s any non-loopback `Host` (`serve.ts:535-537`) — so a kubelet
+> probe is rejected and the pod never goes Ready. Probe the **UI** (4400, no
+> such guard) instead, or gate readiness on loam shipping a non-loopback/bearer
+> serve mode (unbuilt — `PRD.md:126`).
+
+**Agent runs are NOT a long-running service** — and today they are
+**host-driven**: the host process holds the sandbox handle and drives the Claude
+Code agent via streamed `exec` while the container just runs `sleep infinity`
+(`sandbox/polyglot.Dockerfile`). Execution is delegated to external
+`@ai-hero/sandcastle`. Artifacts/logs/PR are already read host-side (git
+worktree, `gh`) — that part of the plan is correct.
+
+The lab's **target** is one **Kubernetes Job per run** in namespace `loam`
+(`runner: k8s`), with resource limits, `activeDeadlineSeconds`,
+`ttlSecondsAfterFinished`, `backoffLimit: 0`, and the token via `secretKeyRef`.
+**This is aspirational** — no k8s/Jobs code exists in loam yet (`PRD.md:118`),
+and those resource/TTL knobs are *new* (loam today has only software timeouts).
+`k8s/base/agent-job.example.yaml` is reference only.
+
+> ⚠️ **Execution-model split (the deepest L-2 gap).** The example Job describes
+> a **fire-and-forget autonomous** pod (`sh -c "loam-agent run && git push"`) —
+> a *different* model from today's host-driven one, and **there is no
+> `loam-agent` binary in the image**. The k8s-Jobs adapter must first resolve
+> this: keep host-driving the pod via `kubectl exec`/API (fits the sandcastle
+> seam) **or** invert to an autonomous in-pod entrypoint (new work).
 
 ## Guest-side pending (this is scaffolding)
 
-This is a **lab-side** onboarding only. Two things it depends on come from the
-loam repo, which is **not yet onboarded**:
+The loam repo **is present** (`/home/fbarroso/forest/loam`, git `main`), but
+this lab-side onboarding still depends on two guest-side deliverables:
 
 - **The container image `localhost:5001/loam:dev`** — built + pushed guest-side.
   There is no Dockerfile or build context here; compose/kind reference the tag
-  only. `up` will not pull until the image exists.
+  only. `up` will not pull until the image exists. loam must also add `HOST`
+  support (above), or the launch commands stay loopback-bound.
 - **The k8s-Jobs runner adapter** (guest-side PRs **L-1** callsite indirection /
-  **L-2** k8s provider, ADR-007.5) — the code that renders and applies agent
-  Jobs. Until it lands, the example Job is illustrative, not driven.
+  **L-2** k8s provider, ADR-007.5). Today `docker(...)` is hard-wired at **9
+  call sites across 8 files** with no central factory (`PRD.md:118`);
+  `operator.ts` also uses `noSandbox` (host-side) that L-1 must account for. The
+  `SandboxProvider` tagged-union seam lives in sandcastle and loam references it
+  **0 times**, so the L-1 indirection is genuinely required. **L-2** must then
+  resolve the execution-model split above.
 
 A lab-side apply of `k8s/base` stands up the namespace, the (unpullable-yet)
 Deployment, netpols, quota, placeholder Secret, and ingress — everything except
@@ -60,9 +98,10 @@ a working image and a live agent runner.
 # 0. Lab up (creates microservices_default + the obs stack):
 make up                                                   # repo root
 
-# 1. Compose (needs localhost:5001/loam:dev pushed guest-side first):
+# 1. Compose (needs localhost:5001/loam:dev pushed guest-side first, AND the
+#    HOST/reachability gap resolved — see "What this guest is"):
 docker compose -f guests/loam/docker-compose.yml up -d
-curl -s localhost:4320/api/capabilities                   # control API readiness
+curl -s localhost:4310/                                   # readiness via UI (control API is loopback-only)
 open  http://localhost:4310/                              # knowledge UI
 
 # 2. kind (image must already be pushed to localhost:5001):
@@ -95,9 +134,9 @@ kustomize build guests/loam/k8s/base | less
 | Contract clause (HOST_CONTRACT.md) | Evidence here |
 |---|---|
 | §1.1 containerized, pinned images | image `localhost:5001/loam:dev` referenced (built guest-side, PRs L-1/L-2) — no Dockerfile in this lab-side tree by design |
-| §1.2 /health /ready /metrics | readiness/liveness on control API `/api/capabilities` (recon: closest probe); **no `/metrics`** — noted, obs overlay is a placeholder |
+| §1.2 /health /ready /metrics | control-API `/api/capabilities` is **loopback-only** (`serve.ts:535-537`) so a kubelet probe 403s — probe the UI (4400) or gate on a future non-loopback serve mode; **no `/metrics`** — obs overlay is a placeholder |
 | §1.3 `launch.yaml` | [`launch.yaml`](launch.yaml) — compose + kind up/down/status, two components, ports |
-| §1.4 assigned port block | 43xx: knowledge-ui → 4310, control-api → 4320 (only host ports published) |
+| §1.4 assigned port block | 43xx is host mapping only: knowledge-ui 4310→4400, control-api 4320→4500 (loam's internal ports are 4400/4500) |
 | §1.6 deployment note | below + LOAM_DEPLOYMENT_PLAN |
 | §2 isolation (host side) | compose project `loam` + own default network; `k8s/base` namespace `loam`, default-deny netpols; ResourceQuota + LimitRange for N=3 agents |
 | §2 observability (host side) | compose alias `loam` on `microservices_default`; `k8s/obs/` placeholder ServiceMonitor (no metrics yet) |
@@ -139,8 +178,10 @@ The always-on UI/control deployment is unchanged between lab and prod except
 registry, hostname, and replica count. **Lab vs production differences:** token
 from a placeholder Secret → AWS Secrets Manager; image from `localhost:5001` → a
 real registry; egress from a broad `0.0.0.0/0:443` netpol → an FQDN-scoped
-policy. **What it still lacks for production:** no `/metrics` (no dashboards or
-alerting on loam itself yet); FQDN egress not implemented; the k8s-Jobs adapter
-(L-1/L-2) is guest-side and not yet merged; multi-arch images (kind on arm64 vs
-EKS amd64) unresolved. Honest status: **scaffolding**, gated on the guest-side
-image + adapter and the step-0 token rotation.
+policy. **What it still lacks for production:** the execution-model split
+(host-driven vs autonomous in-pod, above) and the k8s-Jobs adapter (L-1/L-2) are
+unbuilt; loam ignores `HOST` so the image/launch must add reachability; no
+`/metrics` (no dashboards or alerting on loam itself yet); FQDN egress not
+implemented; multi-arch images (kind on arm64 vs EKS amd64) unresolved. Honest
+status: **scaffolding**, gated on the guest-side image + adapter — plus a
+pre-deploy check that no `.env` with live tokens exists (none in this checkout).

@@ -1,4 +1,4 @@
-# ServiceMonitors for mycelium — kept apart from base because they need the
+# ServiceMonitor for mycelium — kept apart from base because it needs the
 # monitoring.coreos.com CRDs from the obs stack (deploy/obs, phase v3). Apply
 # only after the obs stack is installed:
 #   kubectl apply -k guests/mycelium/k8s/obs
@@ -8,8 +8,11 @@
 # (serviceMonitorSelectorNilUsesHelmValues: false) — or add its release label
 # here to match deploy/obs's selector.
 #
-# stages-api definitely exposes /metrics (Prometheus text). graph-api exposes
-# /metrics too (KM-2 adds the trivial handlers); both are scraped here.
+# mycelium's stages + graph surfaces are ONE consolidated FastAPI process
+# (recon), so /metrics is emitted once — we scrape it via the stages-api
+# surface (:8080, confirmed real: GraphRAG stages server + FastAPI /metrics).
+# A separate graph-api (:8081) ServiceMonitor would double-scrape the same
+# process, so it is intentionally omitted.
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -22,23 +25,6 @@ spec:
   selector:
     matchLabels:
       app: mycelium-stages-api
-  endpoints:
-    - port: http
-      path: /metrics
-      interval: 15s
----
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: mycelium-graph-api
-  namespace: mycelium
-  labels:
-    app: mycelium-graph-api
-    lab.local/guest: mycelium
-spec:
-  selector:
-    matchLabels:
-      app: mycelium-graph-api
   endpoints:
     - port: http
       path: /metrics

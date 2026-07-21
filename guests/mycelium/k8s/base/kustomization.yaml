@@ -7,6 +7,5 @@ resources:
   - stages-api.yaml
   - graph-api.yaml
   - stages-ui.yaml
-  - graphdash.yaml
   - netpols.yaml
   - ingress.yaml

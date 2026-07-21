@@ -48,15 +48,20 @@ EMAIL_EXPIRED_RETENTION_MS = 86_400_000
 
 # --- guest: mycelium (GraphRAG pipeline) — ADR-007.1/.4 -------------------
 # Its own vhost; stage boundaries become lab envelopes (KM_DEPLOYMENT_PLAN §2).
-# Pipeline order (recon): ingestion ingest→…→trust, then graphrag
-# graph_extraction→…→community_detection. Each stage = one work queue on the
-# `mycelium-stages` exchange, same retry ladder + DLQ as lab-core.
+# This is the TARGET topology for the queue-mode migration (KM-4, ADR-007.4) —
+# mycelium today dispatches whole runs on arq/Redis and hands stages off via
+# Mongo collections; the migration re-plays those stage boundaries onto this
+# vhost. The stage set below is pinned to mycelium's real pipelines (recon
+# 2026-07-20, mycelium@06d2651): ingestion ingest→clean→chunk→enrich→embed→
+# redundancy→trust, then graphrag graph_extraction→entity_resolution→
+# graph_construction→community_detection→insights_generation. Each stage =
+# one work queue on `mycelium-stages`, same retry ladder + DLQ as lab-core.
 MYCELIUM_VHOST = "mycelium"
 MYCELIUM_EXCHANGE = "mycelium-stages"
 MYCELIUM_STAGES = [
-    "ingest", "clean", "enrich", "chunk", "embed", "redundancy", "trust",
+    "ingest", "clean", "chunk", "enrich", "embed", "redundancy", "trust",
     "graph_extraction", "entity_resolution", "graph_construction",
-    "community_detection",
+    "community_detection", "insights_generation",
 ]
 MYCELIUM_DLQ_TTL_MS = 604_800_000  # 7d — matches the document pipeline DLQ
 
