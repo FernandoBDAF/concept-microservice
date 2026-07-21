@@ -114,7 +114,7 @@ func TestCatalogListValidSortedWithFiles(t *testing.T) {
 }
 
 // TestCatalogLoadsRealExperiments loads the repo's real experiments/ dir and
-// asserts all 12 exp-*.yaml parse cleanly (no skips, no warnings), that the
+// asserts all 17 exp-*.yaml parse cleanly (no skips, no warnings), that the
 // http-assertion fields json_path/json_equals are captured, and that "300s"
 // timeouts and numeric values survive a JSON round-trip.
 func TestCatalogLoadsRealExperiments(t *testing.T) {
@@ -136,8 +136,8 @@ func TestCatalogLoadsRealExperiments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if len(got) != 12 {
-		t.Fatalf("loaded %d experiments, want 12", len(got))
+	if len(got) != 17 {
+		t.Fatalf("loaded %d experiments, want 17", len(got))
 	}
 	if s := strings.TrimSpace(logbuf.String()); s != "" {
 		t.Fatalf("expected no warn/skip lines, got:\n%s", s)
