@@ -18,6 +18,9 @@ coverage/
 
 # compiled binaries
 mission-control/controld/controld
+
+# controld action/session history (JSONL, local-only — ADR-005)
+mission-control/controld/runs/
 scripts/obs/ntfy-relay/ntfy-relay
 *.exe
 

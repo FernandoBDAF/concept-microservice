@@ -1,19 +1,24 @@
-// controld is the read-only seed of lab-controld (ADR-005.1/.2).
+// controld is lab-controld: the Mission Control daemon (ADR-005.1/.2).
 //
-// STRICTLY read-only in this phase: it only observes the compose and kind
-// targets (docker compose ps, kubectl get pods, HTTP health probes) and
-// serves summaries as JSON. It performs no control actions of any kind.
-// Binds 127.0.0.1 only (ADR-005.4).
+// v3 shipped the read-only sliver (targets/status/health). v6 adds the
+// control plane: actions from the systems/ registry executed as make
+// invocations with streamed output (actions.go, engine.go), run history,
+// and the ADR-005.4 auth gate (localhost stays no-auth; token + TLS are
+// mandatory to enable the aws target). Binds 127.0.0.1 by default.
 package main
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -23,6 +28,10 @@ const (
 	execTimeout    = 10 * time.Second
 	probeTimeout   = 3 * time.Second
 	targetCacheTTL = 5 * time.Second
+
+	// shutdownTimeout bounds graceful shutdown: running actions get killed and
+	// finalized, then in-flight HTTP requests drain, all within this budget.
+	shutdownTimeout = 10 * time.Second
 
 	composeProjectName = "microservices"
 	kindClusterName    = "lab"
@@ -34,31 +43,6 @@ var kindNamespaces = []string{"lab-core", "lab-infra", "lab-obs"}
 var allowedOrigins = map[string]bool{
 	"http://127.0.0.1:4901": true,
 	"http://localhost:4901": true,
-}
-
-// Link is one UI link for a target.
-type Link struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
-	Note string `json:"note,omitempty"`
-}
-
-// linksByTarget is the static per-target links map, data-driven so the UI
-// stays target-agnostic.
-var linksByTarget = map[string][]Link{
-	"compose": {
-		{Name: "Grafana", URL: "http://localhost:3001"},
-		{Name: "Prometheus", URL: "http://localhost:9090"},
-		{Name: "RabbitMQ", URL: "http://localhost:15672"},
-		{Name: "MinIO Console", URL: "http://localhost:9001"},
-	},
-	"kind": {
-		{Name: "Grafana", URL: "https://grafana.lab.local"},
-		{Name: "OpenSearch", URL: "https://opensearch.lab.local"},
-		{Name: "API", URL: "https://api.lab.local"},
-		{Name: "RabbitMQ", URL: "https://grafana.lab.local", Note: "via Grafana"},
-		{Name: "Tempo", URL: "https://grafana.lab.local", Note: "via Grafana"},
-	},
 }
 
 // HealthResult is one service's health probe outcome.
@@ -101,6 +85,9 @@ type server struct {
 	run  runner
 	http *http.Client
 
+	enableAWS bool
+	cfg       Config
+
 	mu            sync.Mutex
 	targetsCache  []Target
 	targetsCached time.Time
@@ -116,10 +103,36 @@ func newServer(log *slog.Logger) *server {
 
 func main() {
 	addr := flag.String("addr", envOr("CONTROLD_ADDR", defaultAddr), "listen address (keep it on 127.0.0.1)")
+	repoRoot := flag.String("repo-root", envOr("CONTROLD_REPO_ROOT", "../.."),
+		"repo root that action commands exec from")
 	flag.Parse()
 
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+	cfg := ConfigFromEnv()
+	cfg.RepoRoot = ResolveRepoRoot(*repoRoot)
+	if err := ValidateStartup(cfg); err != nil {
+		log.Error("startup validation failed", "error", err)
+		os.Exit(1)
+	}
+
+	reg, err := LoadRegistry(filepath.Join(cfg.RepoRoot, "systems"), log)
+	if err != nil {
+		log.Error("registry load failed", "error", err)
+		os.Exit(1) // invalid systems/*.yaml is startup-fatal by design
+	}
+	store := NewStore("runs", log)
+	engine := NewEngine(cfg, reg, store, log)
+	recorder := NewRecorder("runs", store, log)
+	catalog := NewCatalog(cfg, recorder, log)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	reg.StartSIGHUPReload(ctx)
+
 	s := newServer(log)
+	s.enableAWS = cfg.EnableAWS
+	s.cfg = cfg
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -129,13 +142,67 @@ func main() {
 	mux.HandleFunc("GET /api/targets", s.handleTargets)
 	mux.HandleFunc("GET /api/status", s.handleStatus)
 	mux.HandleFunc("GET /api/health", s.handleHealth)
-	mux.HandleFunc("GET /api/links", s.handleLinks)
+	mux.HandleFunc("GET /api/systems", engine.HandleSystems)
+	mux.HandleFunc("POST /api/actions", engine.HandleCreateAction)
+	mux.HandleFunc("GET /api/actions/{id}", engine.HandleGetAction)
+	mux.HandleFunc("GET /api/actions/{id}/stream", engine.HandleStreamAction)
+	mux.HandleFunc("GET /api/runs", engine.HandleRuns)
+	mux.HandleFunc("GET /api/experiments", catalog.HandleList)
+	mux.HandleFunc("POST /api/experiments/{id}/outcome", catalog.HandleOutcome)
+	mux.HandleFunc("POST /api/sessions", recorder.HandleCreate)
+	mux.HandleFunc("GET /api/sessions/current", recorder.HandleCurrent)
+	mux.HandleFunc("PATCH /api/sessions/{id}", recorder.HandlePatch)
+	mux.HandleFunc("GET /api/sessions/{id}/summary", recorder.HandleSummary)
 
-	log.Info("controld listening", "addr", *addr, "mode", "read-only")
-	if err := http.ListenAndServe(*addr, s.middleware(mux)); err != nil {
+	handler := s.middleware(AuthMiddleware(cfg, log)(mux))
+	ln, err := net.Listen("tcp", *addr)
+	if err != nil {
+		log.Error("listen failed", "addr", *addr, "error", err)
+		os.Exit(1)
+	}
+	if cfg.TLSCert != "" && cfg.TLSKey != "" {
+		log.Info("controld listening (TLS)", "addr", *addr, "mode", "read+control")
+	} else {
+		log.Info("controld listening", "addr", *addr, "mode", "read+control")
+	}
+	if err := serve(ctx, &http.Server{Handler: handler}, ln, cfg, engine, log); err != nil {
 		log.Error("server exited", "error", err)
 		os.Exit(1)
 	}
+}
+
+// serve runs srv on ln until ctx is canceled (SIGINT), then shuts down
+// gracefully: running actions are canceled (their process groups killed) so
+// they finalize and persist to run history, and in-flight HTTP requests
+// drain — all bounded by shutdownTimeout. A nil return means a clean exit.
+func serve(ctx context.Context, srv *http.Server, ln net.Listener, cfg Config, engine *Engine, log *slog.Logger) error {
+	errCh := make(chan error, 1)
+	go func() {
+		if cfg.TLSCert != "" && cfg.TLSKey != "" {
+			errCh <- srv.ServeTLS(ln, cfg.TLSCert, cfg.TLSKey)
+		} else {
+			errCh <- srv.Serve(ln)
+		}
+	}()
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-ctx.Done():
+	}
+
+	log.Info("shutdown: signal received — canceling actions and draining HTTP")
+	shCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	engine.Shutdown(shCtx)
+	if err := srv.Shutdown(shCtx); err != nil {
+		srv.Close()
+		return err
+	}
+	if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
 }
 
 func envOr(key, fallback string) string {
@@ -153,8 +220,8 @@ func (s *server) middleware(next http.Handler) http.Handler {
 			w.Header().Set("Vary", "Origin")
 		}
 		if r.Method == http.MethodOptions {
-			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -181,7 +248,7 @@ func (s *server) handleTargets(w http.ResponseWriter, r *http.Request) {
 	if s.targetsCache != nil && time.Since(s.targetsCached) < targetCacheTTL {
 		cached := s.targetsCache
 		s.mu.Unlock()
-		writeJSON(w, http.StatusOK, cached)
+		s.writeTargets(w, cached)
 		return
 	}
 	s.mu.Unlock()
@@ -208,7 +275,23 @@ func (s *server) handleTargets(w http.ResponseWriter, r *http.Request) {
 	s.targetsCache = targets
 	s.targetsCached = time.Now()
 	s.mu.Unlock()
-	writeJSON(w, http.StatusOK, targets)
+	s.writeTargets(w, targets)
+}
+
+// writeTargets responds with the probed targets, appending the aws
+// pseudo-row (a map, so it can carry `note`) when the aws target is enabled.
+// Availability comes from the live terraform session probe (auth.go).
+func (s *server) writeTargets(w http.ResponseWriter, targets []Target) {
+	if !s.enableAWS {
+		writeJSON(w, http.StatusOK, targets)
+		return
+	}
+	out := make([]any, 0, len(targets)+1)
+	for _, t := range targets {
+		out = append(out, t)
+	}
+	out = append(out, AWSTargetEntry(s.cfg))
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *server) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -292,14 +375,4 @@ func (s *server) probe(ctx context.Context, service, url string) HealthResult {
 		res.Error = "status " + resp.Status
 	}
 	return res
-}
-
-func (s *server) handleLinks(w http.ResponseWriter, r *http.Request) {
-	target := r.URL.Query().Get("target")
-	links, ok := linksByTarget[target]
-	if !ok {
-		writeError(w, http.StatusBadRequest, "unknown target: use ?target=compose or ?target=kind")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"target": target, "links": links})
 }

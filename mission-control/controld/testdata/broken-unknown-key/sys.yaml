@@ -1,0 +1,9 @@
+name: extra-key
+description: has an unknown top-level key
+port_block: core
+bogus: not-in-schema
+targets:
+  compose:
+    up: make up
+    down: make down
+    status: make ps

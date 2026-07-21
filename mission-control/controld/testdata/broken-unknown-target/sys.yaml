@@ -1,0 +1,12 @@
+name: bad-target
+description: has a target key outside compose|kind|aws
+port_block: core
+targets:
+  compose:
+    up: make up
+    down: make down
+    status: make ps
+  docker:
+    up: make up
+    down: make down
+    status: make ps

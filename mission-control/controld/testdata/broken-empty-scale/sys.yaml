@@ -1,0 +1,10 @@
+name: empty-scale
+description: scale entry with no per-target template
+port_block: core
+targets:
+  compose:
+    up: make up
+    down: make down
+    status: make ps
+scale:
+  - component: worker

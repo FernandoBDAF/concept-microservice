@@ -1,0 +1,18 @@
+# sh-runnable fake commands for engine_test.go (never touches make/docker).
+name: fixture
+description: sh-runnable fakes for the action engine tests
+port_block: 49xx
+targets:
+  compose:
+    up: printf 'line1\nline2\n'
+    down: echo bye
+    status: echo boom; exit 2
+  kind:
+    up: sleep 5
+    down: echo bye
+    status: echo ok
+scale:
+  - component: worker
+    compose: echo scale N={n}
+    kind: echo cluster-scale N={n}
+experiments: experiments/

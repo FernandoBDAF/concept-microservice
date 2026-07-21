@@ -1,327 +1,248 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+// Mission Control — the single-page cockpit. Grows from the v3 read-only
+// status page (ADR-001.3): rung 1 visibility, rung 2 control, rung 3
+// experiment library, session recorder, and run history — one route,
+// componentized. Polling stays at 5s for targets/status/health; the systems
+// and experiment catalogs are fetched once + on target change + manual
+// refresh (never polled).
 
-const CONTROLD =
-  process.env.NEXT_PUBLIC_CONTROLD_URL ?? "http://127.0.0.1:4900";
+import { useCallback, useEffect, useState } from "react";
+import { ApiError, CONTROLD_BASE, getJSON } from "./lib/api";
+import { CockpitProvider } from "./lib/store";
+import {
+  emptyLabSnapshot,
+  type ComposeService,
+  type Experiment,
+  type HealthResult,
+  type KindWorkload,
+  type LabSnapshot,
+  type SystemDef,
+  type Target,
+  type TargetName,
+} from "./lib/types";
+import { Header } from "./components/Header";
+import { SystemCard } from "./components/SystemCard";
+import { ExperimentLibrary } from "./components/ExperimentLibrary";
+import { HistoryPanel } from "./components/HistoryPanel";
+
 const POLL_MS = 5000;
 
-type TargetName = "compose" | "kind";
-
-interface Target {
-  name: TargetName;
-  available: boolean;
+function clock(): string {
+  return new Date().toTimeString().slice(0, 8);
 }
 
-interface ComposeService {
-  name: string;
-  state: string;
-  health: string;
-  image: string;
-}
-
-interface KindWorkload {
-  namespace: string;
-  name: string;
-  ready: string;
-  status: string;
-}
-
-interface HealthResult {
-  service: string;
-  ok: boolean;
-  latency_ms: number;
-  error?: string;
-}
-
-interface LabLink {
-  name: string;
-  url: string;
-  note?: string;
-}
-
-interface Snapshot {
-  services: ComposeService[];
-  workloads: KindWorkload[];
-  health: HealthResult[];
-  links: LabLink[];
-  statusError: string | null;
-}
-
-const emptySnapshot: Snapshot = {
-  services: [],
-  workloads: [],
-  health: [],
-  links: [],
-  statusError: null,
-};
-
-async function getJSON<T>(path: string): Promise<T> {
-  const res = await fetch(`${CONTROLD}${path}`, { cache: "no-store" });
-  const body = await res.json();
-  if (!res.ok) {
-    throw new Error(body?.error ?? `controld returned ${res.status}`);
-  }
-  return body as T;
-}
-
-function composeStateClass(state: string): string {
-  if (state === "running") return "ok";
-  if (state === "restarting" || state === "paused" || state === "created")
-    return "warn";
-  return "bad";
-}
-
-function composeHealthClass(health: string): string {
-  if (health === "healthy") return "ok";
-  if (health === "starting") return "warn";
-  if (health === "none") return "dim";
-  return "bad";
-}
-
-function kindStatusClass(w: KindWorkload): string {
-  const [ready, total] = w.ready.split("/");
-  if (w.status === "Running" && ready === total && ready !== "0") return "ok";
-  if (w.status === "Pending" || w.status === "ContainerCreating") return "warn";
-  if (w.status === "Running") return "warn"; // running but not all ready
-  return "bad";
-}
-
-export default function StatusPage() {
+function Cockpit() {
   const [targets, setTargets] = useState<Target[]>([]);
   const [target, setTarget] = useState<TargetName>("compose");
-  const [snap, setSnap] = useState<Snapshot>(emptySnapshot);
+  const [labSnap, setLabSnap] = useState<LabSnapshot>(emptyLabSnapshot);
+  const [systems, setSystems] = useState<SystemDef[]>([]);
+  const [experiments, setExperiments] = useState<Experiment[]>([]);
+  const [systemsError, setSystemsError] = useState<string | null>(null);
+  const [expError, setExpError] = useState<string | null>(null);
   const [lastPoll, setLastPoll] = useState<string>("--:--:--");
   const [controldDown, setControldDown] = useState(false);
+  const [authError, setAuthError] = useState(false);
 
-  const poll = useCallback(async (current: TargetName) => {
-    let fetchedTargets: Target[];
-    try {
-      fetchedTargets = await getJSON<Target[]>("/api/targets");
-      setTargets(fetchedTargets);
-      setControldDown(false);
-    } catch {
-      setControldDown(true);
-      setLastPoll(new Date().toTimeString().slice(0, 8));
-      return;
-    }
+  const is401 = (err: unknown) => err instanceof ApiError && err.status === 401;
 
-    const available = fetchedTargets.find(
-      (t) => t.name === current
-    )?.available;
-    if (!available) {
-      setSnap(emptySnapshot);
-      setLastPoll(new Date().toTimeString().slice(0, 8));
-      return;
-    }
-
-    const next: Snapshot = { ...emptySnapshot };
-    try {
-      if (current === "compose") {
-        const status = await getJSON<{ services: ComposeService[] }>(
-          `/api/status?target=compose`
-        );
-        next.services = status.services ?? [];
-      } else {
-        const status = await getJSON<{ workloads: KindWorkload[] }>(
-          `/api/status?target=kind`
-        );
-        next.workloads = status.workloads ?? [];
+  // 5s poll: targets always; lab live state (status + health) only when the
+  // selected target is compose/kind and available (the read API covers those).
+  // The caller's AbortSignal cancels a poll that outlives its target selection
+  // so stale responses never land in state.
+  const poll = useCallback(
+    async (current: TargetName, signal: AbortSignal) => {
+      let fetchedTargets: Target[];
+      try {
+        fetchedTargets = await getJSON<Target[]>("/api/targets", { signal });
+        setTargets(fetchedTargets);
+        setControldDown(false);
+        setAuthError(false);
+      } catch (err) {
+        if (signal.aborted) return;
+        if (is401(err)) setAuthError(true);
+        else setControldDown(true);
+        setLastPoll(clock());
+        return;
       }
+
+      const available =
+        fetchedTargets.find((t) => t.name === current)?.available ?? false;
+      const readable = current === "compose" || current === "kind";
+
+      if (!readable || !available) {
+        setLabSnap({ ...emptyLabSnapshot, loaded: false });
+        setLastPoll(clock());
+        return;
+      }
+
+      const next: LabSnapshot = { ...emptyLabSnapshot, loaded: true };
+      try {
+        if (current === "compose") {
+          const status = await getJSON<{ services: ComposeService[] }>(
+            "/api/status?target=compose",
+            { signal }
+          );
+          next.services = status.services ?? [];
+        } else {
+          const status = await getJSON<{ workloads: KindWorkload[] }>(
+            "/api/status?target=kind",
+            { signal }
+          );
+          next.workloads = status.workloads ?? [];
+        }
+      } catch (err) {
+        if (signal.aborted) return;
+        if (is401(err)) setAuthError(true);
+        next.statusError = err instanceof Error ? err.message : String(err);
+      }
+      try {
+        const health = await getJSON<{ results: HealthResult[] }>(
+          `/api/health?target=${current}`,
+          { signal }
+        );
+        next.health = health.results ?? [];
+      } catch {
+        // health degrades quietly; status error already surfaces problems
+      }
+      if (signal.aborted) return;
+      setLabSnap(next);
+      setLastPoll(clock());
+    },
+    []
+  );
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    let inFlight = false;
+    const run = async () => {
+      if (inFlight) return; // previous poll still running — skip this tick
+      inFlight = true;
+      try {
+        await poll(target, ctrl.signal);
+      } finally {
+        inFlight = false;
+      }
+    };
+    void run();
+    const id = window.setInterval(() => void run(), POLL_MS);
+    return () => {
+      window.clearInterval(id);
+      ctrl.abort(); // drop any in-flight poll for the old target
+    };
+  }, [target, poll]);
+
+  // Catalogs: fetch once + on target change + manual refresh (never polled).
+  const loadCatalog = useCallback(async () => {
+    try {
+      const s = await getJSON<SystemDef[]>("/api/systems");
+      setSystems(s);
+      setSystemsError(null);
     } catch (err) {
-      next.statusError = err instanceof Error ? err.message : String(err);
+      if (is401(err)) setAuthError(true);
+      setSystemsError(err instanceof Error ? err.message : String(err));
     }
     try {
-      const health = await getJSON<{ results: HealthResult[] }>(
-        `/api/health?target=${current}`
-      );
-      next.health = health.results ?? [];
-    } catch {
-      // health degrades quietly; status error already surfaces problems
+      const e = await getJSON<Experiment[]>("/api/experiments");
+      setExperiments(e);
+      setExpError(null);
+    } catch (err) {
+      if (is401(err)) setAuthError(true);
+      setExpError(err instanceof Error ? err.message : String(err));
     }
-    try {
-      const links = await getJSON<{ links: LabLink[] }>(
-        `/api/links?target=${current}`
-      );
-      next.links = links.links ?? [];
-    } catch {
-      // links are static; missing links are not worth an error state
-    }
-    setSnap(next);
-    setLastPoll(new Date().toTimeString().slice(0, 8));
   }, []);
 
   useEffect(() => {
-    poll(target);
-    const id = setInterval(() => poll(target), POLL_MS);
-    return () => clearInterval(id);
-  }, [target, poll]);
+    void loadCatalog();
+  }, [target, loadCatalog]);
 
-  const selected = targets.find((t) => t.name === target);
-  const targetUp = selected?.available ?? false;
+  const selectTarget = useCallback((t: TargetName) => {
+    setTarget(t);
+    setLabSnap({ ...emptyLabSnapshot, loaded: false });
+  }, []);
+
+  const targetAvailable =
+    targets.find((t) => t.name === target)?.available ?? false;
+  // The system whose registry entry declares an experiments catalog owns the
+  // scored-run verb (today that's lab; any system declaring one works).
+  const experimentSystem = systems.find((s) => Boolean(s.experiments)) ?? null;
 
   return (
     <main className="console">
-      <header className="prompt-line">
-        <span className="prompt-title">lab-status</span>
-        <span className="prompt-sep">::</span>
-        <span className="prompt-meta">target={target}</span>
-        <span className="prompt-sep">::</span>
-        <span className="prompt-meta">poll {lastPoll}</span>
-        <span
-          className={`tick${controldDown ? " stale" : ""}`}
-          aria-hidden="true"
-        />
-        <span className="prompt-meta" style={{ marginLeft: "auto" }}>
-          read-only
-        </span>
-      </header>
-
-      <nav className="switcher" aria-label="Target">
-        {(["compose", "kind"] as TargetName[]).map((name) => {
-          const t = targets.find((x) => x.name === name);
-          const up = t?.available ?? false;
-          return (
-            <button
-              key={name}
-              className={`${name === target ? "active" : ""}${
-                up ? "" : " down"
-              }`}
-              onClick={() => {
-                setTarget(name);
-                setSnap(emptySnapshot);
-              }}
-            >
-              {name}
-              <span className="avail">{up ? "up" : "down"}</span>
-            </button>
-          );
-        })}
-      </nav>
+      <Header
+        targets={targets}
+        target={target}
+        onSelectTarget={selectTarget}
+        lastPoll={lastPoll}
+        controldDown={controldDown}
+        authError={authError}
+      />
 
       {controldDown && (
         <div className="notice">
           <strong>controld unreachable</strong> — start it with{" "}
-          <code>make controld</code> (expects {CONTROLD})
+          <code>make controld</code> (expects {CONTROLD_BASE}). The cockpit
+          stays read-only until it responds.
         </div>
       )}
 
-      {!controldDown && !targetUp && (
+      {!controldDown && !targetAvailable && (
         <div className="notice">
-          <strong>target unavailable</strong> — the {target} target is not
-          running. Bring it up with make, then this page picks it up on the
-          next poll.
+          <strong>{target} target unavailable</strong> — actions are disabled;
+          bring the target up and the cockpit picks it up on the next poll.
         </div>
       )}
 
-      {!controldDown && targetUp && (
-        <>
-          <section className="section">
-            <div className="section-label">services</div>
-            {snap.statusError ? (
-              <div className="notice">
-                <strong>status error</strong> — {snap.statusError}
-              </div>
-            ) : target === "compose" ? (
-              snap.services.length === 0 ? (
-                <div className="notice">no containers reported</div>
-              ) : (
-                <div className="grid">
-                  {snap.services.map((s) => (
-                    <div className="card" key={s.name}>
-                      <div className="card-head">
-                        <span className="card-name">{s.name}</span>
-                        <span>
-                          <span
-                            className={`badge ${composeStateClass(s.state)}`}
-                          >
-                            {s.state.toUpperCase()}
-                          </span>{" "}
-                          <span
-                            className={`badge ${composeHealthClass(s.health)}`}
-                          >
-                            {s.health.toUpperCase()}
-                          </span>
-                        </span>
-                      </div>
-                      <div className="card-sub" title={s.image}>
-                        {s.image}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )
-            ) : snap.workloads.length === 0 ? (
-              <div className="notice">no workloads reported</div>
-            ) : (
-              <div className="grid">
-                {snap.workloads.map((w) => (
-                  <div className="card" key={`${w.namespace}/${w.name}`}>
-                    <div className="card-head">
-                      <span className="card-name">{w.name}</span>
-                      <span className={`badge ${kindStatusClass(w)}`}>
-                        {w.status.toUpperCase()} {w.ready}
-                      </span>
-                    </div>
-                    <div className="card-sub">{w.namespace}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
+      <section className="section">
+        <div className="section-label section-label-row">
+          <span>systems</span>
+          <button className="btn-ghost" onClick={() => void loadCatalog()}>
+            ↻ refresh
+          </button>
+        </div>
+        {systemsError ? (
+          <div className="notice">
+            <strong>systems unavailable</strong> — {systemsError}
+          </div>
+        ) : systems.length === 0 ? (
+          <div className="notice">no systems reported</div>
+        ) : (
+          <div className="system-grid">
+            {systems.map((system) => (
+              <SystemCard
+                key={system.name}
+                system={system}
+                target={target}
+                targetAvailable={targetAvailable}
+                labSnap={system.name === "lab" ? labSnap : null}
+              />
+            ))}
+          </div>
+        )}
+      </section>
 
-          <section className="section">
-            <div className="section-label">health</div>
-            {snap.health.length === 0 ? (
-              <div className="notice">no health results</div>
-            ) : (
-              <div>
-                {snap.health.map((h) => (
-                  <div className="health-row" key={h.service}>
-                    <span className="health-service">{h.service}</span>
-                    <span className={`badge ${h.ok ? "ok" : "bad"}`}>
-                      {h.ok ? "OK" : "FAIL"}
-                    </span>
-                    {h.latency_ms > 0 && (
-                      <span className="health-latency">
-                        {h.latency_ms.toFixed(1)}ms
-                      </span>
-                    )}
-                    {h.error && (
-                      <span className="health-error" title={h.error}>
-                        {h.error}
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
+      <ExperimentLibrary
+        experiments={experiments}
+        target={target}
+        experimentSystem={experimentSystem}
+        onRefresh={() => void loadCatalog()}
+        loadError={expError}
+      />
 
-          <section className="section">
-            <div className="section-label">links</div>
-            {snap.links.length === 0 ? (
-              <div className="notice">no links for this target</div>
-            ) : (
-              <div className="links">
-                {snap.links.map((l) => (
-                  <span key={`${l.name}-${l.url}`}>
-                    <a href={l.url} target="_blank" rel="noreferrer">
-                      {l.name}
-                    </a>
-                    {l.note && <span className="link-note"> ({l.note})</span>}
-                  </span>
-                ))}
-              </div>
-            )}
-          </section>
-        </>
-      )}
+      <HistoryPanel />
 
       <footer className="footer">
-        v3 status page · seeds v6 mission control (ADR-005) · controld{" "}
-        {CONTROLD} · polls every {POLL_MS / 1000}s
+        mission control · v6 cockpit (ADR-005) · controld {CONTROLD_BASE} ·
+        targets/status/health poll every {POLL_MS / 1000}s
       </footer>
     </main>
+  );
+}
+
+export default function Page() {
+  return (
+    <CockpitProvider>
+      <Cockpit />
+    </CockpitProvider>
   );
 }
