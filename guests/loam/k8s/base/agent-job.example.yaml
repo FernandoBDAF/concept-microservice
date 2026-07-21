@@ -1,0 +1,87 @@
+# ── REFERENCE ONLY — NOT part of the kustomization ────────────────────────────
+# An example of the Job envelope the loam k8s-Jobs adapter (guest-side,
+# ADR-007.5) renders per run. It is deliberately excluded from
+# kustomization.yaml: real Jobs are created at runtime by the loam CLI/control
+# API (`runner: k8s`), one per agent run, with fields filled from
+# loam.config.json (`repos.<area>.k8s.{cpu,memory}`, `runTimeoutMs`, run-id).
+# Kept here so EXP-72/73 have a concrete, valid envelope to reason about.
+#
+# Shape (LOAM_DEPLOYMENT_PLAN "k8s-Jobs runner adapter"):
+#   • init container clones repo+branch into an emptyDir (no host worktree in
+#     k8s — the host reads branchAheadShas against origin/<branch> after push)
+#   • agent container works in that dir; pushes the branch on completion
+#   • token from the loam-agent-token Secret via secretKeyRef (ADR-007.6)
+#   • app: loam-agent label ⇒ the internet-egress netpol applies (Anthropic +
+#     GitHub); the UI pod, lacking this label, stays locked down
+#   • backoffLimit 0 (retries are loam's decision, not the Job controller's)
+#   • activeDeadlineSeconds = wall-clock budget (hung agent is killed → EXP-72)
+#   • ttlSecondsAfterFinished cleans the Job object up automatically
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: loam-agent-example        # adapter uses loam-agent-<run-id>
+  namespace: loam
+  labels:
+    app: loam-agent
+    lab.local/guest: loam
+    loam.run-id: example-0000     # real run-id injected per run
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 3600      # from runTimeoutMs — wall-clock budget
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: loam-agent           # ⇐ selected by allow-agent-egress-internet
+        lab.local/guest: loam
+        loam.run-id: example-0000
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+      volumes:
+        - name: workspace
+          emptyDir: {}
+      initContainers:
+        - name: clone
+          image: localhost:5001/loam-sandbox:dev
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          command: ["sh", "-c", "git clone --depth 1 --branch \"$RUN_BRANCH\" \"$RUN_REPO\" /workspace/repo"]
+          env:
+            - name: RUN_REPO
+              value: "https://github.com/example/repo.git"
+            - name: RUN_BRANCH
+              value: "main"
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+      containers:
+        - name: agent
+          image: localhost:5001/loam-sandbox:dev
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: CLAUDE_CODE_OAUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: loam-agent-token
+                  key: CLAUDE_CODE_OAUTH_TOKEN
+          workingDir: /workspace/repo
+          command: ["sh", "-c", "loam-agent run && git push origin HEAD"]
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi

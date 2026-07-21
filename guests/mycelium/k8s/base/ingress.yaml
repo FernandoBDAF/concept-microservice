@@ -1,0 +1,43 @@
+# mycelium.lab.local via the shared ingress-nginx, TLS from the lab-ca
+# ClusterIssuer (same convention as deploy/k8s/base/ingress). Add the host to
+# /etc/hosts alongside api/auth.lab.local, or curl --resolve. StagesUI is the
+# root; GraphDash under /graph. (StagesUI assumes same-origin API — the /api*
+# paths route to stages-api; confirm the UI's base-path guest-side, KM_PLAN
+# open question on path routing vs subdomains.)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mycelium
+  namespace: mycelium
+  annotations:
+    cert-manager.io/cluster-issuer: lab-ca
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [mycelium.lab.local]
+      secretName: mycelium-lab-local-tls
+  rules:
+    - host: mycelium.lab.local
+      http:
+        paths:
+          - path: /graph
+            pathType: Prefix
+            backend:
+              service:
+                name: mycelium-graphdash
+                port:
+                  name: http
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: mycelium-stages-api
+                port:
+                  name: http
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: mycelium-stages-ui
+                port:
+                  name: http

@@ -1,0 +1,52 @@
+# Resource governance for the loam namespace (HOST_CONTRACT §4 v1 open
+# question; ADR-007.2). Sized for N=3 concurrent agent Jobs + the always-on
+# UI/control pod, per LOAM_DEPLOYMENT_PLAN ("agent farm", N=3).
+#
+# Sizing math
+# -----------
+#   per-agent   request  500m CPU / 1Gi     limit  2 CPU / 4Gi
+#   UI/control  request  250m CPU / 256Mi   limit  500m / 512Mi   (set in loam.yaml)
+#
+#   requests.cpu    = 3×500m + 250m  = 1.75  → quota 2
+#   requests.memory = 3×1Gi  + 256Mi = 3.25Gi → quota 4Gi
+#   limits.cpu      = 3×2    + 0.5   = 6.5   → quota 7
+#   limits.memory   = 3×4Gi  + 512Mi = 12.5Gi → quota 13Gi
+#   pods            = 3 agents + 1 UI + init/headroom → 6
+#
+# The quota is the "OOM at limit leaves neighbours untouched" proof for EXP-73:
+# a 4th agent (or an agent exceeding its limit) is rejected/killed by the
+# quota+LimitRange, not by starving the UI pod.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: loam-quota
+  namespace: loam
+spec:
+  hard:
+    requests.cpu: "2"
+    requests.memory: 4Gi
+    limits.cpu: "7"
+    limits.memory: 13Gi
+    pods: "6"
+---
+# LimitRange supplies the DEFAULT container limits/requests that agent Jobs
+# inherit when their manifest omits them (the example Job sets them explicitly;
+# this is the safety net so no unbounded container can ever land in the ns).
+# Defaults are the per-agent envelope above.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: loam-limits
+  namespace: loam
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: "2"
+        memory: 4Gi
+      defaultRequest:
+        cpu: 500m
+        memory: 1Gi
+      max:
+        cpu: "2"
+        memory: 4Gi

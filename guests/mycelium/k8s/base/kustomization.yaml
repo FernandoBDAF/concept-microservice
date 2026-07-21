@@ -1,0 +1,12 @@
+# mycelium base — applies on a bare kind cluster, no CRDs required
+# (HOST_CONTRACT.md §3). ServiceMonitors live in ../obs.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - stages-api.yaml
+  - graph-api.yaml
+  - stages-ui.yaml
+  - graphdash.yaml
+  - netpols.yaml
+  - ingress.yaml

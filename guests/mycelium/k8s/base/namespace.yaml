@@ -1,0 +1,9 @@
+# Namespace-per-guest (ADR-007.2, HOST_CONTRACT.md §2). The lab.local/guest
+# label is what obs/dashboard tooling groups by.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mycelium
+  labels:
+    lab.local/tier: guest
+    lab.local/guest: mycelium

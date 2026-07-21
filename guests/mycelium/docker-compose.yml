@@ -1,0 +1,86 @@
+# mycelium — its OWN compose project (ADR-007.2: project-per-guest).
+# Host-port block 42xx per the registry in documentation/HOST_CONTRACT.md §1.4.
+#
+# IMAGES ARE GUEST-SIDE: mycelium-<component>:dev is built from the mycelium
+# repo (~/repo/forest/mycelium), NOT here — there is no Dockerfile in this
+# tree (KM-2, guest-side). We reference image tags only so that
+# `docker compose config` parses; until KM-1/KM-2 land, `up` cannot pull.
+#
+# All four services sit on this project's private default network AND on the
+# lab's `microservices_default` network, with `mycelium-*` aliases there so the
+# host Prometheus can scrape mycelium-stages-api:8080 (/metrics) and Grafana
+# can graph it. Requires the lab stack up first (`make up` at the repo root
+# creates microservices_default). Shared infra (ADR-007.1): Mongo db
+# `mycelium` + RabbitMQ vhost `mycelium` on the lab instances.
+name: mycelium
+
+services:
+  stages-api:
+    image: localhost:5001/mycelium-stages-api:dev
+    environment:
+      LLM_MODE: fake # ADR-007.3: deterministic fixtures, zero real keys (EXP-70)
+    ports:
+      - "4220:8080"
+    networks:
+      default: {}
+      lab:
+        aliases: [mycelium-stages-api]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+  graph-api:
+    image: localhost:5001/mycelium-graph-api:dev
+    environment:
+      LLM_MODE: fake # ADR-007.3: deterministic fixtures, zero real keys (EXP-70)
+    ports:
+      - "4221:8080"
+    networks:
+      default: {}
+      lab:
+        aliases: [mycelium-graph-api]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+  stages-ui:
+    image: localhost:5001/mycelium-stages-ui:dev
+    ports:
+      - "4210:3000" # Next.js default container port 3000
+    networks:
+      default: {}
+      lab:
+        aliases: [mycelium-stages-ui]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+  graphdash:
+    image: localhost:5001/mycelium-graphdash:dev
+    ports:
+      - "4211:3000" # Next.js default container port 3000
+    networks:
+      default: {}
+      lab:
+        aliases: [mycelium-graphdash]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+networks:
+  default: {}
+  lab:
+    external: true
+    name: microservices_default

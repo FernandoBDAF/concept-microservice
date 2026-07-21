@@ -1,0 +1,86 @@
+# mycelium stages-api — Python stdlib http.server on 8080; single port serves
+# app + /metrics (scraped via the ServiceMonitor in ../obs). /health and /ready
+# handlers are added guest-side (KM-2, v7-HANDOFF); /metrics already exists.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mycelium-stages-api
+  namespace: mycelium
+  labels:
+    app: mycelium-stages-api
+    lab.local/guest: mycelium
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+  selector:
+    app: mycelium-stages-api
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mycelium-stages-api
+  namespace: mycelium
+  labels:
+    app: mycelium-stages-api
+    lab.local/guest: mycelium
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mycelium-stages-api
+  template:
+    metadata:
+      labels:
+        app: mycelium-stages-api
+        lab.local/guest: mycelium
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: stages-api
+          image: localhost:5001/mycelium-stages-api:dev
+          imagePullPolicy: Always
+          env:
+            # ADR-007.3: fake LLM/embeddings — zero real keys, zero spend.
+            # The netpol has NO egress to api.openai.com, which is the
+            # spend-proof by absence (EXP-70).
+            - name: LLM_MODE
+              value: fake
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8080
+          # /health + /ready handlers added guest-side (KM-2).
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi

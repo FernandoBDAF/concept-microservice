@@ -1,0 +1,46 @@
+# loam — its OWN compose project (ADR-007.2: project-per-guest).
+# Host-port block 43xx per the registry in documentation/HOST_CONTRACT.md §1.4.
+#
+# The image localhost:5001/loam:dev is built + pushed from the loam repo
+# (guest-side, PRs L-1/L-2) — NOT built here. There is deliberately no build
+# context: this compose file references the image only. Until the loam repo is
+# onboarded, `up` will fail to pull; this is scaffolding (see README).
+#
+# One service, two long-running Hono servers in the image: the knowledge UI
+# (:4400) and the orchestrate control API (:4500), both loopback-default in the
+# loam repo → bound to 0.0.0.0 in-container via HOST. It joins this project's
+# private default network AND the lab's `microservices_default` network with a
+# `loam` alias, so host-side tooling can reach it. Requires the lab stack up
+# first (`make up` at the repo root creates microservices_default).
+#
+# Agent RUNS are NOT a compose/registry service: they execute as k8s Jobs in
+# namespace `loam` via the loam adapter (guest-side). Nothing here launches them.
+name: loam
+
+services:
+  loam:
+    image: localhost:5001/loam:dev
+    environment:
+      # loam servers default to 127.0.0.1; bind 0.0.0.0 so the published ports
+      # and healthcheck reach them in-container (recon).
+      HOST: "0.0.0.0"
+    ports:
+      - "4310:4400"   # knowledge UI
+      - "4320:4500"   # orchestrate control API
+    networks:
+      default: {}
+      lab:
+        aliases: [loam]
+    restart: unless-stopped
+    healthcheck:
+      # /api/capabilities on the control API is loam's readiness probe (recon).
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:4500/api/capabilities"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+networks:
+  default: {}
+  lab:
+    external: true
+    name: microservices_default

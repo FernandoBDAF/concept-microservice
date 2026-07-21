@@ -1,0 +1,15 @@
+# loam base — applies on a bare kind cluster, no CRDs required
+# (HOST_CONTRACT.md §3). ServiceMonitors (when loam has metrics) live in ../obs.
+#
+# agent-job.example.yaml is intentionally NOT listed: it is a reference template
+# rendered per-run by the loam k8s-Jobs adapter (guest-side), not a static
+# resource.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - loam.yaml
+  - netpols.yaml
+  - quota.yaml
+  - secret.yaml
+  - ingress.yaml

@@ -1,0 +1,109 @@
+# Guest isolation (ADR-007.2): same zero-trust model as lab-core —
+# default-deny both directions, DNS opened for all pods, then exactly the holes
+# mycelium needs: the shared obs stack scraping /metrics, the shared ingress
+# controller reaching the UIs, and egress to the shared stores it opted into
+# (ADR-007.1: Mongo db `mycelium`, RabbitMQ vhost `mycelium`).
+#
+# ┌─ SPEND-PROOF (EXP-70) ────────────────────────────────────────────────┐
+# │ There is DELIBERATELY NO egress rule to api.openai.com (LLM) or        │
+# │ api.voyageai.com (embeddings). In fake mode (LLM_MODE=fake) the guest  │
+# │ never calls them; this netpol makes that structural — a pod that       │
+# │ cannot route to the providers cannot spend, whatever keys leak into    │
+# │ its env. The ABSENCE of that egress rule is the netpol-level           │
+# │ spend-proof. Adding one is the deliberate, reviewable act that turns   │
+# │ real-key mode on (EXP-71).                                             │
+# └───────────────────────────────────────────────────────────────────────┘
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: mycelium
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: mycelium
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# The shared observability stack (lab-obs) may scrape any mycelium pod on 8080
+# — this is how a netpol-isolated guest stays visible (HOST_CONTRACT §2). Only
+# the two APIs listen on 8080; the UIs (3000) expose no /metrics.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-obs-scrape
+  namespace: mycelium
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-obs
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# The UIs are reachable from the shared ingress controller only (hostname
+# mycelium.lab.local). The APIs have no ingress path; kubelet probes bypass
+# NetworkPolicy by design.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-uis
+  namespace: mycelium
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [mycelium-stages-ui, mycelium-graphdash]
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 3000
+---
+# Shared-infra egress (ADR-007.1): the pipeline/APIs reach the lab's Mongo
+# (27017) and RabbitMQ (5672) in lab-infra. Stage handoff = Mongo collections
+# today; queue-mode (KM-4) uses the `mycelium` vhost. These are the ONLY
+# egress holes besides DNS — note the absence of any LLM-provider rule above.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-shared-infra
+  namespace: mycelium
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-infra
+      ports:
+        - protocol: TCP
+          port: 27017 # MongoDB (db `mycelium`)
+        - protocol: TCP
+          port: 5672 # RabbitMQ (vhost `mycelium`)

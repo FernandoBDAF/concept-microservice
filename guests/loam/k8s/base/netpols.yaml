@@ -1,0 +1,113 @@
+# Guest isolation (ADR-007.2): same zero-trust baseline as lab-core and
+# hello-guest — default-deny both directions, DNS for all pods, obs scrape in,
+# ingress-nginx in. loam differs from every other guest in ONE deliberate way:
+# its agent Jobs MUST reach the public internet (Anthropic + GitHub). Those
+# egress holes (ADR-007.5/.6) are scoped to the agent-Job pods only; the
+# always-on UI/control pod stays fully locked down (DNS-only egress).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: loam
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: loam
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# The shared observability stack (lab-obs) may scrape loam pods. loam exposes
+# NO /metrics today (recon), so nothing is scraped yet — the pattern is kept in
+# place (and the control port opened) so onboarding a future /metrics endpoint
+# is a one-line change, not a policy rediscovery. HOST_CONTRACT §2.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-obs-scrape
+  namespace: loam
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-obs
+      ports:
+        - protocol: TCP
+          port: 4500
+---
+# The knowledge UI is reachable from the shared ingress controller only
+# (hostname loam.lab.local → :4400). The control API has no ingress path; agent
+# Jobs have none either. kubelet probes bypass NetworkPolicy by design.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-ui
+  namespace: loam
+spec:
+  podSelector:
+    matchLabels:
+      app: loam
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 4400
+---
+# ── THE DELIBERATE HOLE (ADR-007.5/.6) ────────────────────────────────────────
+# loam agent Jobs run Claude Code inside the pod: they must reach
+#   • api.anthropic.com:443  (the model)
+#   • github.com:443         (clone the repo / push the result branch)
+# This is the ONE guest that is allowed to talk to the internet, and only the
+# agent-Job pods (podSelector app: loam-agent) get it — the UI/control pod is
+# NOT selected here and keeps DNS-only egress.
+#
+# LIMITATION: NetworkPolicy egress cannot match DNS names — `to:` takes CIDRs
+# and label selectors, never FQDNs. So we open TCP/443 to 0.0.0.0/0 rather than
+# to those two hosts specifically. Tighter, FQDN-scoped egress (e.g. Cilium
+# CiliumNetworkPolicy `toFQDNs`, or an egress proxy allowlist) is a documented
+# follow-up; in the kind lab this broad-but-narrow-port hole is the accepted
+# trade. `except` carves the cluster/service CIDRs back out so an agent still
+# can't reach in-cluster peers over 443 via this rule.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-agent-egress-internet
+  namespace: loam
+spec:
+  podSelector:
+    matchLabels:
+      app: loam-agent
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443

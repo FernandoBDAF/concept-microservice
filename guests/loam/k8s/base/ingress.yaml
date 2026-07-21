@@ -1,0 +1,28 @@
+# loam.lab.local via the shared ingress-nginx, TLS from the lab-ca
+# ClusterIssuer (same convention as hello-guest + deploy/k8s/base/ingress).
+# Routes to the knowledge UI (:4400) only — the control API is not exposed
+# through ingress. Add the host to /etc/hosts alongside api/auth.lab.local, or
+# curl --resolve.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: loam-ui
+  namespace: loam
+  annotations:
+    cert-manager.io/cluster-issuer: lab-ca
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [loam.lab.local]
+      secretName: loam-lab-local-tls
+  rules:
+    - host: loam.lab.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: loam
+                port:
+                  name: ui

@@ -1,0 +1,11 @@
+# Namespace-per-guest (ADR-007.2, HOST_CONTRACT.md §2). The lab.local/guest
+# label is what obs/dashboard tooling groups by. Agent runs execute as
+# Kubernetes Jobs in THIS namespace (loam), scheduled by the loam-side
+# k8s-Jobs adapter (guest-side, ADR-007.5) — not by anything in this base.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: loam
+  labels:
+    lab.local/tier: guest
+    lab.local/guest: loam

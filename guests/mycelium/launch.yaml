@@ -1,0 +1,59 @@
+# mycelium launch definition — HOST_CONTRACT.md §1.3 (schema v0).
+# All commands run from the repo root.
+#
+# NOTE: the mycelium-<component>:dev images are built GUEST-SIDE (mycelium
+# repo, KM-2) — this lab tree has no Dockerfiles. The compose/kind `up`
+# targets therefore assume the images already exist in the local registry
+# (localhost:5001); until KM-1/KM-2 land they will fail to pull. `status`
+# commands run regardless (contract §1.3 check).
+name: mycelium
+description: GraphRAG YouTube→knowledge-graph pipeline onboarded as a lab guest (KM).
+port_block: "42xx"
+
+targets:
+  compose:
+    up: docker compose -f guests/mycelium/docker-compose.yml up -d
+    down: docker compose -f guests/mycelium/docker-compose.yml down
+    status: docker compose -f guests/mycelium/docker-compose.yml ps
+  kind:
+    up: |
+      # images built + pushed guest-side (mycelium repo, KM-2):
+      #   localhost:5001/mycelium-{stages-api,graph-api,stages-ui,graphdash}:dev
+      kubectl apply -k guests/mycelium/k8s/base
+      kubectl -n mycelium rollout status \
+        deploy/mycelium-stages-api deploy/mycelium-graph-api \
+        deploy/mycelium-stages-ui deploy/mycelium-graphdash --timeout=180s
+    down: kubectl delete -k guests/mycelium/k8s/base --ignore-not-found
+    status: kubectl -n mycelium get pods,svc,ingress
+
+links:
+  - name: stages-ui (compose)
+    url: http://localhost:4210/
+  - name: graphdash (compose)
+    url: http://localhost:4211/
+  - name: stages-api metrics (compose)
+    url: http://localhost:4220/metrics
+  - name: graph-api (compose)
+    url: http://localhost:4221/
+  - name: stages-ui (kind)
+    url: https://mycelium.lab.local/
+  - name: graphdash (kind)
+    url: https://mycelium.lab.local/graph
+
+components:
+  - name: stages-api
+    ports:
+      - { name: http, container: 8080, compose_host: 4220 }
+    metrics_path: /metrics
+  - name: graph-api
+    ports:
+      - { name: http, container: 8080, compose_host: 4221 }
+    metrics_path: /metrics
+  - name: stages-ui
+    ports:
+      - { name: http, container: 3000, compose_host: 4210 }
+    metrics_path: /metrics
+  - name: graphdash
+    ports:
+      - { name: http, container: 3000, compose_host: 4211 }
+    metrics_path: /metrics

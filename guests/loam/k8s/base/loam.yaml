@@ -1,0 +1,102 @@
+# loam long-running surface — the knowledge UI (:4400, Hono+React, read-only
+# GETs) and the orchestrate control API (:4500, Hono). Both default to loopback
+# in the loam repo; the container image binds host=0.0.0.0 (via HOST env) so the
+# kubelet and the Service can reach them. Deployed as ONE pod/one container that
+# serves both ports (recon: two Hono servers, one process) — mirrors how
+# hello-guest keeps a component simple.
+#
+# Agent RUNS are NOT here: they arrive as k8s Jobs (see agent-job.example.yaml,
+# rendered guest-side by the loam adapter). This Deployment is only the
+# always-on control plane + knowledge browser.
+#
+# NOTE: image localhost:5001/loam:dev is built + pushed from the loam repo
+# (guest-side PRs L-1/L-2), which is NOT yet onboarded — reference only.
+apiVersion: v1
+kind: Service
+metadata:
+  name: loam
+  namespace: loam
+  labels:
+    app: loam
+    lab.local/guest: loam
+spec:
+  ports:
+    - name: ui
+      port: 4400
+      targetPort: ui
+    - name: control
+      port: 4500
+      targetPort: control
+  selector:
+    app: loam
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loam
+  namespace: loam
+  labels:
+    app: loam
+    lab.local/guest: loam
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: loam
+  template:
+    metadata:
+      labels:
+        app: loam
+        lab.local/guest: loam
+      annotations:
+        # loam exposes NO /metrics today (recon). Scrape hints kept for the day
+        # it does; the obs overlay's ServiceMonitor is likewise a placeholder.
+        prometheus.io/scrape: "false"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: loam
+          image: localhost:5001/loam:dev
+          imagePullPolicy: Always
+          env:
+            # loam servers default to 127.0.0.1; force 0.0.0.0 in-container so
+            # probes/Service reach them (recon: loopback-default).
+            - name: HOST
+              value: "0.0.0.0"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: ui
+              containerPort: 4400
+            - name: control
+              containerPort: 4500
+          # /api/capabilities on the control API is the closest thing loam has
+          # to a readiness probe (recon) — used for startup/readiness/liveness.
+          startupProbe:
+            httpGet:
+              path: /api/capabilities
+              port: control
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /api/capabilities
+              port: control
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /api/capabilities
+              port: control
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

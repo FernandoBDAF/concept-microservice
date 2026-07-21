@@ -1,0 +1,58 @@
+# EXP-73 · Agent resource envelope (loam) — loam guest exit criterion.
+# Prose companion: EXPERIMENTS.md §EXP-73 (v7). Proves the quota/secret
+# envelope around agent Jobs (ADR-007.7), not agent behavior.
+#
+# NOT YET RUNNABLE: same prerequisites as EXP-72 (loam k8s-Jobs adapter L-1/
+# L-2 guest-side + L-3 lab onboarding with ResourceQuota/LimitRange for 3
+# concurrent Jobs, Secret loam-agent-token, netpols) live on a kind cluster.
+#
+# Three drills in one file:
+#  (a) OOM at the limit — an agent driven into memory pressure is OOMKilled
+#      at its container limit WITHOUT disturbing a neighbor Job (quota proof);
+#  (b) token absent — a run with the Secret unmounted fails FAST with a clear
+#      secret error (not a slow timeout);
+#  (c) rotation drill — rotate the Secret, next run picks it up: a HUMAN step,
+#      commented below (kubectl-driven, verified in the write-up).
+id: exp-73
+title: Agent resource envelope (loam)
+needs: [kind, guest:loam]
+steps:
+  # OOM drill: an agent workload that inflates memory past its k8s limit.
+  - run: make loam-run-oom RUN=oom-drill MEM_LIMIT=256Mi
+    background: true
+  # Innocent neighbor in the same namespace/quota — must stay healthy.
+  - run: make loam-run RUN=neighbor
+    background: true
+  # Token-absent drill: launch with the Secret deliberately unmounted.
+  - run: make loam-run-notoken RUN=notoken-drill
+    background: true
+watch:
+  - "loam Agent Farm → pod memory vs limit (oom-drill hits the ceiling)"
+  - "loam Agent Farm → Job phase (neighbor unaffected; notoken fails fast)"
+assertions:
+  # (a) OOM Job ends OOMKilled — the container's terminated reason, not just
+  # a generic failure (backoffLimit 0 → the single pod's reason is decisive).
+  - type: cli
+    run: kubectl -n loam wait --for=condition=failed job -l loam.run-id=oom-drill --timeout=300s && kubectl -n loam get pods -l loam.run-id=oom-drill -o jsonpath='{.items[*].status.containerStatuses[*].state.terminated.reason}' | grep -q OOMKilled
+    timeout: 360s
+  # (a) neighbor is untouched by its sibling's OOM — completes normally.
+  # This is the quota proof: one Job's memory blowout is contained.
+  - type: cli
+    run: kubectl -n loam wait --for=condition=complete job -l loam.run-id=neighbor --timeout=600s
+    timeout: 660s
+  # (b) token-absent fails FAST with a clear secret error: reaches Failed
+  # quickly (short deadline is the "fast" half) and the logs name the secret.
+  - type: cli
+    run: kubectl -n loam wait --for=condition=failed job -l loam.run-id=notoken-drill --timeout=120s && kubectl -n loam logs -l loam.run-id=notoken-drill --tail=20 | grep -qiE 'secret|token|CLAUDE_CODE_OAUTH_TOKEN'
+    timeout: 150s
+  # (c) ROTATION DRILL — HUMAN STEP, not scored here: rotate the Secret
+  #   ( kubectl -n loam create secret generic loam-agent-token \
+  #       --from-literal=CLAUDE_CODE_OAUTH_TOKEN=<new> --dry-run=client -o yaml \
+  #       | kubectl apply -f - )
+  #   then launch a fresh run and confirm it authenticates with the new token.
+  #   Jobs read the Secret at pod-start via secretKeyRef, so the next run
+  #   picks it up automatically. Verified in the write-up.
+cleanup:
+  - run: make loam-clean RUN=oom-drill
+  - run: make loam-clean RUN=neighbor
+  - run: make loam-clean RUN=notoken-drill

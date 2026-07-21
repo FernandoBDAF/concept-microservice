@@ -1,0 +1,41 @@
+# loam launch definition — HOST_CONTRACT.md §1.3 (schema v0). Mirrors
+# guests/hello-guest/launch.yaml. All commands run from the repo root.
+#
+# NOTE: only the long-running surface (knowledge UI + control API) is described
+# here. Agent RUNS are launched per-run via the loam CLI/adapter as k8s Jobs
+# (runner: k8s) — they are not a launch component and have no compose form.
+# NOTE: the image is built guest-side (loam repo, PRs L-1/L-2); the kind target
+# only applies manifests — it assumes localhost:5001/loam:dev is already pushed.
+name: loam
+description: The loam agent-farm control plane — knowledge UI + orchestrate control API (agent runs execute as k8s Jobs).
+port_block: "43xx"
+
+targets:
+  compose:
+    up: docker compose -f guests/loam/docker-compose.yml up -d
+    down: docker compose -f guests/loam/docker-compose.yml down
+    status: docker compose -f guests/loam/docker-compose.yml ps
+  kind:
+    up: |
+      kubectl apply -k guests/loam/k8s/base
+      kubectl -n loam rollout status deploy/loam --timeout=120s
+    down: kubectl delete -k guests/loam/k8s/base --ignore-not-found
+    status: kubectl -n loam get pods,svc,ingress,job
+
+links:
+  - name: knowledge UI (compose)
+    url: http://localhost:4310/
+  - name: control API capabilities (compose)
+    url: http://localhost:4320/api/capabilities
+  - name: knowledge UI (kind)
+    url: https://loam.lab.local/
+
+components:
+  # loam exposes NO /metrics today (recon) — metrics_path omitted deliberately;
+  # see k8s/obs/servicemonitors.yaml for the placeholder.
+  - name: knowledge-ui
+    ports:
+      - { name: ui, container: 4400, compose_host: 4310 }
+  - name: control-api
+    ports:
+      - { name: control, container: 4500, compose_host: 4320 }

@@ -1,0 +1,56 @@
+# EXP-70 · KM pipeline burst (fake mode) — mycelium guest exit criterion.
+# Prose companion: EXPERIMENTS.md §EXP-70 (v7). Registers the exit criterion
+# now (v7-HANDOFF §KM track "Exit"); it runs in the execution round.
+#
+# NOT YET RUNNABLE: needs the mycelium guest images built (KM-1 fake mode +
+# KM-2 containerize, both guest-side PRs pending) AND KM-3 lab onboarding
+# (mycelium vhost + km.stage.* topology, ServiceMonitor) live on a cluster.
+#
+# What it proves: N fixture "videos" flood the pipeline in deterministic
+# fake-LLM mode; stages drain per the lab's queue conventions; retry/DLQ
+# behave; and LLM spend is ZERO by construction (fake mode refuses real keys,
+# KM-1) — the honest inversion of "no key mounted".
+id: exp-70
+title: KM pipeline burst (fake mode)
+needs: [compose, guest:mycelium]
+steps:
+  # Bring the guest up in fake mode (LLM_MODE=fake, no OPENAI/VOYAGE keys)
+  # and flood fixture ingestion. Target names are guest-image-dependent —
+  # they land with KM-3 (guests/mycelium/ + Makefile wiring).
+  - run: make km-up MODE=fake
+  - run: make km-flood N=25
+    background: true            # fire the flood and start polling the drain
+watch:
+  - "KM Pipeline → stage queue depth (km.stage.* draining to 0)"
+  - "KM Pipeline → DLQ depth (stays flat at 0)"
+  - "KM Pipeline → per-stage duration (fake mode is CPU-bound, fast)"
+assertions:
+  # Stage work queues drain to empty. Generous deadline: fake mode is fast
+  # but the flood is deep. Regex is a superset of retry/DLQ tiers, which the
+  # next two assertions pin to 0 anyway — at steady state everything is 0.
+  - type: promql
+    query: sum(rabbitmq_queue_messages{vhost="mycelium",queue=~"km\\.stage\\..*"})
+    op: "<="
+    value: 0
+    timeout: 600s
+  # DLQ must never accumulate — a non-empty DLQ means retries were exhausted.
+  - type: promql
+    query: sum(rabbitmq_queue_messages{vhost="mycelium",queue=~"km\\.stage\\..*\\.dlq"})
+    op: "=="
+    value: 0
+    timeout: 600s
+  # stages-api readiness (lab port 4220 → container 8080, KM-3 port block).
+  - type: http
+    url: http://localhost:4220/ready
+    status: 200
+    timeout: 60s
+  # Zero-spend proof, at the pod: fake mode is ON and NO real keys reached
+  # the container (KM-1 hard-fails if a key is set, so their mere absence +
+  # LLM_MODE=fake is the by-construction proof). guest-image-dependent —
+  # the k8s equivalent is asserting there is no egress netpol to
+  # api.openai.com (KM-3 default-deny leaves that hole closed in fake mode).
+  - type: cli
+    run: docker compose -p mycelium exec -T stages-api sh -c 'test "$LLM_MODE" = fake && test -z "$OPENAI_API_KEY" && test -z "$VOYAGE_API_KEY"'
+    timeout: 30s
+cleanup:
+  - run: make km-down
