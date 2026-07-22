@@ -1,0 +1,136 @@
+# auth-service — Service + Deployment (kustomize base).
+#
+# Conventions carried from the lab's deploy shapes: named container ports,
+# `app:` selector labels, a full probe triad (startup/readiness/liveness),
+# a hardened securityContext, and request/limit bounds. Single replica on
+# purpose — account-lockout counters live in Postgres (shared), but per-instance
+# concerns (in-memory state) are avoided so this scales cleanly if you raise it.
+#
+# Placeholders to change on adoption:
+#   - image: point at your registry
+#   - the three Secrets (auth-service-secrets, auth-service-keys) must exist;
+#     see secret.example.yaml and scripts/gen-keys.sh
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  labels:
+    app: auth-service
+spec:
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+  selector:
+    app: auth-service
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  labels:
+    app: auth-service
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: auth-service
+  template:
+    metadata:
+      labels:
+        app: auth-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: auth-service
+          image: auth-service:latest
+          imagePullPolicy: IfNotPresent
+          # Drain window: endpoints propagation lags SIGTERM, so a rolling update
+          # can briefly route new connections to a terminating pod without this.
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: auth-service-config
+          env:
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: auth-service-secrets
+                  key: DATABASE_PASSWORD
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: auth-service-secrets
+                  key: JWT_SECRET
+            # RS256 keypair (ADR-009.1), base64(PEM) single line. Absent → HS256
+            # fallback on JWT_SECRET. Generate with scripts/gen-keys.sh --k8s.
+            - name: JWT_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: auth-service-keys
+                  key: JWT_PRIVATE_KEY
+                  optional: true
+            - name: JWT_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: auth-service-keys
+                  key: JWT_PUBLIC_KEY
+                  optional: true
+            # Optional admin bootstrap (ADR-009.7): set both keys in the Secret
+            # to seed an admin user on first startup; idempotent.
+            - name: SEED_ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: auth-service-secrets
+                  key: SEED_ADMIN_EMAIL
+                  optional: true
+            - name: SEED_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: auth-service-secrets
+                  key: SEED_ADMIN_PASSWORD
+                  optional: true
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi

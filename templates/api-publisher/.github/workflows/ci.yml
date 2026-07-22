@@ -1,0 +1,29 @@
+# CI for the api-publisher. Copied into the consuming repo, it runs the unit
+# suite on every push/PR. The compose-based bootstrap smoke (test/bootstrap.sh)
+# is intentionally NOT run here — it needs Docker and is the lab's separate
+# templates job. Pin the Go version to match go.mod.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: build
+        run: go build ./...
+
+      - name: vet
+        run: go vet ./...
+
+      - name: test
+        run: go test -race ./...

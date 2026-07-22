@@ -1,0 +1,22 @@
+# Non-secret configuration for auth-service. Secrets (JWT_SECRET, DB password,
+# RS256 keys) live in Secrets referenced by the Deployment — never here.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auth-service-config
+  labels:
+    app: auth-service
+data:
+  NODE_ENV: "production"
+  PORT: "3000"
+  DATABASE_HOST: "postgres"
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: "auth_db"
+  DATABASE_USER: "auth_user"
+  JWT_ACCESS_TOKEN_EXPIRY: "15m"
+  JWT_REFRESH_TOKEN_EXPIRY: "7d"
+  ACCOUNT_LOCKOUT_ATTEMPTS: "5"
+  ACCOUNT_LOCKOUT_DURATION_MS: "1800000"
+  PASSWORD_MIN_LENGTH: "8"
+  METRICS_ENABLED: "true"
+  LOG_LEVEL: "info"

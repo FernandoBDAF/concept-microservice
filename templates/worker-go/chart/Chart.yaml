@@ -1,0 +1,9 @@
+apiVersion: v2
+name: worker-go
+description: >-
+  Async AMQP worker (lab worker-go template) — the deliberate one-chart
+  Helm exercise (ADR-002.1). Packages the worker template with values for
+  image, queue wiring, probes, and resources.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

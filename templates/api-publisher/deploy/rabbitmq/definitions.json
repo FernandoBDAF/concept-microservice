@@ -1,0 +1,19 @@
+{
+  "rabbit_version": "3.13.0",
+  "users": [
+    { "name": "guest", "password": "guest", "tags": ["administrator"] }
+  ],
+  "vhosts": [{ "name": "/" }],
+  "permissions": [
+    { "user": "guest", "vhost": "/", "configure": ".*", "write": ".*", "read": ".*" }
+  ],
+  "exchanges": [
+    { "name": "example-tasks", "vhost": "/", "type": "direct", "durable": true, "auto_delete": false, "internal": false, "arguments": {} }
+  ],
+  "queues": [
+    { "name": "example-processing", "vhost": "/", "durable": true, "auto_delete": false, "arguments": {} }
+  ],
+  "bindings": [
+    { "source": "example-tasks", "vhost": "/", "destination": "example-processing", "destination_type": "queue", "routing_key": "example.task", "arguments": {} }
+  ]
+}

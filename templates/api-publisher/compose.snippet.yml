@@ -1,0 +1,58 @@
+# Self-contained local stack for the api-publisher: the API, its Postgres
+# (with the outbox migration applied at init), and a RabbitMQ that loads the
+# topology from deploy/rabbitmq/definitions.json. This is what test/bootstrap.sh
+# brings up. Drop the `api` service into your own compose, or use this as-is.
+#
+# AUTH_DISABLED=true here is a DEV-ONLY smoke affordance (no auth service in
+# this snippet). Remove it and set AUTH_URL to your auth service for anything
+# real — see CONTRACTS.md §3.
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: api_db
+    ports:
+      - "5432:5432"
+    volumes:
+      # initdb applies the outbox migration on first boot.
+      - ./migrations/000001_create_outbox.up.sql:/docker-entrypoint-initdb.d/000001_create_outbox.up.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d api_db"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # management HTTP API (used by the bootstrap assertions)
+    volumes:
+      - ./deploy/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./deploy/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  api:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      PORT: "8080"
+      POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/api_db?sslmode=disable
+      RABBITMQ_HOSTS: rabbitmq:5672
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+      AUTH_DISABLED: "true"   # DEV ONLY — see note above
+    ports:
+      - "8080:8080"
+    # No container healthcheck: the distroless image has no shell. The
+    # bootstrap script polls http://localhost:8080/healthz from the host.

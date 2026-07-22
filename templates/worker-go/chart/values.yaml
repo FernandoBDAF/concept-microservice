@@ -1,0 +1,22 @@
+# Values design notes (the exercise's write-up compares this to the
+# kustomize overlay idiom — record impressions in EXP-82's write-up):
+# flat, few, all consumed; no "generic library chart" ambitions.
+image:
+  repository: localhost:5001/example-worker
+  tag: dev
+  pullPolicy: Always
+
+replicaCount: 1
+
+worker:
+  # env consumed by the template's BaseWorker
+  rabbitmqUrl: amqp://guest:guest@rabbitmq:5672/
+  redisAddr: "" # empty → in-memory idempotency guard (dev only)
+  otelEndpoint: "" # empty → tracing off
+  serviceName: example-worker
+
+resources:
+  requests: { cpu: 50m, memory: 64Mi }
+  limits: { cpu: 500m, memory: 128Mi }
+
+healthPort: 8080

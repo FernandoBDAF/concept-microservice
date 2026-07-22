@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Non-secret env is single-sourced from configmap.yaml; the migration SQL can be
+# single-sourced into a one-shot Job with a configMapGenerator over ../../..
+# /migrations (see README "Deploying"). Secrets are created out of band — see
+# secret.example.yaml (NOT applied by this base).
+resources:
+  - configmap.yaml
+  - deployment.yaml

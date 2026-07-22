@@ -1,0 +1,56 @@
+# compose.snippet.yml — drop-in fragment for a consuming repo's docker-compose.
+#
+# Copy these two services into your compose file (or `include:` this file). The
+# service builds from this template's Dockerfile; postgres is the backing store.
+# For a standalone smoke run, see test/bootstrap.sh (which brings up its own
+# throwaway stack).
+#
+# Secrets shown are LOCAL DEV DEFAULTS — override for anything real. RS256:
+# generate a keypair with `scripts/gen-keys.sh` and pass JWT_PRIVATE_KEY /
+# JWT_PUBLIC_KEY; without them the service uses the HS256 fallback on JWT_SECRET.
+services:
+  auth-service:
+    build:
+      context: .            # path to this template dir
+      dockerfile: Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      DATABASE_NAME: auth_db
+      DATABASE_USER: auth_user
+      DATABASE_PASSWORD: auth_password
+      JWT_SECRET: dev-jwt-secret-at-least-32-characters-long
+      JWT_ACCESS_TOKEN_EXPIRY: 15m
+      JWT_REFRESH_TOKEN_EXPIRY: 7d
+      LOG_LEVEL: info
+      LOG_PRETTY: "true"
+      # Optional admin bootstrap (ADR-009.7):
+      # SEED_ADMIN_EMAIL: admin@example.com
+      # SEED_ADMIN_PASSWORD: change-me
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: auth_user
+      POSTGRES_PASSWORD: auth_password
+    # The service applies migrations itself on startup (src/infrastructure/
+    # database/migrations.ts), so no init mounts are required here.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auth_user -d auth_db"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - auth_pgdata:/var/lib/postgresql/data
+
+volumes:
+  auth_pgdata:

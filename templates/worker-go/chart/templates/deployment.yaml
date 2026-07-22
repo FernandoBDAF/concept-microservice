@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "worker-go.name" . }}
+  labels:
+    {{- include "worker-go.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "worker-go.name" . }}
+  template:
+    metadata:
+      labels:
+        {{- include "worker-go.labels" . | nindent 8 }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: worker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            # HEALTH_PORT must match containerPort/probes below: the worker
+            # reads it (default 8080), so overriding healthPort without this
+            # would leave the server on 8080 while the probes hit the new port.
+            - name: HEALTH_PORT
+              value: {{ .Values.healthPort | quote }}
+            - name: RABBITMQ_URL
+              value: {{ .Values.worker.rabbitmqUrl | quote }}
+            {{- if .Values.worker.redisAddr }}
+            - name: REDIS_ADDR
+              value: {{ .Values.worker.redisAddr | quote }}
+            {{- end }}
+            {{- if .Values.worker.otelEndpoint }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.worker.otelEndpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: {{ .Values.worker.serviceName | quote }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.healthPort }}
+          startupProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

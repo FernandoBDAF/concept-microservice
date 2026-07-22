@@ -1,0 +1,39 @@
+# Throwaway stack for test/bootstrap.sh — postgres + the service built from this
+# template. Not for production; credentials are ephemeral. JWT_PRIVATE_KEY /
+# JWT_PUBLIC_KEY are optional (RS256 when set by bootstrap.sh, HS256 otherwise).
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: auth_user
+      POSTGRES_PASSWORD: auth_password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auth_user -d auth_db"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  auth-service:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      DATABASE_NAME: auth_db
+      DATABASE_USER: auth_user
+      DATABASE_PASSWORD: auth_password
+      JWT_SECRET: bootstrap-jwt-secret-at-least-32-characters
+      JWT_ACCESS_TOKEN_EXPIRY: 15m
+      JWT_REFRESH_TOKEN_EXPIRY: 7d
+      JWT_PRIVATE_KEY: "${JWT_PRIVATE_KEY:-}"
+      JWT_PUBLIC_KEY: "${JWT_PUBLIC_KEY:-}"
+      LOG_LEVEL: info
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
